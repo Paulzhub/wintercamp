@@ -53,12 +53,31 @@
     "title": "Three days of fun",
     "lead": "Each camp runs for three days. Here is what your child will be doing.",
     "cards": {
-      "games": { "title": "Games", "text": "Games that get everyone moving, laughing and making new friends." },
-      "craft": { "title": "Craft", "text": "Make something with your own hands and take it home." },
-      "story": { "title": "Storytelling", "text": "Stories that light up the imagination." },
-      "music": { "title": "Music time", "text": "Sing, clap and make a joyful noise together." },
-      "food": { "title": "Snacks and lunch", "text": "Tasty snacks and a hot lunch, provided every day." },
-      "picnic": { "title": "Day 3 picnic", "text": "A day out with a treasure hunt, team challenges that build team spirit, and exciting prizes to win.", "badge": "Day 3" }
+      "games": {
+        "title": "Games",
+        "text": "Games that get everyone moving, laughing and making new friends."
+      },
+      "craft": {
+        "title": "Craft",
+        "text": "Make something with your own hands and take it home."
+      },
+      "story": {
+        "title": "Storytelling",
+        "text": "Stories that light up the imagination."
+      },
+      "music": {
+        "title": "Music time",
+        "text": "Sing, clap and make a joyful noise together."
+      },
+      "food": {
+        "title": "Snacks and lunch",
+        "text": "Tasty snacks and a hot lunch, provided every day."
+      },
+      "picnic": {
+        "title": "Day 3 picnic",
+        "text": "A day out with a treasure hunt, team challenges that build team spirit, and exciting prizes to win.",
+        "badge": "Day 3"
+      }
     },
     "strip": {
       "dates": "Dates",
@@ -93,15 +112,42 @@
     "eyebrow": "Camp facts",
     "title": "Questions and answers",
     "items": [
-      { "q": "Who is Winter Camp 2027 for?", "a": "Winter Camp 2027 is run by Kid's Happy Club for two groups: Kids, who are under 10 years old, and Youth, who are 10 to 18 years old. Age is counted on the first day of each group's camp." },
-      { "q": "When is the camp?", "a": "The Youth camp (10 to 18) is from 4 to 6 January 2027. The Kids camp (under 10) is from 11 to 13 January 2027." },
-      { "q": "Where is the camp held?", "a": "At Snow View Residency, Jogiwara Road, McLeodganj, Dharamshala, Himachal Pradesh, India, 176219." },
-      { "q": "How much does it cost?", "a": "The registration fee is ₹500 per child." },
-      { "q": "How do I pay?", "a": "Pay ₹500 by UPI during registration, using the QR code, the UPI ID achuisr1985.27-1@okhdfcbank or the phone number 8219012669. The payee name is Achui Sareo. You then upload a screenshot of the payment." },
-      { "q": "What is provided?", "a": "Snacks and a hot lunch are provided every day, along with games, craft, storytelling, music time and a picnic on day 3. There is one staff member for every seven children." },
-      { "q": "How do I register?", "a": "Press Register now on this website, choose Kids or Youth, fill in the form, sign it, pay ₹500 by UPI and upload the payment screenshot. A seat is given only when the form is sent with the screenshot." },
-      { "q": "What happens when seats are full?", "a": "Each group has 30 seats, given first come, first served. When a group is full, registration for it closes; please contact +91-8219012669." },
-      { "q": "Who do I contact?", "a": "Call Kid's Happy Club on +91-8219012669." }
+      {
+        "q": "Who is Winter Camp 2027 for?",
+        "a": "Winter Camp 2027 is run by Kid's Happy Club for two groups: Kids, who are under 10 years old, and Youth, who are 10 to 18 years old. Age is counted on the first day of each group's camp."
+      },
+      {
+        "q": "When is the camp?",
+        "a": "The Youth camp (10 to 18) is from 4 to 6 January 2027. The Kids camp (under 10) is from 11 to 13 January 2027."
+      },
+      {
+        "q": "Where is the camp held?",
+        "a": "At Snow View Residency, Jogiwara Road, McLeodganj, Dharamshala, Himachal Pradesh, India, 176219."
+      },
+      {
+        "q": "How much does it cost?",
+        "a": "The registration fee is ₹500 per child."
+      },
+      {
+        "q": "How do I pay?",
+        "a": "Pay ₹500 by UPI during registration, using the QR code, the UPI ID achuisr1985.27-1@okhdfcbank or the phone number 8219012669. The payee name is Achui Sareo. You then upload a screenshot of the payment."
+      },
+      {
+        "q": "What is provided?",
+        "a": "Snacks and a hot lunch are provided every day, along with games, craft, storytelling, music time and a picnic on day 3. There is one staff member for every seven children."
+      },
+      {
+        "q": "How do I register?",
+        "a": "Press Register now on this website, choose Kids or Youth, fill in the form, sign it, pay ₹500 by UPI and upload the payment screenshot. A seat is given only when the form is sent with the screenshot."
+      },
+      {
+        "q": "What happens when seats are full?",
+        "a": "Each group has 30 seats, given first come, first served. When a group is full, registration for it closes; please contact +91-8219012669."
+      },
+      {
+        "q": "Who do I contact?",
+        "a": "Call Kid's Happy Club on +91-8219012669."
+      }
     ]
   },
   "footer": {
@@ -129,7 +175,12 @@
     "chosen": "Registering for {category}",
     "change": "Change",
     "full": "Seats are full. Kindly contact +91-8219012669.",
-    "steps": ["Child", "Parent and health", "Consent and signature", "Payment"],
+    "steps": [
+      "Child",
+      "Parent and health",
+      "Consent and signature",
+      "Payment"
+    ],
     "stepOf": "Step {n} of {total}: {name}",
     "next": "Next",
     "back": "Back",
@@ -161,12 +212,29 @@
       "signHere": "Sign here",
       "signCanvas": "Signature. Draw your signature here with a finger, stylus or mouse.",
       "signClear": "Clear",
-      "signNote": "If you cannot draw a signature, please call +91-8219012669.",
       "signTip": "Draw with your finger, a stylus or the mouse",
       "signDate": "Date of Signing",
-      "privacy": "How we use this information"
+      "privacy": "How we use this information",
+      "phoneHelp": "10-digit mobile or phone number, numbers only.",
+      "signTypeToggle": "Can't draw a signature? Type your name instead",
+      "signDrawToggle": "Draw my signature instead",
+      "signTyped": "Type your full name as your signature",
+      "signTypedHelp": "Typing your full name here counts as your signature."
     },
-    "months": ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+    "months": [
+      "January",
+      "February",
+      "March",
+      "April",
+      "May",
+      "June",
+      "July",
+      "August",
+      "September",
+      "October",
+      "November",
+      "December"
+    ],
     "pay": {
       "title": "Pay ₹500 by UPI",
       "checking": "Checking that a seat is still free",
@@ -201,10 +269,10 @@
       "dobYouthYoung": "Youth must be 10 to 18 on 4 January 2027. For this date of birth, please choose Kids.",
       "parent": "Enter the parent's or guardian's name.",
       "address": "Enter the address.",
-      "phone": "Enter a valid phone number, for example 98765 43210.",
+      "phone": "Enter a 10-digit phone number, for example 9876543210.",
       "consent": "Choose YES or NO.",
       "agree": "Tick this box to continue.",
-      "signature": "Draw your signature in the box.",
+      "signature": "Draw your signature in the box, or type your name instead.",
       "signDate": "Enter the date of signing.",
       "signDateFuture": "The date of signing cannot be in the future.",
       "shot": "Attach a screenshot of your payment.",
@@ -214,7 +282,10 @@
       "send": "We could not send your registration. Your details and screenshot are still here. Please check your connection and try again, or call {phone}.",
       "server": "Some details were not accepted. Please check them and try again.",
       "duplicate": "This child is already registered for this group. For help, call {phone}.",
-      "busy": "Too many registrations are arriving at once. Please wait a minute and try again."
+      "busy": "Too many registrations are arriving at once. Please wait a minute and try again.",
+      "phoneDigits": "Only numbers 0 to 9 can be used. Other characters were removed.",
+      "phoneMax": "Phone numbers have 10 digits. Extra digits were removed.",
+      "signTyped": "Type your full name to sign."
     },
     "done": {
       "title": "You are registered!",
@@ -224,10 +295,20 @@
       "dates": "Dates",
       "venue": "Venue",
       "venueValue": "Snow View Residency, Jogiwara Road, McLeodganj, Dharamshala",
-      "close": "Back to the website"
+      "close": "Back to the website",
+      "save": "Save as image",
+      "share": "Share",
+      "saved": "Image saved",
+      "imageTitle": "Registration confirmed",
+      "imageSeat": "Seat confirmed. Payment will be checked by the organisers.",
+      "imageRef": "Reference",
+      "imageContact": "Questions? Call +91-8219012669",
+      "shareText": "Winter Camp 2027 registration confirmation",
+      "imageAlt": "Your registration confirmation as an image"
     },
     "lastSeat": "Oh No Someone booked the last seat just before you! Kindly contact +91-8219012669",
-    "lastSeatNote": "Your details and payment screenshot have been saved for the organisers."
+    "lastSeatNote": "Your details and payment screenshot have been saved for the organisers.",
+    "blocked": "Please fill in the fields marked in red to continue."
   },
   "privacy": {
     "title": "Privacy notice",
@@ -236,15 +317,60 @@
     "back": "Back to Winter Camp 2027",
     "updated": "Last updated: November 2026",
     "sections": [
-      { "h": "Who we are", "p": ["Winter Camp 2027 is organised by Kid's Happy Club and held at Snow View Residency, Jogiwara Road, McLeodganj, Dharamshala, Himachal Pradesh, India, 176219. To ask anything about this notice, call +91-8219012669."] },
-      { "h": "What we collect", "p": ["When you register a child we collect: the child's name and date of birth; the group (Kids or Youth); the parent's or guardian's name; your address; emergency contact numbers; any medical conditions, dietary requirements or allergies you tell us about; your answer on medical emergency consent; your signature and the date of signing; a screenshot of your UPI payment and, if you give it, the transaction reference; the language you used; and the time the form was sent."] },
-      { "h": "Why we collect it", "p": ["We use this information only to run the camp: to keep a seat for your child, to confirm your payment, to keep your child safe, to cater for health and dietary needs, and to contact you in an emergency."] },
-      { "h": "Consent", "p": ["The form must be completed by a parent or guardian. By ticking the agreement box and signing, you consent to us using this information for the camp."] },
-      { "h": "Who sees it", "p": ["Only the camp organisers. The information is kept in a private Google Sheet and private Google Drive folders that are shared with named organisers only. We do not sell it, publish it or share it with advertisers. It may be shared with medical staff if your child needs treatment."] },
-      { "h": "How long we keep it", "p": ["We keep registration details, signatures and payment screenshots until the camp accounts are settled, and delete them within 90 days of the end of the camp."] },
-      { "h": "What this website stores on your device", "p": ["This website uses no cookies, advertising or tracking. It remembers only your language and sound settings in your browser. What you type in the form is held in the page until it is sent and is not saved on your device."] },
-      { "h": "Photos and videos", "p": ["The gallery shows photos and videos from earlier camps, published with consent. To have a photo or video of your child removed, call +91-8219012669."] },
-      { "h": "Your choices", "p": ["You can ask to see, correct or delete your child's information at any time by calling +91-8219012669."] }
+      {
+        "h": "Who we are",
+        "p": [
+          "Winter Camp 2027 is organised by Kid's Happy Club and held at Snow View Residency, Jogiwara Road, McLeodganj, Dharamshala, Himachal Pradesh, India, 176219. To ask anything about this notice, call +91-8219012669."
+        ]
+      },
+      {
+        "h": "What we collect",
+        "p": [
+          "When you register a child we collect: the child's name and date of birth; the group (Kids or Youth); the parent's or guardian's name; your address; emergency contact numbers; any medical conditions, dietary requirements or allergies you tell us about; your answer on medical emergency consent; your signature and the date of signing; a screenshot of your UPI payment and, if you give it, the transaction reference; the language you used; and the time the form was sent."
+        ]
+      },
+      {
+        "h": "Why we collect it",
+        "p": [
+          "We use this information only to run the camp: to keep a seat for your child, to confirm your payment, to keep your child safe, to cater for health and dietary needs, and to contact you in an emergency."
+        ]
+      },
+      {
+        "h": "Consent",
+        "p": [
+          "The form must be completed by a parent or guardian. By ticking the agreement box and signing, you consent to us using this information for the camp."
+        ]
+      },
+      {
+        "h": "Who sees it",
+        "p": [
+          "Only the camp organisers. The information is kept in a private Google Sheet and private Google Drive folders that are shared with named organisers only. We do not sell it, publish it or share it with advertisers. It may be shared with medical staff if your child needs treatment."
+        ]
+      },
+      {
+        "h": "How long we keep it",
+        "p": [
+          "We keep registration details, signatures and payment screenshots until the camp accounts are settled, and delete them within 90 days of the end of the camp."
+        ]
+      },
+      {
+        "h": "What this website stores on your device",
+        "p": [
+          "This website uses no cookies, advertising or tracking. It remembers only your language and sound settings in your browser. What you type in the form is held in the page until it is sent and is not saved on your device."
+        ]
+      },
+      {
+        "h": "Photos and videos",
+        "p": [
+          "The gallery shows photos and videos from earlier camps, published with consent. To have a photo or video of your child removed, call +91-8219012669."
+        ]
+      },
+      {
+        "h": "Your choices",
+        "p": [
+          "You can ask to see, correct or delete your child's information at any time by calling +91-8219012669."
+        ]
+      }
     ]
   }
 }

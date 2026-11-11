@@ -83,6 +83,7 @@ Screenshots go to `test-results/`.
 - **`scripts/build-gallery.mjs`** reads `gallery/` and writes WebP sizes, H.264 videos with poster frames, and a manifest.
 - **`src/js/`** holds the browser code:
   - `loader`, `hero` and `hero3d`
+  - `music`: the background music, composed in code and rendered once into a seamless loop
   - `nav`, `carousel` and `lightbox`
   - `register`, `signature`, `image` and `api`
   - `audio` and `pointer`: cursor, magnetic buttons, tooltips and ripples
@@ -92,4 +93,4 @@ Screenshots go to `test-results/`.
 
 - **Content Security Policy.** GitHub Pages cannot set HTTP headers, so the policy is a `<meta>` tag. `frame-ancestors` (clickjacking protection) can only be set by a header, so it is not included.
 - **Button text.** Labels on red buttons are pure white (`#FFFFFF`) rather than `#F5F5F5`, because `#F5F5F5` on `#E3171A` is 4.4:1, just under the WCAG AA minimum of 4.5:1. White gives 4.8:1.
-- **Signature.** The hand-drawn signature is a known, accepted exception to WCAG (owner's decision). The note beside it gives the phone number.
+- **Signature.** Parents draw a signature, or choose "Type your name instead" and type their full name, which is stored in the **Typed signature** column. Having the typed option means the form meets WCAG.

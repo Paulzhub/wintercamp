@@ -15,7 +15,7 @@ It takes about 10 minutes, once, from the Google account that should own the reg
 
 1. In the editor's function menu choose **setup**, then click **Run**.
 2. Google asks for permission. Choose your account. You may see **Google hasn't verified this app**: choose **Advanced → Go to (project name)**, then **Allow**. The script asks for your Sheets and Drive because it writes to them; it cannot read anything else of yours unless you share it.
-3. When it finishes, the sheet has two tabs, **Registrations** and **Paid, no seat**. Your Drive has these folders:
+3. When it finishes, the sheet has three tabs: **Kids registrations**, **Youth registrations** and **Paid, no seat**. Your Drive has these folders:
 
 ```
 Winter Camp 2027/
@@ -39,16 +39,23 @@ Winter Camp 2027/
 
 Make one test registration with a real screenshot. Check that:
 
-- a row appears in **Registrations**, and
+- a row appears in **Kids registrations** or **Youth registrations**, and
 - the signature and screenshot links in that row open the files in your Drive.
 
-Then delete the test row, and the two test files in Drive, so the seat is freed. The seat count is simply the number of rows in **Registrations** for each group.
+Then delete the test row, and the test files in Drive, so the seat is freed. The seat count for each group is simply the number of rows in its tab.
+
+## Updating from the first version (one "Registrations" tab)
+
+1. In the Apps Script editor, replace all of `Code.gs` with the new [`Code.gs`](Code.gs) and save.
+2. Click **Deploy → Manage deployments**, then the pencil icon. Set **Version** to **New version** and click **Deploy**. The web app URL stays the same.
+3. Any rows already in the old **Registrations** tab are moved into **Kids registrations** and **Youth registrations** automatically the next time someone opens the registration view. Running **setup** once does the same straight away. The old tab is then renamed "Registrations (old, moved …)". You can delete it once you've checked the move.
 
 ## Day-to-day
 
 - **Check payments.** The site cannot verify a UPI payment. Open each **Payment screenshot** link and compare it with your UPI app.
+- **Signatures.** Most parents draw a signature, which is saved as an image and linked in the **Signature** column. Anyone who can't draw one types their full name instead; it appears in the **Typed signature** column.
 - **Paid, no seat.** These people paid just after the last seat went. Call them to refund, or move their row into **Registrations** if you add seats.
-- **Free a seat.** Delete the row from **Registrations**. The seat appears on the website straight away.
+- **Free a seat.** Delete the row from that group's tab. The seat appears on the website straight away.
 - **Change the number of seats or the dates.** Edit `CONFIG` at the top of `Code.gs`, and `site.config.js` in the repo. Keep the two the same. Then redeploy the script as below.
 - **Updating the script.** After editing `Code.gs`, use **Deploy → Manage deployments → (pencil) → Version: New version → Deploy**. This keeps the same URL. A *New deployment* would make a new URL that you would have to paste into `site.config.js` again.
 
@@ -61,8 +68,9 @@ Then delete the test row, and the two test files in Drive, so the seat is freed.
 
 The script checks everything again, because anyone can call the web app address directly:
 
-- every field: length, allowed values, real dates, age on the camp's first day, and phone format
-- the screenshot: JPG, PNG or WebP only, recognised by its content rather than its name, and up to 5 MB; the signature must be a PNG
+- every field: length, allowed values, real dates, age on the camp's first day, and 10-digit phone numbers
+- the screenshot: JPG, PNG or WebP only, recognised by its content rather than its name, and up to 5 MB
+- the signature: a drawn PNG or a typed full name
 - a lock, so two people can never take the last seat at the same moment
 - spam protection: a hidden field, a minimum time to fill the form, and a limit of 30 registrations per minute
 - duplicates: the same child in the same group is refused, and a retried submission never takes a second seat

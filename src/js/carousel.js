@@ -86,7 +86,8 @@ export function initCarousel(audio) {
     if (changed && sound) audio.play('whoosh');
     gsap.killTweensOf(state);
     if (animate && !reduced()) {
-      gsap.to(state, { pos: index, duration: 0.72, ease: 'std', onUpdate: () => layout(state.pos) });
+      // 0.7 s, easing in and out, for every move (buttons, keys, slider, swipe).
+      gsap.to(state, { pos: index, duration: 0.7, ease: 'std', onUpdate: () => layout(state.pos) });
     } else {
       state.pos = index;
       layout(index);
@@ -101,7 +102,7 @@ export function initCarousel(audio) {
   let suppressClick = false;
   car.addEventListener('pointerdown', (e) => {
     if (e.button > 0 || e.target.closest('.car__controls')) return;
-    drag = { x: e.clientX, y: e.clientY, start: state.pos, id: e.pointerId, moved: false, lastX: e.clientX, lastT: performance.now(), v: 0 };
+    drag = { x: e.clientX, y: e.clientY, start: state.pos, from: index, id: e.pointerId, moved: false, lastX: e.clientX, lastT: performance.now(), v: 0 };
   });
   car.addEventListener('pointermove', (e) => {
     if (!drag || e.pointerId !== drag.id) return;
@@ -109,7 +110,7 @@ export function initCarousel(audio) {
     if (!drag.moved) {
       if (Math.abs(dx) < 8 || Math.abs(dx) < Math.abs(e.clientY - drag.y)) return;
       drag.moved = true;
-      car.setPointerCapture(e.pointerId);
+      try { car.setPointerCapture(e.pointerId); } catch { /* fine without capture */ }
       car.classList.add('is-dragging');
       gsap.killTweensOf(state);
     }
@@ -124,13 +125,24 @@ export function initCarousel(audio) {
     if (drag.moved) {
       suppressClick = true;
       setTimeout(() => { suppressClick = false; }, 0);
-      setIndex(state.pos - drag.v * 0.9);
+      // A swipe always moves at least one item in its direction: a short flick of
+      // 40 px or a quick one is enough; longer drags can move several.
+      const dx = drag.lastX - drag.x;
+      const fast = Math.abs(drag.v) > 0.35;
+      if (Math.abs(dx) >= 40 || fast) {
+        const dir = (Math.abs(dx) >= 40 ? dx : drag.v) < 0 ? 1 : -1;
+        const travelled = Math.round(Math.abs(dx) / spacing);
+        setIndex(drag.from + dir * Math.max(1, travelled));
+      } else {
+        setIndex(drag.from);
+      }
     }
     car.classList.remove('is-dragging');
     drag = null;
   };
   car.addEventListener('pointerup', endDrag);
-  car.addEventListener('pointercancel', endDrag);
+  window.addEventListener('pointerup', endDrag);
+  car.addEventListener('pointercancel', () => { if (drag && !drag.moved) drag = null; else endDrag(); });
 
   items.forEach((it, i) => {
     it.querySelector('.car__btn').addEventListener('click', (e) => {

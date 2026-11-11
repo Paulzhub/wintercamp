@@ -8,7 +8,7 @@ const png = 'data:image/png;base64,' + Buffer.concat([Buffer.from([0x89, 0x50, 0
 let n = 0;
 const valid = (over = {}) => ({
   action: 'register', submissionId: `test-${Date.now()}-${++n}`, category: 'kids', name: `Tenzin ${n}`, dob: '2019-03-15',
-  parent: 'Dolma', address: 'Jogiwara Road, McLeodganj', phones: ['+919876543210'], medical: '', dietary: 'None',
+  parent: 'Dolma', address: 'Jogiwara Road, McLeodganj', phones: ['9876543210'], medical: '', dietary: 'None',
   consent: 'yes', agree: true, signature: png, signDate: '2026-11-11', screenshot: { type: 'image/jpeg', data: jpeg },
   paymentRef: 'UPI123', lang: 'en', website: '', elapsedMs: 60000, ...over,
 });
@@ -23,13 +23,15 @@ test('a valid registration gets a seat, a row and two private files per category
   const res = g.doPost(valid());
   assert.equal(res.status, 'registered');
   assert.equal(res.seatsLeft, 29);
-  const rows = g.sheet('Registrations').rows;
+  const rows = g.sheet('Kids registrations').rows;
   assert.equal(rows.length, 2);
   assert.equal(rows[0][0], 'Timestamp');
   assert.equal(rows[1][g.context.COL.Category], 'Kids');
   assert.match(rows[1][g.context.COL['Payment screenshot']], /^https:\/\/drive\.google\.com\//);
   assert.deepEqual(g.files.map((f) => f.folder).sort(), ['Winter Camp 2027/Kids/Payment screenshots', 'Winter Camp 2027/Kids/Signatures']);
   g.doPost(valid({ category: 'youth', dob: '2012-01-01' }));
+  assert.equal(g.sheet('Youth registrations').rows.length, 2, 'Youth rows go to their own tab');
+  assert.equal(g.sheet('Kids registrations').rows.length, 2);
   assert.ok(g.files.some((f) => f.folder === 'Winter Camp 2027/Youth/Payment screenshots'));
   assert.equal(g.doGet({ action: 'seats' }).seats.youth.left, 29);
 });
@@ -37,10 +39,10 @@ test('a valid registration gets a seat, a row and two private files per category
 test('text that could run as a formula is neutralised', () => {
   const g = createSandbox();
   g.doPost(valid({ name: '=HYPERLINK("http://x","y")', medical: '@SUM(A1)' }));
-  const row = g.sheet('Registrations').rows[1];
+  const row = g.sheet('Kids registrations').rows[1];
   assert.equal(row[g.context.COL.Name], `'=HYPERLINK("http://x","y")`);
   assert.equal(row[g.context.COL['Medical conditions or concerns']], `'@SUM(A1)`);
-  assert.equal(row[g.context.COL['Emergency contact number(s)']], `'+919876543210`);
+  assert.equal(row[g.context.COL['Emergency contact number(s)']], '9876543210');
 });
 
 test('a registration without a valid screenshot is rejected', () => {
@@ -52,7 +54,7 @@ test('a registration without a valid screenshot is rejected', () => {
   assert.equal(g.doPost(valid({ screenshot: { data: mismatch } })).error, 'validation');
   const big = 'data:image/jpeg;base64,' + Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.alloc(5 * 1024 * 1024 + 10)]).toString('base64');
   assert.equal(g.doPost(valid({ screenshot: { data: big } })).fields[0].field, 'shot');
-  assert.equal(g.sheet('Registrations')?.rows.length ?? 1, 1);
+  assert.equal(g.sheet('Kids registrations')?.rows.length ?? 1, 1);
   assert.equal(g.files.length, 0);
 });
 
@@ -86,7 +88,7 @@ test('the 30-seat limit holds; later paid submissions go to "Paid, no seat"', ()
   assert.equal(overflow.length, 2);
   assert.equal(overflow[1][g.context.COL.Status], 'Paid, no seat');
   assert.match(overflow[1][g.context.COL['Payment screenshot']], /^https?:\/\/drive\.google\.com(?:\/|$)/);
-  assert.equal(g.sheet('Registrations').rows.length, 31);
+  assert.equal(g.sheet('Kids registrations').rows.length, 31);
   assert.equal(g.doGet({ action: 'seats' }).seats.youth.left, 30);
 });
 
@@ -95,7 +97,7 @@ test('retrying the same submission does not take a second seat', () => {
   const p = valid();
   assert.equal(g.doPost(p).status, 'registered');
   assert.equal(g.doPost(p).status, 'registered');
-  assert.equal(g.sheet('Registrations').rows.length, 2);
+  assert.equal(g.sheet('Kids registrations').rows.length, 2);
 });
 
 test('the same child cannot be registered twice in a category', () => {
@@ -113,4 +115,45 @@ test('bots: honeypot, too fast, and rate limit', () => {
   let busy = 0;
   for (let i = 0; i < 35; i++) if (g.doPost(valid()).error === 'busy') busy++;
   assert.equal(busy, 5);
+});
+
+test('phone numbers must have exactly 10 digits', () => {
+  const g = createSandbox();
+  const code = (phones) => g.doPost(valid({ phones })).fields?.find((f) => f.field === 'phones')?.code;
+  assert.equal(code(['98765432']), 'phone');
+  assert.equal(code(['98765432101']), 'phone');
+  assert.equal(code(['98765abc10']), 'phone');
+  assert.equal(code(['9876543210', '12345']), 'phone');
+  assert.equal(g.doPost(valid({ phones: ['+91 98765 43210', '01892-221234'] })).status, 'registered');
+  const row = g.sheet('Kids registrations').rows[1];
+  assert.equal(row[g.context.COL['Emergency contact number(s)']], '9876543210, 1892221234');
+});
+
+test('a typed name can be used instead of a drawn signature', () => {
+  const g = createSandbox();
+  assert.equal(g.doPost(valid({ signature: '', signatureTyped: '' })).fields[0].field, 'signature');
+  assert.equal(g.doPost(valid({ signature: '', signatureTyped: 'D' })).fields[0].code, 'signTyped');
+  const res = g.doPost(valid({ signature: '', signatureTyped: 'Dolma Tsering' }));
+  assert.equal(res.status, 'registered');
+  const row = g.sheet('Kids registrations').rows[1];
+  assert.equal(row[g.context.COL['Typed signature']], 'Dolma Tsering');
+  assert.equal(row[g.context.COL.Signature], '');
+  assert.equal(g.files.filter((f) => f.folder.endsWith('Signatures')).length, 0);
+  assert.equal(g.files.filter((f) => f.folder.endsWith('Payment screenshots')).length, 1);
+});
+
+test('rows in an old single "Registrations" tab are moved to the Kids and Youth tabs', () => {
+  const g = createSandbox();
+  g.seedOldTab([
+    { Category: 'Kids', Name: 'Old Kid', 'Submission ID': 'old-1', 'Date of birth': '2019-01-01' },
+    { Category: 'Youth', Name: 'Old Youth', 'Submission ID': 'old-2', 'Date of birth': '2012-01-01' },
+  ]);
+  const seats = g.doGet({ action: 'seats' }).seats;
+  assert.equal(seats.kids.left, 29);
+  assert.equal(seats.youth.left, 29);
+  assert.equal(g.sheet('Youth registrations').rows[1][g.context.COL.Name], 'Old Youth');
+  assert.ok(!g.sheet('Registrations'), 'old tab renamed');
+  assert.ok(g.sheetNames().some((n) => n.startsWith('Registrations (old, moved')));
+  g.doGet({ action: 'seats' });
+  assert.equal(g.sheet('Kids registrations').rows.length, 2, 'moved only once');
 });

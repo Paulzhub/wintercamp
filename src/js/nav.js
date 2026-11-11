@@ -1,5 +1,5 @@
 import { gsap, reduced } from './motion.js';
-import { T, $, $$ } from './i18n.js';
+import { $, $$ } from './i18n.js';
 import { openModal } from './modal.js';
 
 export function initNav(motion, audio) {
@@ -22,13 +22,21 @@ export function initNav(motion, audio) {
   // Clear active state for the section in view.
   const links = $$('.nav__link, .menu__link');
   const sections = $$('[data-section]');
-  const setActive = (id) =>
+  // Once the page is ready, the address follows the section in view (#gallery,
+  // #faq...), so reloading or sharing the link returns to the same place.
+  let trackHash = false;
+  document.addEventListener('wc:ready', () => { trackHash = true; });
+  const setActive = (id) => {
     links.forEach((l) => {
       const on = l.getAttribute('href') === `#${id}`;
       l.classList.toggle('is-active', on);
       if (on) l.setAttribute('aria-current', 'true');
       else l.removeAttribute('aria-current');
     });
+    if (!trackHash || document.documentElement.classList.contains('is-modal')) return;
+    const want = id === 'home' ? '' : `#${id}`;
+    if (location.hash !== want) history.replaceState(null, '', want || location.pathname + location.search);
+  };
   if ('IntersectionObserver' in window) {
     const io = new IntersectionObserver(
       (entries) => entries.forEach((e) => e.isIntersecting && setActive(e.target.id)),
@@ -57,7 +65,7 @@ export function initNav(motion, audio) {
     gsap.fromTo($$('.menu__links li, .menu__foot', menu), { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.64, stagger: 0.064, delay: 0.24, clearProps: 'all' });
   });
   closeBtn?.addEventListener('click', () => closeMenu());
-  menu?.addEventListener('cancel', (e) => { e.preventDefault(); closeMenu(); });
+  menu?.addEventListener('cancel', (e) => { if (e.target !== menu) return; e.preventDefault(); closeMenu(); });
   $$('[data-open-register]', menu).forEach((b) => b.addEventListener('click', () => menu.close(), { capture: true }));
 
   // In-page links glide (or jump, with reduced motion) and move focus to the target.
@@ -73,12 +81,11 @@ export function initNav(motion, audio) {
     closeMenu(() => {
       motion.start();
       motion.scrollTo(target);
-      history.pushState(null, '', id);
+      history.replaceState(null, '', id === '#home' ? location.pathname + location.search : id);
     });
   });
 
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && menu?.open) closeMenu();
   });
-  void T;
 }

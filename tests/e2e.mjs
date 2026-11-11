@@ -3,7 +3,7 @@
 //   WC_APPS_SCRIPT_URL=http://127.0.0.1:8787/exec npm run build && npm run test:e2e
 // Screenshots go to test-results/. Set CHROME_PATH if Chrome is elsewhere.
 import http from 'node:http';
-import { readFile, mkdir, stat } from 'node:fs/promises';
+import { readFile, mkdir, stat, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
@@ -259,7 +259,13 @@ async function main() {
       await page.waitForTimeout(1200);
       await page.screenshot({ path: path.join(out, 'reg-done-390.png') });
       check('Confirmation shows name, category, dates', (await page.textContent('#reg-done')).includes('Tenzin Norbu') && (await page.textContent('#done-dates')).includes('11 to 13 January 2027'));
+      const [download] = await Promise.all([page.waitForEvent('download'), page.click('#done-save')]);
+      const imgPath = path.join(out, 'confirmation-image.png');
+      await download.saveAs(imgPath);
+      const meta = await sharp(imgPath).metadata();
+      check('"Save as image" downloads a 1080x1350 PNG of the confirmation', meta.format === 'png' && meta.width === 1080 && meta.height === 1350 && download.suggestedFilename().includes('Tenzin-Norbu'), `${meta.format} ${meta.width}x${meta.height} ${download.suggestedFilename()}`);
       let st = await api('/__state');
+      check('Backend: row stored in the Kids tab, not the Youth tab', st.kids.length === 1 && st.youth.length === 0);
       check('Backend: one row, signature and screenshot saved in Kids folders', st.main.length === 1 && st.files.length === 2 && st.files.every((f) => f.folder.startsWith('Winter Camp 2027/Kids/')), JSON.stringify(st.files.map((f) => [f.folder, f.mime, f.size])));
       const stored = await page.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }));
       check('Nothing personal left in browser storage', !/Tenzin|Dolma|98765/.test(stored), stored);
@@ -441,6 +447,159 @@ async function main() {
       const done = watch(page, 'Privacy page');
       await page.goto(`${SITE}privacy/`);
       await axe(page, 'Privacy page');
+      done();
+      await ctx.close();
+    }
+
+    // 11. Round 2: menu on sub-pages, deep links, hero text, footer, phones, blocking, typed signature, cancel, music.
+    {
+      await api('/__reset', {});
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 }, acceptDownloads: true });
+      const page = await ctx.newPage();
+      const done = watch(page, 'Round 2');
+      await page.goto(`${SITE}privacy/`);
+      const sub = await page.evaluate(() => ({
+        links: [...document.querySelectorAll('#nav .nav__link')].map((a) => a.getAttribute('href')),
+        reg: document.querySelector('#nav .nav__register')?.getAttribute('href'),
+        sound: Boolean(document.querySelector('#nav [data-sound-toggle]')),
+        menu: Boolean(document.getElementById('menu')),
+      }));
+      check('Privacy page has the same menu bar (links, Register, sound, phone menu)', sub.links.length === 5 && sub.links[2] === '/wintercamp/#gallery' && sub.reg === '/wintercamp/#register' && sub.sound && sub.menu, JSON.stringify(sub));
+      await page.click('#nav .nav__link[href$="#gallery"]');
+      await enter(page);
+      await page.waitForTimeout(1200);
+      const g = await page.evaluate(() => Math.round(document.getElementById('gallery').getBoundingClientRect().top));
+      check('Menu link from a sub-page opens the home page at that section', g >= 0 && g <= 112, `gallery top ${g}`);
+      for (let i = 0; i < 4; i++) { await page.mouse.wheel(0, 600); await page.waitForTimeout(300); }
+      await page.waitForTimeout(900);
+      const hashBefore = await page.evaluate(() => location.hash);
+      await page.reload();
+      await enter(page);
+      await page.waitForTimeout(1200);
+      const after = await page.evaluate((h) => { const r = document.querySelector(h).getBoundingClientRect(); return { hash: location.hash, top: Math.round(r.top), inView: r.top < innerHeight * 0.6 && r.bottom > 0 }; }, hashBefore || '#gallery');
+      check('Reloading keeps the section in view (address follows the section)', hashBefore !== '' && after.hash === hashBefore && after.inView, `${hashBefore} -> ${JSON.stringify(after)}`);
+
+      // Swipe: a short swipe moves one item, both in the carousel and full-screen view.
+      await page.locator('#carousel').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(600);
+      const box = await page.locator('.car__item.is-active').boundingBox();
+      const swipe = async (from, to, y) => { await page.mouse.move(from, y); await page.mouse.down(); for (let k = 1; k <= 6; k++) await page.mouse.move(from + ((to - from) * k) / 6, y); await page.mouse.up(); };
+      const pos0 = await page.textContent('#car-pos');
+      await swipe(box.x + box.width / 2 + 30, box.x + box.width / 2 - 30, box.y + box.height / 2);
+      await page.waitForTimeout(900);
+      const pos1 = await page.textContent('#car-pos');
+      await swipe(box.x + box.width / 2 - 30, box.x + box.width / 2 + 30, box.y + box.height / 2);
+      await page.waitForTimeout(900);
+      const pos2 = await page.textContent('#car-pos');
+      check('Carousel: a short 60 px swipe moves to the next item and back', pos0.startsWith('Item 1 ') && pos1.startsWith('Item 2 ') && pos2.startsWith('Item 1 '), `${pos0} -> ${pos1} -> ${pos2}`);
+      await page.click('.car__item.is-active .car__btn');
+      await page.waitForSelector('#lightbox[open]');
+      await page.waitForTimeout(900);
+      const sb = await page.locator('#lightbox-stage').boundingBox();
+      const cap0 = await page.textContent('#lightbox-cap');
+      await swipe(sb.x + sb.width / 2 + 40, sb.x + sb.width / 2 - 40, sb.y + sb.height / 2);
+      await page.waitForTimeout(1000);
+      const cap1 = await page.textContent('#lightbox-cap');
+      check('Full-screen view: swiping moves to the next item', /1 of/.test(cap0) && /2 of/.test(cap1), `${cap0} -> ${cap1}`);
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(400);
+
+      // Hero text stays after scrolling away and back.
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.goto(SITE);
+      await enter(page);
+      await page.waitForTimeout(1600);
+      for (let i = 0; i < 6; i++) { await page.mouse.wheel(0, 500); await page.waitForTimeout(200); }
+      for (let i = 0; i < 8; i++) { await page.mouse.wheel(0, -500); await page.waitForTimeout(200); }
+      await page.waitForTimeout(1200);
+      const hero = await page.evaluate(() => [...document.querySelectorAll('.hero__facts, .hero__venue, .hero__cta, .hero__seats')].map((e) => getComputedStyle(e).opacity));
+      check('Hero dates, venue and buttons are still visible after scrolling down and back up', hero.every((o) => o === '1'), hero.join(','));
+      await page.screenshot({ path: path.join(out, 'hero-after-scroll-1280.png') });
+
+      // Footer wordmark fully visible.
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(1600);
+      const mark = await page.evaluate(() => {
+        const span = document.querySelector('.footer__mark span');
+        const r = span.getBoundingClientRect();
+        const p = span.parentElement.getBoundingClientRect();
+        return { clip: getComputedStyle(span).clipPath, inside: r.top >= p.top - 1 && r.bottom <= p.bottom + 1 };
+      });
+      check('Footer "Kid\'s Happy Club" is not cut off', /inset\(-/.test(mark.clip) && mark.inside, JSON.stringify(mark));
+      await page.locator('.footer__mark').screenshot({ path: path.join(out, 'footer-mark-1280.png') });
+
+      // Phones, blocking and typed signature.
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.click('.hero__cta [data-open-register]');
+      await page.waitForSelector('.cat[data-cat="youth"] [data-choose]:not([disabled])');
+      await page.click('.cat[data-cat="youth"] [data-choose]');
+      await page.click('#reg-next');
+      await page.waitForTimeout(500);
+      const block1 = await page.evaluate(() => ({ blocked: !document.getElementById('step-blocked').hidden, focus: document.activeElement?.id, step: [...document.querySelectorAll('.step')].findIndex((x) => !x.hidden) }));
+      check('Empty required fields block "Next": warning shown, stays on step 1, focus on the first field', block1.blocked && block1.step === 0 && block1.focus === 'f-name', JSON.stringify(block1));
+      await page.fill('#f-name', 'Pema Dolkar');
+      await page.click('#reg-next');
+      await page.waitForTimeout(400);
+      check('Still blocked until the date of birth is filled', await page.evaluate(() => [...document.querySelectorAll('.step')].findIndex((x) => !x.hidden)) === 0 && await page.isVisible('#err-dob'));
+      await page.selectOption('#f-dob-d', '1'); await page.selectOption('#f-dob-m', '6'); await page.selectOption('#f-dob-y', '2012');
+      await page.click('#reg-next');
+      await page.fill('#f-parent', 'Dolma');
+      await page.fill('#f-address', 'McLeodganj');
+      await page.focus('#f-phone-1');
+      await page.keyboard.type('98a76-54');
+      const ph1 = await page.evaluate(() => ({ v: document.getElementById('f-phone-1').value, warn: document.getElementById('warn-phones').textContent }));
+      check('Phone field accepts digits only and warns about other characters', ph1.v === '987654' && /Only numbers/.test(ph1.warn), JSON.stringify(ph1));
+      await page.keyboard.type('321099');
+      const ph2 = await page.evaluate(() => ({ v: document.getElementById('f-phone-1').value, warn: document.getElementById('warn-phones').textContent }));
+      check('Phone field stops at 10 digits and warns', ph2.v === '9876543210' && /10 digits/.test(ph2.warn), JSON.stringify(ph2));
+      await page.click('#phone-add');
+      await page.fill('#f-phone-2', '12345');
+      await page.click('#reg-next');
+      await page.waitForTimeout(400);
+      check('A short phone number blocks "Next" with a 10-digit message', (await page.textContent('#err-phones')).includes('10-digit') && await page.evaluate(() => [...document.querySelectorAll('.step')].findIndex((x) => !x.hidden)) === 1);
+      await page.fill('#f-phone-2', '');
+      await page.click('#reg-next');
+      await page.click('label.choice:has(input[name="consent"][value="yes"])');
+      await page.click('label.choice:has(#f-agree)');
+      await page.click('#reg-next');
+      await page.waitForTimeout(400);
+      check('Missing signature blocks "Next"', (await page.textContent('#err-signature')).includes('type your name') && await page.evaluate(() => [...document.querySelectorAll('.step')].findIndex((x) => !x.hidden)) === 2);
+      await page.click('#sign-mode');
+      check('"Type your name instead" shows a name field and hides the drawing box', await page.isVisible('#f-sign-typed') && await page.isHidden('#sign-wrap'));
+      await page.fill('#f-sign-typed', 'Dolma Tsering');
+      await page.screenshot({ path: path.join(out, 'reg-typed-signature-1280.png') });
+      await page.click('#reg-next');
+      await page.waitForSelector('#pay-panel:not([hidden])');
+      // A dismissed file picker fires a bubbling "cancel" in Chrome: it must not close the view.
+      await page.evaluate(() => document.getElementById('f-shot').dispatchEvent(new Event('cancel', { bubbles: true })));
+      await page.waitForTimeout(900);
+      check('Dismissing the photo picker does not close or shrink the registration view', await page.evaluate(() => document.getElementById('register').open && !document.getElementById('register').style.clipPath));
+      await page.setInputFiles('#f-shot', shotPng);
+      await page.waitForSelector('#shot-preview:not([hidden])');
+      await page.waitForTimeout(600);
+      const lay = await page.evaluate(() => { const r = document.getElementById('register').getBoundingClientRect(); return { w: r.width, h: r.height, vw: innerWidth, vh: innerHeight }; });
+      check('After uploading the screenshot the view still fills the screen', lay.w === lay.vw && lay.h === lay.vh, JSON.stringify(lay));
+      await page.waitForTimeout(5200);
+      await page.click('#reg-submit');
+      await page.waitForSelector('#reg-done:not([hidden])', { timeout: 10000 });
+      const st = await api('/__state');
+      const row = st.youth[0] || [];
+      check('Typed signature stored in the Youth tab, with no signature image', row[st.headers.indexOf('Typed signature')] === 'Dolma Tsering' && row[st.headers.indexOf('Signature')] === '' && st.files.length === 1, JSON.stringify(row.slice(0, 4)));
+      check('Phones stored as 10 digits', row[st.headers.indexOf('Emergency contact number(s)')] === '9876543210');
+
+      // Music: renders, and loops without a seam (the end flows into the start).
+      const musicFile = (await readdir(path.join(dist, 'assets'))).find((n) => /^music-.*\.js$/.test(n));
+      const music = await page.evaluate(async (url) => {
+        const m = await import(url);
+        const buf = await m.renderMusicLoop();
+        const d = buf.getChannelData(0);
+        let step = 0;
+        for (let i = 1; i < d.length; i++) step = Math.max(step, Math.abs(d[i] - d[i - 1]));
+        let rms = 0;
+        for (let i = 0; i < d.length; i += 64) rms += d[i] * d[i];
+        return { seconds: buf.duration, seam: Math.abs(d[0] - d[d.length - 1]), maxStep: step, rms: Math.sqrt(rms / (d.length / 64)) };
+      }, `${SITE}assets/${musicFile}`);
+      check('Background music renders (32 s) and the loop point is seamless', musicFile && music.seconds > 30 && music.rms > 0.02 && music.seam <= music.maxStep * 1.01, JSON.stringify(music));
       done();
       await ctx.close();
     }

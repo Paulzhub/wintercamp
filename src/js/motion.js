@@ -55,7 +55,7 @@ export function initMotion() {
     reduced,
     stop() { lenis?.stop(); },
     start() { lenis?.start(); },
-    scrollTo(target, { focus = true } = {}) {
+    scrollTo(target, { focus = true, immediate = false } = {}) {
       const el = typeof target === 'string' ? document.querySelector(target) : target;
       if (!el) return;
       const top = el.id === 'home';
@@ -65,8 +65,15 @@ export function initMotion() {
         if (!f.hasAttribute('tabindex')) f.setAttribute('tabindex', '-1');
         f.focus({ preventScroll: true });
       };
-      if (lenis) {
-        lenis.scrollTo(top ? 0 : el, { offset: top ? 0 : -navH(), duration: 1.2, easing: inOutCubic, onComplete: done });
+      if (immediate) {
+        // Exact position, set directly; then tell the smooth-scroll library where we are.
+        const y = top ? 0 : Math.max(0, el.getBoundingClientRect().top + window.scrollY - navH());
+        window.scrollTo(0, y);
+        lenis?.scrollTo(y, { immediate: true, force: true });
+        ScrollTrigger.update();
+        done();
+      } else if (lenis) {
+        lenis.scrollTo(top ? 0 : el, { offset: top ? 0 : -navH(), duration: 1.2, easing: inOutCubic, force: true, onComplete: done });
       } else {
         window.scrollTo({ top: top ? 0 : el.getBoundingClientRect().top + window.scrollY - navH(), behavior: reduced() ? 'auto' : 'smooth' });
         setTimeout(done, reduced() ? 0 : 600);
@@ -139,9 +146,10 @@ export function initMotion() {
     if (reduced()) {
       gsap.from(mark, { opacity: 0, duration: 0.32, scrollTrigger: { trigger: mark, start: 'top 95%', once: true } });
     } else {
-      gsap.fromTo(mark, { clipPath: 'inset(100% 0% 0% 0%)', yPercent: 40 }, {
-        clipPath: 'inset(0% 0% 0% 0%)', yPercent: 0, ease: 'none',
-        scrollTrigger: { trigger: mark.parentElement, start: 'top 100%', end: 'bottom 85%', scrub: 0.6 },
+      // Ends with the clip opened past the glyph edges so no part of a letter is cut.
+      gsap.fromTo(mark, { clipPath: 'inset(100% -4% -4% -4%)', yPercent: 40 }, {
+        clipPath: 'inset(-20% -4% -4% -4%)', yPercent: 0, ease: 'none',
+        scrollTrigger: { trigger: mark.parentElement, start: 'top 100%', end: 'bottom 95%', scrub: 0.6 },
       });
     }
   }
@@ -161,10 +169,6 @@ export function initMotion() {
       gsap.to(word, {
         scale: 0.36, yPercent: -64, opacity: 0, ease: 'none',
         scrollTrigger: { trigger: '#home', start: 'top top', end: 'bottom 40%', scrub: 0.4 },
-      });
-      gsap.to('.hero__content > :not(.hero__h1)', {
-        y: -48, opacity: 0, ease: 'none',
-        scrollTrigger: { trigger: '#home', start: '20% top', end: 'bottom 30%', scrub: 0.4 },
       });
     }
   }

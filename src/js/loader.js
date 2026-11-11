@@ -1,11 +1,19 @@
 // Loading screen: ILLUMINATE lights up letter by letter with real loading progress
 // (fonts, 3D scene), capped at about 2.5 seconds; then "Enter with sound" or
 // "Enter silently", and light expands from the word into the hero.
-import { gsap, reduced } from './motion.js';
+import { gsap, ScrollTrigger, reduced } from './motion.js';
 import { $, $$ } from './i18n.js';
 
 const CAP_MS = 2500;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function deepLink() {
+  const id = decodeURIComponent(location.hash.slice(1));
+  if (!id || id === 'home' || id === 'register' || !/^[\w-]+$/.test(id)) return null;
+  const el = document.getElementById(id);
+  return el && el.matches('[data-section]') ? el : null;
+}
+if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 
 export function initLoader({ audio, motion, hero }) {
   const loader = $('#loader');
@@ -15,10 +23,23 @@ export function initLoader({ audio, motion, hero }) {
     motion.start();
     hero.rise();
     motion.heroIntro();
-    const h1 = $('.hero__h1');
-    if (h1) {
-      h1.setAttribute('tabindex', '-1');
-      h1.focus({ preventScroll: true });
+    // Opened or reloaded on a section (#gallery, #faq...): go straight back there.
+    const target = deepLink();
+    if (target) {
+      ScrollTrigger.refresh();
+      motion.scrollTo(target, { immediate: true });
+      // Images and fonts can still shift the layout for a moment: align again once settled.
+      [350, 1000].forEach((ms) => setTimeout(() => {
+        if (Math.abs(target.getBoundingClientRect().top - ($('#nav')?.offsetHeight || 64)) > 24 && location.hash === `#${target.id}`) {
+          motion.scrollTo(target, { immediate: true, focus: false });
+        }
+      }, ms));
+    } else {
+      const h1 = $('.hero__h1');
+      if (h1) {
+        h1.setAttribute('tabindex', '-1');
+        h1.focus({ preventScroll: true });
+      }
     }
     document.dispatchEvent(new Event('wc:ready'));
   };

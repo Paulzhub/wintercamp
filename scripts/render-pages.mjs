@@ -279,7 +279,9 @@ function registration(lang, t) {
     </div>
     <fieldset class="field field--group" id="f-phones" aria-describedby="err-phones">
       <legend class="field__label">${esc(f.phones)} ${req}</legend>
+      <p class="field__help" id="help-phones">${esc(f.phoneHelp)}</p>
       <div class="phones" id="phones-list"></div>
+      <p class="field__warn" id="warn-phones" role="status" aria-live="polite"></p>
       <button type="button" class="btn btn--ghost btn--sm" id="phone-add"><span class="btn__icon" aria-hidden="true">${icons.plus}</span><span class="btn__label">${esc(f.addPhone)}</span></button>
       ${err('phones')}
     </fieldset>
@@ -321,11 +323,16 @@ function registration(lang, t) {
         <button type="button" class="tip-btn" data-tip="${esc(f.signTip)}" aria-label="${esc(f.signTip)}">${icons.help}</button>
       </div>
       <div class="sign" id="sign-wrap">
-        <canvas class="sign__canvas" id="f-sign" width="640" height="240" role="img" aria-label="${esc(f.signCanvas)}" aria-describedby="sign-note err-signature"></canvas>
+        <canvas class="sign__canvas" id="f-sign" width="640" height="240" role="img" aria-label="${esc(f.signCanvas)}" aria-describedby="err-signature"></canvas>
         <span class="sign__prompt" id="sign-prompt" aria-hidden="true">${esc(f.signHere)}</span>
         <button type="button" class="btn btn--ghost btn--sm sign__clear" id="f-sign-clear"><span class="btn__label">${esc(f.signClear)}</span></button>
       </div>
-      <p class="field__help" id="sign-note">${esc(f.signNote.replace(phone, '').trim())} <a class="link" href="${tel}">${phone}</a></p>
+      <div class="sign-typed" id="sign-typed" hidden>
+        <label class="field__label" for="f-sign-typed">${esc(f.signTyped)} ${req}</label>
+        <p class="field__help" id="help-sign-typed">${esc(f.signTypedHelp)}</p>
+        <input class="input sign-typed__input" type="text" id="f-sign-typed" name="signatureTyped" maxlength="150" autocomplete="name" aria-describedby="help-sign-typed err-signature">
+      </div>
+      <p class="sign__switch"><button type="button" class="link" id="sign-mode" aria-controls="sign-wrap sign-typed" data-type="${esc(f.signTypeToggle)}" data-draw="${esc(f.signDrawToggle)}">${esc(f.signTypeToggle)}</button></p>
       ${err('signature')}
     </div>
     <div class="field">
@@ -377,6 +384,7 @@ function registration(lang, t) {
   </fieldset>
 
   <div class="notice notice--error" id="send-error" role="alert" hidden></div>
+  <p class="form__blocked" id="step-blocked" hidden>${esc(r.blocked)}</p>
   <div class="form__nav">
     <button type="button" class="btn btn--ghost" id="reg-back" hidden><span class="btn__label">${esc(r.back)}</span></button>
     <button type="button" class="btn btn--red" id="reg-next"><span class="btn__label">${esc(r.next)}</span></button>
@@ -394,7 +402,12 @@ function registration(lang, t) {
     <div><dt>${esc(r.done.dates)}</dt><dd id="done-dates"></dd></div>
     <div><dt>${esc(r.done.venue)}</dt><dd>${esc(r.done.venueValue)}</dd></div>
   </dl>
-  <button type="button" class="btn btn--dark" data-close-register><span class="btn__label">${esc(r.done.close)}</span></button>
+  <div class="done__share">
+    <button type="button" class="btn btn--red" id="done-save"><span class="btn__icon" aria-hidden="true">${icons.download}</span><span class="btn__label">${esc(r.done.save)}</span></button>
+    <button type="button" class="btn btn--dark" id="done-share" hidden><span class="btn__icon" aria-hidden="true">${icons.share}</span><span class="btn__label">${esc(r.done.share)}</span></button>
+  </div>
+  <p class="sr-only" id="done-status" role="status" aria-live="polite"></p>
+  <button type="button" class="btn btn--ghost" data-close-register><span class="btn__label">${esc(r.done.close)}</span></button>
 </section>
 
 <section class="done done--last" id="reg-last" hidden tabindex="-1" aria-labelledby="last-title">
@@ -409,17 +422,59 @@ function registration(lang, t) {
 </dialog>`;
 }
 
+// The same menu bar on every page. On the home page the links jump within the page
+// and the Register buttons open the registration view; elsewhere they lead to the
+// home page sections (/#gallery, /#register).
+function siteHeader(lang, t, pathKey) {
+  const onHome = pathKey === 'home';
+  const pre = onHome ? '' : urls[lang].home;
+  const navLinks = [
+    ['home', t.nav.home],
+    ['activities', t.nav.activities],
+    ['gallery', t.nav.gallery],
+    ['faq', t.nav.faq],
+    ['contact', t.nav.contact],
+  ].map(([id, label]) => [`${pre}#${id}`, label]);
+  const registerBtn = (cls, label, extra = '') => onHome
+    ? `<button type="button" class="${cls}" data-open-register ${extra}><span class="btn__label">${esc(label)}</span></button>`
+    : `<a class="${cls}" href="${pre}#register" ${extra}><span class="btn__label">${esc(label)}</span></a>`;
+  return `<header class="nav${onHome ? '' : ' is-stuck nav--sub'}" id="nav">
+  <a class="nav__brand" href="${pre}#home" aria-label="Illuminate, ${esc(config.camp.name)}: ${esc(t.nav.home)}"><span class="nav__wordmark${onHome ? '' : ' is-shown'}" lang="en" aria-hidden="true">${brandWord}</span></a>
+  <nav class="nav__nav" aria-label="${esc(t.nav.label)}">
+    <ul class="nav__links">
+      ${navLinks.map(([href, label]) => `<li><a class="nav__link" href="${href}" data-text="${esc(label)}"><span>${esc(label)}</span></a></li>`).join('')}
+    </ul>
+  </nav>
+  <div class="nav__actions">
+    ${langToggle(lang, t, pathKey)}
+    <button type="button" class="icon-btn sound" data-sound-toggle aria-pressed="false" aria-label="${esc(t.common.soundTip)}" data-tip="${esc(t.common.soundTip)}"><span class="sound__on" aria-hidden="true">${icons.soundOn}</span><span class="sound__off" aria-hidden="true">${icons.soundOff}</span></button>
+    ${registerBtn('btn btn--red btn--sm nav__register', t.common.register, `data-magnetic data-cursor="${esc(t.common.register)}"`)}
+    <button type="button" class="icon-btn nav__burger" id="menu-open" aria-haspopup="dialog" aria-controls="menu" aria-label="${esc(t.common.menuOpen)}"><span class="burger" aria-hidden="true"><span></span><span></span></span></button>
+  </div>
+</header>
+
+<dialog class="menu" id="menu" aria-label="${esc(t.common.menu)}">
+  <div class="menu__bar">
+    <span class="nav__wordmark is-shown" lang="en" aria-hidden="true">${brandWord}</span>
+    <button type="button" class="icon-btn" id="menu-close" aria-label="${esc(t.common.menuClose)}">${icons.close}</button>
+  </div>
+  <nav aria-label="${esc(t.common.menu)}">
+    <ul class="menu__links">
+      ${navLinks.map(([href, label]) => `<li><a class="menu__link" href="${href}">${esc(label)}</a></li>`).join('')}
+    </ul>
+  </nav>
+  <div class="menu__foot">
+    ${registerBtn('btn btn--red', t.common.registerNow)}
+    ${langToggle(lang, t, pathKey)}
+    <a class="link" href="${tel}">${phone}</a>
+  </div>
+</dialog>`;
+}
+
 function homePage(lang) {
   const t = strings[lang];
   const a = t.activities;
   const letters = [...brandWord].map((c, i) => `<span class="ltr${i === 0 ? ' ltr--accent' : ''}" aria-hidden="true">${c}</span>`).join('');
-  const navLinks = [
-    ['#home', t.nav.home],
-    ['#activities', t.nav.activities],
-    ['#gallery', t.nav.gallery],
-    ['#faq', t.nav.faq],
-    ['#contact', t.nav.contact],
-  ];
   const card = (key, extra = '') => `<li class="card ${extra}" data-reveal>
   <article class="card__in" data-tilt>
     ${key === 'picnic' ? '<div class="card__body">' : ''}
@@ -454,37 +509,7 @@ ${head({ lang, t, title: t.meta.title, description: t.meta.description, pathKey:
   </div>
 </div>
 
-<header class="nav" id="nav">
-  <a class="nav__brand" href="#home" aria-label="Illuminate, ${esc(config.camp.name)}: ${esc(t.nav.home)}"><span class="nav__wordmark" lang="en" aria-hidden="true">${brandWord}</span></a>
-  <nav class="nav__nav" aria-label="${esc(t.nav.label)}">
-    <ul class="nav__links">
-      ${navLinks.map(([href, label]) => `<li><a class="nav__link" href="${href}" data-text="${esc(label)}"><span>${esc(label)}</span></a></li>`).join('')}
-    </ul>
-  </nav>
-  <div class="nav__actions">
-    ${langToggle(lang, t, 'home')}
-    <button type="button" class="icon-btn sound" data-sound-toggle aria-pressed="false" aria-label="${esc(t.common.soundTip)}" data-tip="${esc(t.common.soundTip)}"><span class="sound__on" aria-hidden="true">${icons.soundOn}</span><span class="sound__off" aria-hidden="true">${icons.soundOff}</span></button>
-    <button type="button" class="btn btn--red btn--sm nav__register" data-open-register data-magnetic data-cursor="${esc(t.common.register)}"><span class="btn__label">${esc(t.common.register)}</span></button>
-    <button type="button" class="icon-btn nav__burger" id="menu-open" aria-haspopup="dialog" aria-controls="menu" aria-label="${esc(t.common.menuOpen)}"><span class="burger" aria-hidden="true"><span></span><span></span></span></button>
-  </div>
-</header>
-
-<dialog class="menu" id="menu" aria-label="${esc(t.common.menu)}">
-  <div class="menu__bar">
-    <span class="nav__wordmark is-shown" lang="en" aria-hidden="true">${brandWord}</span>
-    <button type="button" class="icon-btn" id="menu-close" aria-label="${esc(t.common.menuClose)}">${icons.close}</button>
-  </div>
-  <nav aria-label="${esc(t.common.menu)}">
-    <ul class="menu__links">
-      ${navLinks.map(([href, label]) => `<li><a class="menu__link" href="${href}">${esc(label)}</a></li>`).join('')}
-    </ul>
-  </nav>
-  <div class="menu__foot">
-    <button type="button" class="btn btn--red" data-open-register><span class="btn__label">${esc(t.common.registerNow)}</span></button>
-    ${langToggle(lang, t, 'home')}
-    <a class="link" href="${tel}">${phone}</a>
-  </div>
-</dialog>
+${siteHeader(lang, t, 'home')}
 
 <main id="main" tabindex="-1">
 
@@ -641,10 +666,7 @@ ${head({ lang, t, title: p.metaTitle, description: p.metaDescription, pathKey: '
 </head>
 <body>
 <a class="skip" href="#main">${esc(t.common.skip)}</a>
-<header class="nav nav--plain is-stuck">
-  <a class="nav__brand" href="${urls[lang].home}" aria-label="Illuminate: ${esc(p.back)}"><span class="nav__wordmark is-shown" lang="en" aria-hidden="true">${brandWord}</span></a>
-  <div class="nav__actions">${langToggle(lang, t, 'privacy')}</div>
-</header>
+${siteHeader(lang, t, 'privacy')}
 <main id="main" class="section light plain" tabindex="-1">
   <div class="wrap wrap--narrow prose">
     <p><a class="link" href="${urls[lang].home}">← ${esc(p.back)}</a></p>
@@ -657,6 +679,7 @@ ${head({ lang, t, title: p.metaTitle, description: p.metaDescription, pathKey: '
 <footer class="footer dark footer--plain">
   <p class="footer__line wrap">${esc(t.footer.line)} · <span lang="en">${esc(config.camp.organiser)}</span></p>
 </footer>
+<script type="application/json" id="i18n">${JSON.stringify({ lang, common: t.common, phone, tel }).replace(/</g, '\\u003c')}</script>
 </body>
 </html>
 `;
