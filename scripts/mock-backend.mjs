@@ -1,0 +1,39 @@
+// Local stand-in for the Apps Script web app, running the real apps-script/Code.gs.
+//   npm run mock-backend            -> http://127.0.0.1:8787/exec
+// Then build or run the site with WC_APPS_SCRIPT_URL=http://127.0.0.1:8787/exec
+// Test helpers: POST /__seed {"category":"kids","count":29}, POST /__reset, GET /__state
+import http from 'node:http';
+import { createSandbox } from './gas-sandbox.mjs';
+
+export function startMockBackend({ port = Number(process.env.MOCK_PORT || 8787), delay = Number(process.env.MOCK_DELAY || 0) } = {}) {
+  let gas = createSandbox();
+  const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' };
+  const send = (res, code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', ...cors }); res.end(JSON.stringify(obj)); };
+  const server = http.createServer((req, res) => {
+    const url = new URL(req.url, 'http://x');
+    if (req.method === 'OPTIONS') { res.writeHead(204, cors); res.end(); return; }
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => setTimeout(() => {
+      try {
+        if (url.pathname === '/exec' && req.method === 'GET') return send(res, 200, gas.doGet(Object.fromEntries(url.searchParams)));
+        if (url.pathname === '/exec' && req.method === 'POST') { gas.resetRate(); return send(res, 200, gas.doPost(body)); }
+        if (url.pathname === '/__seed') { const { category, count } = JSON.parse(body); gas.seed(category, count); return send(res, 200, gas.doGet({ action: 'seats' })); }
+        if (url.pathname === '/__reset') { gas = createSandbox(); return send(res, 200, { ok: true }); }
+        if (url.pathname === '/__state') {
+          const rows = (n) => (gas.sheet(n)?.rows || []).slice(1);
+          return send(res, 200, { main: rows('Registrations'), overflow: rows('Paid, no seat'), files: gas.files });
+        }
+        send(res, 404, { ok: false });
+      } catch (err) {
+        console.error(err);
+        send(res, 500, { ok: false, error: 'server' });
+      }
+    }, url.pathname === '/exec' ? delay : 0));
+  });
+  return new Promise((resolve) => server.listen(port, '127.0.0.1', () => resolve({ server, url: `http://127.0.0.1:${port}/exec` })));
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  startMockBackend().then(({ url }) => console.log(`Mock Apps Script backend: ${url}`));
+}

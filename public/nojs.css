@@ -1,0 +1,11 @@
+/* Loaded only when JavaScript is off: show everything, hide what needs scripts. */
+.loader, .menu, .nav__burger, [data-sound-toggle], [data-open-register], .car__controls, .lightbox, .reg, .cursor { display: none !important; }
+.nav__wordmark { opacity: 1; transform: none; }
+.nav { background: rgb(28 28 28 / 0.96); }
+.nav__nav { display: block; }
+@media (max-width: 1023px) { .nav__nav { display: none; } }
+.car__track { height: auto; perspective: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; width: min(100% - 48px, 1200px); margin: 0 auto; }
+.car__item { position: relative; left: auto; width: auto; height: auto; margin: 0; aspect-ratio: 4 / 5; }
+.car__caption { opacity: 1; transform: none; bottom: 16px; }
+.car__media.skeleton::after { display: none; }
+.qa__a { display: block; }
