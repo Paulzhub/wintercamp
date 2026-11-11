@@ -60,7 +60,7 @@ Opens full screen from REGISTER NOW and the menu button.
    - Any special dietary requirements or allergies we need to be aware of?
    - The consent statement from the plan, word for word, followed by a YES / NO radio group
    - Required checkbox: "I have read and understood the above and am happy for my child to be involved in Winter Camp 2027."
-   - Signed: a canvas the visitor draws on by finger, stylus or mouse, showing the prompt "Sign here" until they start, with a Clear button and a "Type your name instead" alternative
+   - Signed: a canvas the visitor draws on by finger, stylus or mouse, showing the prompt "Sign here" until they start, with a Clear button. Hand-drawn only: do not add a typed-name alternative. Put a short note beside it telling anyone who cannot draw a signature to call +91-8219012669
    - Date of Signing (today's date by default)
 5. Validate inline with clear messages.
 6. Payment step. Check seats again before showing it; if the category is now full, show the seats-full message instead. Otherwise show: ₹500 by UPI via the QR image at `assets/payment/upi-qr.jpg`, the UPI ID `achuisr1985.27-1@okhdfcbank` with a copy button, or phone number 8219012669; on phones add a button that opens the UPI app with the amount filled in. Show the payee name "Achui Sareo" as text and tell the visitor to check that name in their UPI app. The QR image stays in the repo; do not load it from Google Drive.
@@ -80,7 +80,7 @@ Implement every effect in the plan's effects map in the place it names: loading 
 ## Standards the site must meet
 
 - **GEO, AEO, AIO:** key facts as plain text in the delivered HTML; semantic headings and landmarks; JSON-LD for two `Event` items, `Organization` and `FAQPage`; `robots.txt` that allows search and AI crawlers; `sitemap.xml`; `llms.txt`; canonical, `hreflang`, meta description, Open Graph image; descriptive alt text.
-- **Accessibility:** WCAG 2.2 AA. Keyboard access throughout, visible focus, skip link, focus management in overlays, labelled fields with announced errors, signature alternative, carousel controls, reduced motion, 48px touch targets, correct `lang` attributes.
+- **Accessibility:** WCAG 2.2 AA. Keyboard access throughout, visible focus, skip link, focus management in overlays, labelled fields with announced errors (the hand-drawn signature is an accepted exception), carousel controls, reduced motion, 48px touch targets, correct `lang` attributes.
 - **Security and privacy:** HTTPS; strict Content Security Policy; no third-party scripts or trackers; no secrets in the repo; server-side validation; honeypot and rate limiting; output escaping; nothing personal left in browser storage after submission; a privacy notice page; Dependabot and code scanning enabled.
 - **Performance:** first load under about 1.5 MB on mobile and interactive within 3 seconds on 4G; pixel ratio capped at 2; 3D paused when off screen; lazy loaded gallery and audio; fallbacks for no WebGL, no `backdrop-filter` and no JavaScript.
 
