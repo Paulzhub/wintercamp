@@ -85,7 +85,7 @@ test('the 30-seat limit holds; later paid submissions go to "Paid, no seat"', ()
   const overflow = g.sheet('Paid, no seat').rows;
   assert.equal(overflow.length, 2);
   assert.equal(overflow[1][g.context.COL.Status], 'Paid, no seat');
-  assert.match(overflow[1][g.context.COL['Payment screenshot']], /drive\.google\.com/);
+  assert.match(overflow[1][g.context.COL['Payment screenshot']], /^https?:\/\/drive\.google\.com(?:\/|$)/);
   assert.equal(g.sheet('Registrations').rows.length, 31);
   assert.equal(g.doGet({ action: 'seats' }).seats.youth.left, 30);
 });
