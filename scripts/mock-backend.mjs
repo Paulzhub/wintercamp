@@ -22,7 +22,8 @@ export function startMockBackend({ port = Number(process.env.MOCK_PORT || 8787),
         if (url.pathname === '/__reset') { gas = createSandbox(); return send(res, 200, { ok: true }); }
         if (url.pathname === '/__state') {
           const rows = (n) => (gas.sheet(n)?.rows || []).slice(1);
-          return send(res, 200, { main: rows('Registrations'), overflow: rows('Paid, no seat'), files: gas.files });
+          const headers = gas.context.HEADERS;
+          return send(res, 200, { headers, kids: rows('Kids registrations'), youth: rows('Youth registrations'), main: [...rows('Kids registrations'), ...rows('Youth registrations')], overflow: rows('Paid, no seat'), files: gas.files });
         }
         send(res, 404, { ok: false });
       } catch (err) {

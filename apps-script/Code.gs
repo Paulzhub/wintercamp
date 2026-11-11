@@ -7,6 +7,7 @@
  *  - saves signatures and payment screenshots to private Drive folders,
  *    one set per category, and links them from the sheet row
  *  - uses a lock so the 30-seat limit can never be exceeded
+ *  - keeps Kids and Youth registrations in separate tabs
  *  - writes paid submissions that arrive after the last seat to "Paid, no seat"
  *  - neutralises text that could run as a spreadsheet formula
  * Uploads are never stored in GitHub. Deployment steps: apps-script/README.md.
@@ -20,13 +21,13 @@ var CONFIG = {
   ages: { kids: [0, 9], youth: [10, 18] }, // inclusive, on the first day of that camp
   labels: { kids: 'Kids', youth: 'Youth' },
   rootFolder: 'Winter Camp 2027',
-  sheets: { main: 'Registrations', overflow: 'Paid, no seat' },
+  sheets: { kids: 'Kids registrations', youth: 'Youth registrations', overflow: 'Paid, no seat', old: 'Registrations' },
   maxImageBytes: 5 * 1024 * 1024,
   maxBodyChars: 16 * 1024 * 1024,
   minFillMs: 5000, // four steps in under 5 seconds is a bot
   maxPerMinute: 30, // simple rate limit across all visitors
   timeZone: 'Asia/Kolkata',
-  max: { name: 100, parent: 150, address: 400, medical: 1000, dietary: 1000, ref: 64 },
+  max: { name: 100, parent: 150, address: 400, medical: 1000, dietary: 1000, ref: 64, signatureTyped: 150 },
 };
 
 var HEADERS = [
@@ -34,7 +35,7 @@ var HEADERS = [
   "Parent/Guardian's Name(s)", 'Address', 'Emergency contact number(s)',
   'Medical conditions or concerns', 'Dietary requirements or allergies',
   'Medical emergency consent', 'Agreed to take part', 'Date of signing',
-  'Signature', 'Payment screenshot', 'UPI transaction reference', 'Language', 'Status',
+  'Signature', 'Typed signature', 'Payment screenshot', 'UPI transaction reference', 'Language', 'Status',
 ];
 var COL = {};
 HEADERS.forEach(function (h, i) { COL[h] = i; });
@@ -43,7 +44,10 @@ HEADERS.forEach(function (h, i) { COL[h] = i; });
 
 function doGet(e) {
   var action = e && e.parameter && e.parameter.action;
-  if (action === 'seats') return json_({ ok: true, seats: seats_() });
+  if (action === 'seats') {
+    migrateOldTab_();
+    return json_({ ok: true, seats: seats_() });
+  }
   return json_({ ok: true, service: 'Winter Camp 2027 registration' });
 }
 
@@ -66,13 +70,51 @@ function doPost(e) {
 
 /** Run once from the editor to create the tabs and folders and grant permissions. */
 function setup() {
-  sheet_(CONFIG.sheets.main);
+  sheet_(CONFIG.sheets.kids);
+  sheet_(CONFIG.sheets.youth);
   sheet_(CONFIG.sheets.overflow);
+  migrateOldTab_();
   ['kids', 'youth'].forEach(function (cat) {
     folder_([CONFIG.rootFolder, CONFIG.labels[cat], 'Signatures']);
     folder_([CONFIG.rootFolder, CONFIG.labels[cat], 'Payment screenshots']);
   });
   console.log(JSON.stringify(seats_()));
+}
+
+/**
+ * Earlier versions kept both groups in one "Registrations" tab. Move any rows
+ * found there into the Kids and Youth tabs (adding the new "Typed signature"
+ * column), then rename the old tab so it is clearly no longer used.
+ */
+function migrateOldTab_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss.getSheetByName(CONFIG.sheets.old)) return;
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) return;
+  try {
+    moveOldRows_(ss);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function moveOldRows_(ss) {
+  var old = ss.getSheetByName(CONFIG.sheets.old);
+  if (!old) return;
+  var last = old.getLastRow();
+  var oldHeaders = old.getRange(1, 1, 1, Math.max(1, old.getLastColumn())).getValues()[0].map(String);
+  if (last > 1) {
+    var rows = old.getRange(2, 1, last - 1, oldHeaders.length).getValues();
+    rows.forEach(function (r) {
+      var row = HEADERS.map(function (h) {
+        var i = oldHeaders.indexOf(h);
+        return i < 0 ? '' : r[i];
+      });
+      var cat = text_(row[COL.Category]) === CONFIG.labels.youth ? 'youth' : 'kids';
+      sheet_(CONFIG.sheets[cat]).appendRow(row.map(function (v) { return v instanceof Date ? text_(v) : safe_(v); }));
+    });
+  }
+  old.setName(CONFIG.sheets.old + ' (old, moved ' + today_(0) + ')');
 }
 
 // ---------- Registration ----------
@@ -83,6 +125,7 @@ function register_(d) {
   if (d.website) return validationError_([{ field: 'form', code: 'server' }]);
   if (typeof d.elapsedMs !== 'number' || d.elapsedMs < CONFIG.minFillMs) return validationError_([{ field: 'form', code: 'server' }]);
   if (!rateOk_()) return { ok: false, error: 'busy' };
+  migrateOldTab_();
 
   var v = validate_(d);
   if (v.errors.length) return validationError_(v.errors);
@@ -90,8 +133,14 @@ function register_(d) {
 
   var shot = decodeImage_(d.screenshot && d.screenshot.data, ['image/jpeg', 'image/png', 'image/webp']);
   if (!shot) return validationError_([{ field: 'shot', code: d.screenshot ? 'shotType' : 'shot' }]);
-  var sig = decodeImage_(d.signature, ['image/png']);
-  if (!sig) return validationError_([{ field: 'signature', code: 'signature' }]);
+  // Signature: drawn (PNG) or, for anyone who cannot draw one, their typed full name.
+  var sig = null;
+  if (d.signature) {
+    sig = decodeImage_(d.signature, ['image/png']);
+    if (!sig) return validationError_([{ field: 'signature', code: 'signature' }]);
+  } else if (!c.signatureTyped) {
+    return validationError_([{ field: 'signature', code: 'signature' }]);
+  }
 
   var prior = findSubmission_(c.submissionId);
   if (prior) return prior;
@@ -108,7 +157,7 @@ function register_(d) {
     var taken = countCategory_(c.category);
     var full = taken >= CONFIG.seats[c.category];
     var row = row_(c, files, full ? 'Paid, no seat' : 'Seat given');
-    sheet_(full ? CONFIG.sheets.overflow : CONFIG.sheets.main).appendRow(row);
+    sheet_(full ? CONFIG.sheets.overflow : CONFIG.sheets[c.category]).appendRow(row);
     SpreadsheetApp.flush();
     if (full) return { ok: true, status: 'last_seat' };
     return { ok: true, status: 'registered', seatsLeft: CONFIG.seats[c.category] - taken - 1 };
@@ -191,8 +240,20 @@ function validate_(d) {
   }
 
   var phones = Array.isArray(d.phones) ? d.phones.slice(0, 4) : [];
-  c.phones = phones.map(function (p) { return String(p || '').replace(/[\s\-().]/g, ''); }).filter(Boolean);
-  if (!c.phones.length || !c.phones.every(function (p) { return /^\+?\d{7,15}$/.test(p); })) add('phones', 'phone');
+  // 10-digit numbers only (a leading +91 or 0 is dropped first).
+  c.phones = phones.map(function (p) {
+    var raw = String(p || '');
+    var digits = raw.replace(/\D/g, '');
+    if (digits.length === 12 && /^\s*\+?\s*91/.test(raw)) digits = digits.slice(2);
+    else if (digits.length === 11 && digits.charAt(0) === '0') digits = digits.slice(1);
+    return /[^\d\s\-().+]/.test(raw) ? 'x' : digits;
+  }).filter(Boolean);
+  if (!c.phones.length || !c.phones.every(function (p) { return /^\d{10}$/.test(p); })) add('phones', 'phone');
+
+  var typed = clean_(d.signatureTyped, CONFIG.max.signatureTyped);
+  if (typed === null) add('signature', 'tooLong');
+  else if (typed && typed.length < 2) add('signature', 'signTyped');
+  c.signatureTyped = typed || '';
 
   c.consent = d.consent === 'yes' || d.consent === 'no' ? d.consent : null;
   if (!c.consent) add('consent', 'consent');
@@ -251,12 +312,12 @@ function saveFiles_(c, shot, sig) {
   var stamp = Utilities.formatDate(new Date(), CONFIG.timeZone, 'yyyy-MM-dd HHmmss');
   var who = c.name.replace(/[^\p{L}\p{M}\p{N} ._-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 60) || 'child';
   var base = label + ' - ' + who + ' - ' + stamp;
-  var sigFile = folder_([CONFIG.rootFolder, label, 'Signatures'])
-    .createFile(Utilities.newBlob(sig.bytes, sig.mime, base + ' - signature.' + sig.ext));
+  var sigFile = sig ? folder_([CONFIG.rootFolder, label, 'Signatures'])
+    .createFile(Utilities.newBlob(sig.bytes, sig.mime, base + ' - signature.' + sig.ext)) : null;
   var shotFile = folder_([CONFIG.rootFolder, label, 'Payment screenshots'])
     .createFile(Utilities.newBlob(shot.bytes, shot.mime, base + ' - payment.' + shot.ext));
   // Files stay private to the owner (Drive's default); never shared by link.
-  return { signature: sigFile.getUrl(), screenshot: shotFile.getUrl() };
+  return { signature: sigFile ? sigFile.getUrl() : '', screenshot: shotFile.getUrl() };
 }
 
 // ---------- Sheet ----------
@@ -286,16 +347,15 @@ function text_(v) {
   return String(v === null || v === undefined ? '' : v).replace(/^'/, '');
 }
 
+/** Seats taken = filled rows in that group's tab. */
 function countCategory_(cat) {
-  var label = CONFIG.labels[cat];
-  return rows_(CONFIG.sheets.main).filter(function (r) { return text_(r[COL.Category]) === label; }).length;
+  return rows_(CONFIG.sheets[cat]).filter(function (r) { return text_(r[COL.Name]) !== ''; }).length;
 }
 
 function seats_() {
   var out = {};
-  var rows = rows_(CONFIG.sheets.main);
   ['kids', 'youth'].forEach(function (cat) {
-    var taken = rows.filter(function (r) { return text_(r[COL.Category]) === CONFIG.labels[cat]; }).length;
+    var taken = countCategory_(cat);
     out[cat] = { left: Math.max(0, CONFIG.seats[cat] - taken), total: CONFIG.seats[cat] };
   });
   return out;
@@ -303,7 +363,10 @@ function seats_() {
 
 function findSubmission_(id) {
   var col = COL['Submission ID'];
-  if (rows_(CONFIG.sheets.main).some(function (r) { return text_(r[col]) === id; })) return { ok: true, status: 'registered' };
+  var registered = ['kids', 'youth'].some(function (cat) {
+    return rows_(CONFIG.sheets[cat]).some(function (r) { return text_(r[col]) === id; });
+  });
+  if (registered) return { ok: true, status: 'registered' };
   if (rows_(CONFIG.sheets.overflow).some(function (r) { return text_(r[col]) === id; })) return { ok: true, status: 'last_seat' };
   return null;
 }
@@ -313,9 +376,8 @@ function norm_(s) {
 }
 
 function isDuplicate_(c) {
-  var label = CONFIG.labels[c.category];
-  return rows_(CONFIG.sheets.main).some(function (r) {
-    return text_(r[COL.Category]) === label && norm_(text_(r[COL.Name])) === norm_(c.name) && text_(r[COL['Date of birth']]) === c.dob;
+  return rows_(CONFIG.sheets[c.category]).some(function (r) {
+    return norm_(text_(r[COL.Name])) === norm_(c.name) && text_(r[COL['Date of birth']]) === c.dob;
   });
 }
 
@@ -342,6 +404,7 @@ function row_(c, files, status) {
   r[COL['Agreed to take part']] = 'Yes';
   r[COL['Date of signing']] = c.signDate;
   r[COL.Signature] = files.signature;
+  r[COL['Typed signature']] = files.signature ? '' : c.signatureTyped;
   r[COL['Payment screenshot']] = files.screenshot;
   r[COL['UPI transaction reference']] = c.paymentRef;
   r[COL.Language] = c.lang === 'bo' ? 'Tibetan' : 'English';

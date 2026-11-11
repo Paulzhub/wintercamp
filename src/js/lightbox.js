@@ -28,20 +28,52 @@ export function initLightbox({ items, onIndex, audio }) {
       el = document.createElement('img');
       el.src = it.dataset.full;
       el.alt = alt;
+      el.draggable = false;
       el.width = Number(it.dataset.w) || 1600;
       el.height = Number(it.dataset.h) || 1200;
     }
     return { el, caption: caption || alt };
   }
 
-  function show(i) {
+  // dir: 1 = next, -1 = previous, 0 = no slide (opening). Moves take 0.7 s, easing in and out.
+  let busy = false;
+  function show(i, dir = 0) {
+    if (busy) return;
     index = (i + items.length) % items.length;
     stage.querySelector('video')?.pause();
     const { el, caption } = media(index);
-    stage.replaceChildren(el);
-    cap.textContent = `${caption} · ${fill(T.gallery.position, { n: index + 1, total: items.length })}`;
-    onIndex(index);
+    const swap = () => {
+      stage.replaceChildren(el);
+      cap.textContent = `${caption} · ${fill(T.gallery.position, { n: index + 1, total: items.length })}`;
+      onIndex(index);
+    };
+    if (!dir || reduced()) { swap(); return; }
+    busy = true;
+    const w = Math.min(window.innerWidth, 900) * 0.6;
+    gsap.timeline({ onComplete: () => { busy = false; } })
+      .to(stage, { x: -dir * w, opacity: 0, duration: 0.35, ease: 'std' })
+      .add(swap)
+      .fromTo(stage, { x: dir * w, opacity: 0 }, { x: 0, opacity: 1, duration: 0.35, ease: 'std', clearProps: 'transform,opacity' });
   }
+
+  // Swipe left or right on the photo or video (finger, pen or mouse).
+  let swipe = null;
+  stage.addEventListener('pointerdown', (e) => {
+    if (e.button > 0) return;
+    swipe = { x: e.clientX, y: e.clientY, t: performance.now() };
+  });
+  const endSwipe = (e) => {
+    if (!swipe) return;
+    const dx = e.clientX - swipe.x;
+    const dy = e.clientY - swipe.y;
+    const fast = Math.abs(dx) / Math.max(1, performance.now() - swipe.t) > 0.35;
+    swipe = null;
+    if (Math.abs(dx) < Math.abs(dy) || (Math.abs(dx) < 40 && !(fast && Math.abs(dx) > 16))) return;
+    show(index + (dx < 0 ? 1 : -1), dx < 0 ? 1 : -1);
+    audio.play('whoosh');
+  };
+  stage.addEventListener('pointerup', endSwipe);
+  stage.addEventListener('pointercancel', () => { swipe = null; });
 
   function open(i, trigger) {
     const thumb = items[i].querySelector('.car__media img');
@@ -54,7 +86,10 @@ export function initLightbox({ items, onIndex, audio }) {
     audio.play('expand');
     if (document.startViewTransition && !reduced() && thumb) {
       thumb.style.setProperty('view-transition-name', 'wc-media');
-      document.startViewTransition(doOpen);
+      const vt = document.startViewTransition(doOpen);
+      // A transition can be skipped (e.g. the page is hidden); the lightbox still opens.
+      vt.ready.catch(() => {});
+      vt.finished.catch(() => {});
     } else {
       doOpen();
       if (!reduced()) gsap.fromTo(box, { opacity: 0 }, { opacity: 1, duration: 0.48, clearProps: 'opacity' });
@@ -68,12 +103,12 @@ export function initLightbox({ items, onIndex, audio }) {
   }
 
   $('#lightbox-close').addEventListener('click', close);
-  $('#lightbox-prev').addEventListener('click', () => { show(index - 1); audio.play('whoosh'); });
-  $('#lightbox-next').addEventListener('click', () => { show(index + 1); audio.play('whoosh'); });
+  $('#lightbox-prev').addEventListener('click', () => { show(index - 1, -1); audio.play('whoosh'); });
+  $('#lightbox-next').addEventListener('click', () => { show(index + 1, 1); audio.play('whoosh'); });
   box.addEventListener('keydown', (e) => {
     if (e.target.closest('video') && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) return;
-    if (e.key === 'ArrowLeft') { e.preventDefault(); show(index - 1); }
-    if (e.key === 'ArrowRight') { e.preventDefault(); show(index + 1); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); show(index - 1, -1); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); show(index + 1, 1); }
   });
   box.addEventListener('close', () => { stage.querySelector('video')?.pause(); stage.replaceChildren(); });
   box.addEventListener('click', (e) => { if (e.target === box) close(); });

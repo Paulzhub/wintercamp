@@ -42,4 +42,4 @@ export function dobProblem(dob, category, cats, today = todayIso()) {
 }
 
 export const normPhone = (p) => String(p || '').replace(/[\s\-().]/g, '');
-export const validPhone = (p) => /^\+?\d{7,15}$/.test(normPhone(p));
+export const validPhone = (p) => /^\d{10}$/.test(normPhone(p));

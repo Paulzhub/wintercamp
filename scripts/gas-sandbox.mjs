@@ -26,6 +26,8 @@ export function createSandbox() {
     constructor(name) { this.name = name; this.rows = []; }
     getMaxRows() { return 1000; }
     getLastRow() { return this.rows.length; }
+    getLastColumn() { return Math.max(0, ...this.rows.map((r) => r.length)); }
+    setName(n) { sheets.delete(this.name); this.name = n; sheets.set(n, this); return this; }
     appendRow(r) { this.rows.push([...r]); return this; }
     setFrozenRows() { return this; }
     getRange(r, c, nr = 1, nc = 1) {
@@ -107,7 +109,7 @@ export function createSandbox() {
     doPost: (body) => JSON.parse(context.doPost({ postData: { contents: typeof body === 'string' ? body : JSON.stringify(body), type: 'text/plain' } }).getContent()),
     // Fill seats directly, for testing the full and last-seat cases.
     seed(category, count) {
-      const sh = context.sheet_(context.CONFIG.sheets.main);
+      const sh = context.sheet_(context.CONFIG.sheets[category]);
       for (let i = 0; i < count; i++) {
         const r = context.HEADERS.map(() => '');
         r[context.COL.Category] = context.CONFIG.labels[category];
@@ -117,6 +119,14 @@ export function createSandbox() {
       }
     },
     resetRate: () => cache.clear(),
+    // An old single "Registrations" tab, as created by the first version.
+    seedOldTab(rows) {
+      const sh = spreadsheet.insertSheet('Registrations');
+      const oldHeaders = context.HEADERS.filter((h) => h !== 'Typed signature');
+      sh.appendRow(oldHeaders);
+      rows.forEach((o) => sh.appendRow(oldHeaders.map((h) => o[h] ?? '')));
+    },
+    sheetNames: () => [...sheets.keys()],
   };
   return api;
 }

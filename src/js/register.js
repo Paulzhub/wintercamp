@@ -54,6 +54,23 @@ export function initRegistration({ audio }) {
     onChange: (ink) => { if (ink) clearError('signature'); },
   });
   $('#f-sign-clear').addEventListener('click', () => signature.clear());
+  // People who cannot draw a signature can type their name instead.
+  const typedInput = $('#f-sign-typed');
+  const modeBtn = $('#sign-mode');
+  let typedMode = false;
+  function setSignMode(typed, { focus = true } = {}) {
+    typedMode = typed;
+    $('#sign-wrap').hidden = typed;
+    $('#sign-typed').hidden = !typed;
+    modeBtn.textContent = typed ? modeBtn.dataset.draw : modeBtn.dataset.type;
+    modeBtn.setAttribute('aria-expanded', String(typed));
+    clearError('signature');
+    if (typed) { if (focus) typedInput.focus(); }
+    else { requestAnimationFrame(() => signature.resize()); if (focus) $('#f-sign-clear').focus(); }
+  }
+  modeBtn.addEventListener('click', () => setSignMode(!typedMode));
+  typedInput.addEventListener('input', () => { if (state.touched.has('signature')) check('signature'); });
+  typedInput.addEventListener('blur', () => { if (typedInput.value) { state.touched.add('signature'); check('signature'); } });
 
   // ---------- Phones ----------
   function addPhone(value = '') {
@@ -68,9 +85,33 @@ export function initRegistration({ audio }) {
     label.htmlFor = id;
     label.textContent = fill(R.f.phoneN, { n });
     const input = document.createElement('input');
-    Object.assign(input, { type: 'tel', id, name: 'phone', className: 'input', inputMode: 'tel', maxLength: 20, value });
-    input.autocomplete = n === 1 ? 'tel' : 'off';
-    input.setAttribute('aria-describedby', 'err-phones');
+    // No maxlength: it would cut a pasted "+91 98765 43210" before it is cleaned up.
+    Object.assign(input, { type: 'tel', id, name: 'phone', className: 'input', inputMode: 'numeric', value });
+    input.autocomplete = n === 1 ? 'tel-national' : 'off';
+    input.setAttribute('pattern', '[0-9]{10}');
+    input.setAttribute('aria-describedby', 'help-phones warn-phones err-phones');
+    if (n === 1) input.setAttribute('aria-required', 'true');
+    // Allow only digits, at most 10. A pasted +91 or leading 0 is dropped.
+    const sanitise = (raw) => {
+      let d = raw.replace(/\D/g, '');
+      let note = d.length !== raw.replace(/[\s]/g, '').length ? 'phoneDigits' : '';
+      if (d.length > 10 && /^91/.test(d) && /^\s*\+?\s*91/.test(raw)) d = d.slice(2);
+      else if (d.length === 11 && d.startsWith('0')) d = d.slice(1);
+      if (d.length > 10) { d = d.slice(0, 10); note = 'phoneMax'; }
+      return { d, note };
+    };
+    // Single key presses are stopped before they appear; pasted or autofilled
+    // text is cleaned up afterwards (it may carry spaces or +91).
+    input.addEventListener('beforeinput', (e) => {
+      if (e.inputType !== 'insertText' || !e.data || e.data.length !== 1) return;
+      if (!/\d/.test(e.data)) { e.preventDefault(); phoneWarn('phoneDigits'); }
+      else if (input.value.replace(/\D/g, '').length >= 10 && input.selectionStart === input.selectionEnd) { e.preventDefault(); phoneWarn('phoneMax'); }
+    });
+    input.addEventListener('input', () => {
+      const { d, note } = sanitise(input.value);
+      if (d !== input.value) input.value = d;
+      if (note) phoneWarn(note);
+    });
     row.append(label, input);
     if (n > 1) {
       const rm = document.createElement('button');
@@ -103,18 +144,27 @@ export function initRegistration({ audio }) {
   addPhone();
 
   const phones = () => $$('.phone input', phoneList).map((i) => i.value.trim()).filter(Boolean);
+  let warnTimer = 0;
+  function phoneWarn(key) {
+    const w = $('#warn-phones');
+    w.textContent = E[key];
+    w.classList.add('is-shown');
+    clearTimeout(warnTimer);
+    warnTimer = setTimeout(() => { w.classList.remove('is-shown'); w.textContent = ''; }, 4000);
+  }
 
   // ---------- Errors ----------
   const targets = {
     name: () => f.name, dob: () => f.dobD, parent: () => f.parent, address: () => f.address,
     phones: () => $('.phone input', phoneList), medical: () => f.medical, dietary: () => f.dietary,
-    consent: () => consentInputs[0], agree: () => f.agree, signature: () => $('#f-sign'),
+    consent: () => consentInputs[0], agree: () => f.agree, signature: () => (typedMode ? typedInput : $('#f-sign')),
     signDate: () => f.signDate, shot: () => f.shot, ref: () => f.ref,
   };
   const inputsFor = (key) => ({
     dob: [f.dobD, f.dobM, f.dobY],
     phones: $$('.phone input', phoneList),
     consent: consentInputs,
+    signature: typedMode ? [typedInput] : [],
   })[key] || [targets[key]?.()].filter(Boolean);
 
   function setError(key, msg) {
@@ -157,7 +207,12 @@ export function initRegistration({ audio }) {
     dietary: () => (text(f.dietary).length > MAX.dietary ? E.tooLong : ''),
     consent: () => (consentInputs.some((i) => i.checked) ? '' : E.consent),
     agree: () => (f.agree.checked ? '' : E.agree),
-    signature: () => (signature.hasInk() ? '' : E.signature),
+    signature: () => {
+      if (!typedMode) return signature.hasInk() ? '' : E.signature;
+      const v = typedInput.value.trim();
+      if (v.length < 2) return E.signTyped;
+      return v.length > 150 ? E.tooLong : '';
+    },
     signDate: () => {
       const v = f.signDate.value;
       if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return E.signDate;
@@ -171,9 +226,16 @@ export function initRegistration({ audio }) {
   function check(key) {
     const msg = rules[key]();
     if (msg) setError(key, msg); else clearError(key);
+    if (!$('#step-blocked').hidden && STEP_FIELDS[state.step].every((k) => !state.touched.has(k) || !rules[k]())) {
+      $('#step-blocked').hidden = true;
+      summary.hidden = true;
+    }
     return msg;
   }
 
+  // Every required field must be valid before moving on. When something is
+  // missing: list the problems at the top, show a note by the buttons, and move
+  // to the first field that needs attention.
   function validateStep(n) {
     const errors = [];
     STEP_FIELDS[n].forEach((key) => {
@@ -181,11 +243,20 @@ export function initRegistration({ audio }) {
       const msg = check(key);
       if (msg) errors.push([key, msg]);
     });
-    showSummary(errors);
+    showSummary(errors, { focus: false });
+    $('#step-blocked').hidden = errors.length === 0;
+    if (errors.length) {
+      const [key] = errors[0];
+      const el = key === 'signature' && !typedMode ? $('#sign-wrap') : targets[key]?.();
+      el?.scrollIntoView({ block: 'center', behavior: reduced() ? 'auto' : 'smooth' });
+      const focusEl = key === 'signature' && !typedMode ? $('#f-sign-clear') : targets[key]?.();
+      setTimeout(() => focusEl?.focus({ preventScroll: true }), reduced() ? 0 : 320);
+      if (!reduced()) gsap.fromTo(btnNext.hidden ? btnSubmit : btnNext, { x: -8 }, { x: 0, duration: 0.4, ease: 'elastic.out(1, 0.3)', clearProps: 'transform' });
+    }
     return errors.length === 0;
   }
 
-  function showSummary(errors) {
+  function showSummary(errors, { focus = true } = {}) {
     summary.replaceChildren();
     if (!errors.length) { summary.hidden = true; return; }
     const p = document.createElement('p');
@@ -207,7 +278,7 @@ export function initRegistration({ audio }) {
     });
     summary.append(p, ul);
     summary.hidden = false;
-    summary.focus();
+    if (focus) summary.focus();
   }
 
   // Validate as people go: on leaving a field, then live once it has been touched.
@@ -305,6 +376,7 @@ export function initRegistration({ audio }) {
     btnSubmit.hidden = n !== steps.length - 1;
     summary.hidden = true;
     sendError.hidden = true;
+    $('#step-blocked').hidden = true;
     if (!reduced()) gsap.fromTo(steps[n], { opacity: 0, x: 24 }, { opacity: 1, x: 0, duration: 0.48, clearProps: 'all' });
     const scroller = $('.reg__scroll', dlg);
     const top = form.offsetTop - 16;
@@ -463,7 +535,8 @@ export function initRegistration({ audio }) {
       dietary: text(f.dietary),
       consent: consentInputs.find((i) => i.checked)?.value || '',
       agree: f.agree.checked,
-      signature: signature.toDataURL(),
+      signature: typedMode ? '' : signature.toDataURL(),
+      signatureTyped: typedMode ? typedInput.value.trim() : '',
       signDate: f.signDate.value,
       screenshot: { type: state.shot.type, data: state.shot.dataUrl },
       paymentRef: text(f.ref),
@@ -518,6 +591,7 @@ export function initRegistration({ audio }) {
     $$('.is-valid', form).forEach((el) => el.classList.remove('is-valid'));
     $$('.field__error', form).forEach((p) => { p.hidden = true; p.textContent = ''; });
     f.signDate.value = todayIso();
+    setSignMode(false, { focus: false });
     state.touched.clear();
     state.submissionId = null;
     state.started = 0;
@@ -534,10 +608,20 @@ export function initRegistration({ audio }) {
 
   function success() {
     const cat = state.cat;
-    $('#done-text').textContent = fill(R.done.text, { name: text(f.name) });
-    $('#done-name').textContent = text(f.name);
-    $('#done-category').textContent = `${R[cat]} (${R[`${cat}Age`]})`;
+    const name = text(f.name);
+    const category = `${R[cat]} (${R[`${cat}Age`]})`;
+    $('#done-text').textContent = fill(R.done.text, { name });
+    $('#done-name').textContent = name;
+    $('#done-category').textContent = category;
     $('#done-dates').textContent = R[`${cat}Dates`];
+    // Kept only in memory, for the Save and Share buttons, until the view closes.
+    state.confirm = {
+      rows: [[R.done.name, name], [R.done.category, category], [R.done.dates, R[`${cat}Dates`]], [R.done.venue, R.done.venueValue]],
+      ref: String(state.submissionId || '').replace(/-/g, '').slice(0, 8).toUpperCase(),
+      issued: new Date().toLocaleDateString(T.lang === 'bo' ? 'en-IN' : 'en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+      file: `Winter-Camp-2027-${name.replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '') || 'registration'}.png`,
+    };
+    prepareShare();
     resetForm();
     showOutcome(doneView);
     doneView.classList.add('is-shown');
@@ -556,7 +640,52 @@ export function initRegistration({ audio }) {
     if (!reduced()) gsap.fromTo('#reg-last > *', { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.64, stagger: 0.08, clearProps: 'all' });
   }
 
+  // ---------- Save or share the confirmation as an image ----------
+  let shareFile = null;
+  async function confirmationFile() {
+    if (shareFile) return shareFile;
+    const { drawConfirmation } = await import('./confirm-image.js');
+    const c = state.confirm;
+    const blob = await drawConfirmation({
+      lang: T.lang,
+      labels: { title: R.done.imageTitle, seat: R.done.imageSeat, ref: R.done.imageRef, contact: R.done.imageContact },
+      rows: c.rows, ref: c.ref, issued: c.issued,
+    });
+    shareFile = new File([blob], c.file, { type: 'image/png' });
+    return shareFile;
+  }
+  function prepareShare() {
+    shareFile = null;
+    const probe = new File([new Blob(['x'], { type: 'image/png' })], 'probe.png', { type: 'image/png' });
+    $('#done-share').hidden = !(navigator.canShare && navigator.canShare({ files: [probe] }));
+  }
+  $('#done-save').addEventListener('click', async () => {
+    if (!state.confirm) return;
+    const file = await confirmationFile();
+    const url = URL.createObjectURL(file);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = file.name;
+    doneView.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    $('#done-status').textContent = R.done.saved;
+    audio.play('copy');
+  });
+  $('#done-share').addEventListener('click', async () => {
+    if (!state.confirm) return;
+    const file = await confirmationFile();
+    try {
+      await navigator.share({ files: [file], title: R.done.shareText, text: R.done.shareText });
+    } catch (err) {
+      if (err?.name !== 'AbortError') $('#done-save').click();
+    }
+  });
+
   function resetView() {
+    state.confirm = null;
+    shareFile = null;
     doneView.hidden = true;
     doneView.classList.remove('is-shown');
     lastView.hidden = true;
@@ -583,12 +712,27 @@ export function initRegistration({ audio }) {
     if (!reduced()) gsap.fromTo(dlg, { clipPath: 'inset(100% 0% 0% 0%)' }, { clipPath: 'inset(0% 0% 0% 0%)', duration: 0.8, ease: 'big', clearProps: 'clipPath' });
     if (!state.cat) loadSeats();
   }
+  let closing = false;
   function close() {
-    if (state.busy) return;
+    if (state.busy || closing) return;
     if (reduced()) { dlg.close(); return; }
-    gsap.to(dlg, { clipPath: 'inset(0% 0% 100% 0%)', duration: 0.64, ease: 'big', onComplete: () => { dlg.close(); gsap.set(dlg, { clearProps: 'clipPath' }); } });
+    closing = true;
+    const finish = () => { closing = false; gsap.set(dlg, { clearProps: 'clipPath' }); if (dlg.open) dlg.close(); };
+    gsap.to(dlg, { clipPath: 'inset(0% 0% 100% 0%)', duration: 0.64, ease: 'big', onComplete: finish });
+    setTimeout(() => { if (closing) finish(); }, 1200); // in case animation frames are paused
   }
-  dlg.addEventListener('cancel', (e) => { e.preventDefault(); close(); });
+  // Only Escape / the back gesture on the dialog itself closes it. Chrome also fires
+  // a bubbling "cancel" from <input type=file> when the picker is dismissed, which
+  // must not start closing the registration view.
+  dlg.addEventListener('cancel', (e) => {
+    if (e.target !== dlg) return;
+    e.preventDefault();
+    close();
+  });
+  // Phones pause animations while the photo picker is open; never leave the view half-drawn.
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && dlg.open && !closing) gsap.set(dlg, { clearProps: 'clipPath' });
+  });
   $$('[data-close-register]', dlg).forEach((b) => b.addEventListener('click', close));
   $$('[data-open-register]').forEach((b) => b.addEventListener('click', () => {
     // Opened from the phone menu: wait for the menu to close first.

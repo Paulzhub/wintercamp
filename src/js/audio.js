@@ -26,6 +26,9 @@ export function initAudio() {
       master = ctx.createGain();
       master.gain.value = 0.9;
       master.connect(ctx.destination);
+      ctx.addEventListener('statechange', () => {
+        if (enabled && !document.hidden && ctx.state !== 'running' && ctx.state !== 'closed') ctx.resume().catch(() => {});
+      });
       noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
       const d = noiseBuf.getChannelData(0);
       for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
@@ -34,65 +37,50 @@ export function initAudio() {
     return true;
   }
 
-  function startAmbient() {
+  // Background music: a calm piece rendered once, then looped seamlessly.
+  const MUSIC_LEVEL = 0.22;
+  let musicBuf = null;
+  let musicLoading = null;
+  const loadMusic = () => {
+    if (!musicLoading) {
+      musicLoading = import('./music.js')
+        .then((m) => m.renderMusicLoop())
+        .then((buf) => { musicBuf = buf; return buf; })
+        .catch((err) => { console.warn('Music could not be prepared', err); musicLoading = null; return null; });
+    }
+    return musicLoading;
+  };
+
+  async function startAmbient() {
     if (!ensure() || ambient) return;
+    const token = {};
+    ambient = { token, out: null, src: null };
+    const buf = musicBuf || await loadMusic();
+    if (!buf || ambient?.token !== token || !enabled) { if (ambient?.token === token) ambient = null; return; }
     const t = ctx.currentTime;
     const out = ctx.createGain();
     out.gain.setValueAtTime(0, t);
-    out.gain.linearRampToValueAtTime(ducked ? 0.008 : 0.03, t + 3);
+    out.gain.linearRampToValueAtTime(ducked ? 0 : MUSIC_LEVEL, t + 3);
     out.connect(master);
-    const filter = ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = 900;
-    filter.connect(out);
-    const lfo = ctx.createOscillator();
-    const lfoGain = ctx.createGain();
-    lfo.frequency.value = 0.05;
-    lfoGain.gain.value = 320;
-    lfo.connect(lfoGain).connect(filter.frequency);
-    lfo.start();
-    // A soft, open chord: A, E, A, C#, B.
-    const oscs = [110, 164.81, 220, 277.18, 246.94].map((f, i) => {
-      const o = ctx.createOscillator();
-      o.type = i % 2 ? 'triangle' : 'sine';
-      o.frequency.value = f;
-      o.detune.value = (i - 2) * 4;
-      const g = ctx.createGain();
-      g.gain.value = i === 4 ? 0.12 : 0.3;
-      o.connect(g).connect(filter);
-      o.start();
-      return o;
-    });
-    // Wind: filtered noise that breathes slowly.
-    const wind = ctx.createBufferSource();
-    wind.buffer = noiseBuf;
-    wind.loop = true;
-    const bp = ctx.createBiquadFilter();
-    bp.type = 'bandpass';
-    bp.frequency.value = 520;
-    bp.Q.value = 0.6;
-    const wg = ctx.createGain();
-    wg.gain.value = 0.25;
-    const wl = ctx.createOscillator();
-    const wlg = ctx.createGain();
-    wl.frequency.value = 0.08;
-    wlg.gain.value = 0.2;
-    wl.connect(wlg).connect(wg.gain);
-    wind.connect(bp).connect(wg).connect(out);
-    wind.start();
-    wl.start();
-    ambient = { out, nodes: [...oscs, lfo, wind, wl] };
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    src.connect(out);
+    src.start(t);
+    ambient.out = out;
+    ambient.src = src;
   }
 
   function stopAmbient() {
-    if (!ambient || !ctx) return;
+    if (!ambient) return;
     const a = ambient;
     ambient = null;
+    if (!a.out || !ctx) return;
     const t = ctx.currentTime;
     a.out.gain.cancelScheduledValues(t);
     a.out.gain.setValueAtTime(a.out.gain.value, t);
-    a.out.gain.linearRampToValueAtTime(0, t + 0.6);
-    setTimeout(() => a.nodes.forEach((n) => { try { n.stop(); } catch { /* already stopped */ } }), 700);
+    a.out.gain.linearRampToValueAtTime(0, t + 0.8);
+    setTimeout(() => { try { a.src.stop(); } catch { /* already stopped */ } a.out.disconnect(); }, 900);
   }
 
   function tone({ f = 440, to = null, type = 'sine', dur = 0.12, gain = 0.05, at = 0 }) {
@@ -190,7 +178,10 @@ export function initAudio() {
   document.addEventListener('visibilitychange', () => {
     if (!ctx) return;
     if (document.hidden) ctx.suspend();
-    else if (enabled) ctx.resume();
+    else if (enabled) {
+      ctx.resume().catch(() => {});
+      if (!ambient) startAmbient();
+    }
   });
 
   render();
@@ -201,11 +192,11 @@ export function initAudio() {
     stored: () => prefs.get(KEY),
     duck(on) {
       ducked = on;
-      if (!ambient || !ctx) return;
+      if (!ambient?.out || !ctx) return;
       const t = ctx.currentTime;
       ambient.out.gain.cancelScheduledValues(t);
       ambient.out.gain.setValueAtTime(ambient.out.gain.value, t);
-      ambient.out.gain.linearRampToValueAtTime(on ? 0 : 0.03, t + 0.8);
+      ambient.out.gain.linearRampToValueAtTime(on ? 0 : MUSIC_LEVEL, t + 0.8);
     },
   };
 }
