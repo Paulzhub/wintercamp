@@ -1,6 +1,6 @@
 # Winter Camp 2027 Website Plan
 
-Status: v3, ready to build. The build prompt is in `BUILD_PROMPT.md`.
+Status: v4, ready to build. The build prompt is in `BUILD_PROMPT.md`.
 
 ## 1. Decisions made on Paul's behalf (change any of these)
 
@@ -9,9 +9,10 @@ Status: v3, ready to build. The build prompt is in `BUILD_PROMPT.md`.
 | 1 | Registration opens as a full-screen view from "REGISTER NOW" and the menu, rather than sitting between sections | The page order given is hero, activities, gallery, footer; the form is long and needs room |
 | 2 | Age is checked against the first day of that category's camp (Youth: 4 Jan 2027, Kids: 11 Jan 2027) | The form needs one rule to match date of birth to Kids or Youth |
 | 3 | A seat is taken when the form is submitted, not when payment is confirmed | The site cannot verify a UPI payment |
-| 4 | An optional "UPI transaction reference" field is added after payment details | Lets organisers match payments to registrations |
+| 4 | After paying, the visitor uploads a payment screenshot (and may add the UPI transaction reference). The sheet marks each registration "Payment proof received" or "Pending" | Lets organisers match payments to registrations and follow up by phone |
 | 5 | A typed-name alternative sits beside the signature canvas | A drawn signature cannot be made with a keyboard or screen reader |
 | 6 | A short "Camp facts and FAQ" block sits above the footer | Needed for answer engines and for parents; see section 9 |
+| 8 | The UPI QR image stays in the repo rather than on Google Drive, and the payee name "Achui Sareo" and UPI ID are shown as text beside it | Drive would not make it harder to replace; see section 11 |
 | 7 | Tibetan has its own address (`/bo/`) as well as the toggle | Search and AI engines can only index Tibetan if it has a URL |
 
 ## 2. Camp facts
@@ -132,7 +133,8 @@ Plain-text answers to the questions parents and answer engines ask: who is it fo
 4. **Expand and confirm:** the chosen card expands with a clear active state; "Change" goes back.
 5. **Form** (below), in three short steps with a progress indicator: child, parent and health, consent and signature.
 6. **Submit:** loading state on the button; the form locks; data is kept if sending fails, with a retry button.
-7. **Success and payment:** burst of light, check mark, chime. Then payment instructions: ₹500 by UPI using the QR code, the UPI ID (with a copy button) or the phone number, plus a "Pay ₹500 with UPI" button on phones that opens the UPI app with the amount filled in. Optional field to enter the UPI transaction reference afterwards.
+7. **Success and payment:** burst of light, check mark, chime. Then payment instructions: ₹500 by UPI using the QR code, the UPI ID (with a copy button) or the phone number, plus a "Pay ₹500 with UPI" button on phones that opens the UPI app with the amount filled in. The payee name "Achui Sareo" is shown with the instruction to check that name in the UPI app before paying.
+8. **Payment proof:** the visitor uploads a screenshot of the payment (JPG, PNG or WebP; resized in the browser before upload; preview, replace and remove controls; upload progress and success state) and may add the UPI transaction reference. If they leave before uploading, the registration stays in the sheet as "Pending" and the screen tells them to contact +91-8219012669.
 
 ### Fields
 
@@ -158,7 +160,11 @@ Statement shown above field 8, word for word:
 ### Backend: Google Apps Script and Google Sheet
 - GitHub Pages is static, so the form posts to a Google Apps Script web app bound to a private Google Sheet.
 - One row per registration: timestamp, category, all fields, language, signature link, payment reference.
-- The signature image is saved to a private Google Drive folder and linked from the sheet.
+- Files go to private Google Drive folders, never to GitHub, and are linked from the sheet row:
+  - `Winter Camp 2027/Kids/Payment screenshots/` and `Winter Camp 2027/Kids/Signatures/`
+  - `Winter Camp 2027/Youth/Payment screenshots/` and `Winter Camp 2027/Youth/Signatures/`
+- Files are named with the category, child's name and timestamp. Each registration gets a random reference code so the screenshot upload attaches to the right row.
+- Uploads are checked on the server: images only (verified by file content, not just the name), 5 MB maximum, one screenshot per registration unless replaced.
 - The script returns seats left per category, and uses a lock so two people cannot take the last seat. It rejects a submission once a category has 30.
 - The script source lives in the repo under `apps-script/`; Paul deploys it from his Google account and puts the web app URL in the site config. Setup steps go in the README.
 
@@ -228,7 +234,8 @@ The form collects children's personal and medical details, so this matters.
 - No secrets in the repo. The Apps Script URL is public by nature, so the script validates everything again on the server: types, lengths, allowed values, age against category, seat limit.
 - Text is cleaned before it is written to the sheet so that entries cannot run as spreadsheet formulas, and all text is escaped when shown on the page.
 - Spam control: hidden honeypot field, minimum fill time, per-submission rate limit in the script.
-- The Google Sheet and signature folder stay private to the organisers; nothing personal is stored in the repo or in the browser after a successful submission.
+- **Payment QR:** kept in the repo. The QR has to be public to be shown, so the risk is someone replacing it, and that needs write access wherever it is stored. A Drive link would add a second place to protect, is unreliable for showing images on a website, and would weaken the Content Security Policy. Protection comes from: two-factor sign-in on the GitHub account, no extra collaborators, branch protection on `main`, and showing the payee name and UPI ID as text so parents can confirm the name their UPI app displays.
+- The Google Sheet and the Drive folders (signatures, payment screenshots) stay private to the organisers, shared with named people only, never "anyone with the link"; nothing personal is stored in the repo or in the browser after a successful submission.
 - Privacy notice linked from the form and footer: what is collected, why, who sees it, how long it is kept, and how to ask for deletion. Parental consent is captured by fields 8 to 11.
 - Dependency updates and code scanning switched on in the GitHub repo; branch protection on `main`.
 - External links use `rel="noopener noreferrer"`.
