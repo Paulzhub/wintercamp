@@ -289,7 +289,7 @@ async function main() {
       const lastText = (await page.textContent('#last-title')).trim();
       check('Last-seat message shown exactly, with tap-to-call', lastText === 'Oh No Someone booked the last seat just before you! Kindly contact +91-8219012669' && await page.isVisible('#reg-last a[href="tel:+918219012669"]'), lastText);
       st = await api('/__state');
-      check('Backend: late submission saved in "Paid, no seat" with its screenshot', st.overflow.length === 1 && /drive\.google\.com/.test(JSON.stringify(st.overflow[0])));
+      check('Backend: late submission saved in "Paid, no seat" with its screenshot', st.overflow.length === 1 && /https?:\/\/(?:[^/\s"]+\.)?drive\.google\.com(?:[/:?"#]|$)/.test(JSON.stringify(st.overflow[0])));
       await page.screenshot({ path: path.join(out, 'reg-last-390.png') });
 
       // Payment step when the category fills before paying.
