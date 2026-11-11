@@ -49,7 +49,7 @@ Opens full screen from REGISTER NOW and the menu button.
 
 1. Ask the visitor to choose **Kids** or **Youth** before any form is shown. Show seats left on each card, with a skeleton while loading.
 2. If a category has 30 registrations, show exactly: "Seats are full. Kindly contact +91-8219012669." and prevent selection.
-3. Expand the chosen card with a clear active state, then show the form in three steps with a progress indicator.
+3. Expand the chosen card with a clear active state, then show the form in four steps with a progress indicator: child, parent and health, consent and signature, payment.
 4. Fields, with these labels:
    - Name
    - Date of birth (validated against the category's age range on that camp's first day)
@@ -62,11 +62,14 @@ Opens full screen from REGISTER NOW and the menu button.
    - Required checkbox: "I have read and understood the above and am happy for my child to be involved in Winter Camp 2027."
    - Signed: a canvas the visitor draws on by finger, stylus or mouse, showing the prompt "Sign here" until they start, with a Clear button and a "Type your name instead" alternative
    - Date of Signing (today's date by default)
-5. Validate inline with clear messages. On submit, show a loading state and lock the form; on failure keep the data and offer retry.
-6. On success, play the success animation and show payment instructions: ₹500 by UPI via the QR image at `assets/payment/upi-qr.jpg`, the UPI ID `achuisr1985.27-1@okhdfcbank` with a copy button, or phone number 8219012669; on phones add a button that opens the UPI app with the amount filled in. Show the payee name "Achui Sareo" as text and tell the visitor to check that name in their UPI app. The QR image stays in the repo; do not load it from Google Drive.
-7. Then ask for payment proof: an upload control for a payment screenshot (JPG, PNG or WebP, resized in the browser, with preview, replace, progress and success states) and an optional UPI transaction reference. If the visitor leaves without uploading, the registration remains with payment marked "Pending".
+5. Validate inline with clear messages.
+6. Payment step. Check seats again before showing it; if the category is now full, show the seats-full message instead. Otherwise show: ₹500 by UPI via the QR image at `assets/payment/upi-qr.jpg`, the UPI ID `achuisr1985.27-1@okhdfcbank` with a copy button, or phone number 8219012669; on phones add a button that opens the UPI app with the amount filled in. Show the payee name "Achui Sareo" as text and tell the visitor to check that name in their UPI app. The QR image stays in the repo; do not load it from Google Drive.
+7. Require a payment screenshot before submission: an upload control (JPG, PNG or WebP, resized in the browser, with preview and replace) plus an optional UPI transaction reference. Keep the submit button disabled until a screenshot is attached. A seat is only given to a submission that includes one.
+8. Submit everything in one request. Show a loading state and lock the form; on failure keep the data and screenshot and offer retry.
+9. If a seat is given, play the success animation and show a confirmation with the child's name, category, dates and venue.
+10. If the category filled between payment and submission, show exactly: "Oh No Someone booked the last seat just before you! Kindly contact +91-8219012669" with a tap-to-call link.
 
-**Backend.** Write a Google Apps Script web app in `apps-script/` that: appends each registration as a row in a private Google Sheet; saves signatures and payment screenshots to private Google Drive folders, separate for each category (`Winter Camp 2027/Kids/...` and `Winter Camp 2027/Youth/...`, each with `Signatures` and `Payment screenshots`), and stores the links and a payment status in the row; gives each registration a random reference code used to attach the screenshot; accepts only images verified by content, up to 5 MB; returns seats left per category; uses a lock so the 30-seat limit cannot be exceeded; validates every field again on the server; and neutralises text that could run as a spreadsheet formula. Write README steps for the owner to deploy it and paste the URL into the config.
+**Backend.** Write a Google Apps Script web app in `apps-script/` that: appends each registration as a row in a private Google Sheet; saves signatures and payment screenshots to private Google Drive folders, separate for each category (`Winter Camp 2027/Kids/...` and `Winter Camp 2027/Youth/...`, each with `Signatures` and `Payment screenshots`), and stores the links in the row; never stores uploads in GitHub; rejects a registration without a valid screenshot; accepts only images verified by content, up to 5 MB; writes submissions that arrive after the 30th seat to a separate "Paid, no seat" tab with their screenshot and returns the last-seat response; returns seats left per category; uses a lock so the 30-seat limit cannot be exceeded; validates every field again on the server; and neutralises text that could run as a spreadsheet formula. Write README steps for the owner to deploy it and paste the URL into the config.
 
 ## Effects
 
