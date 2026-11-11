@@ -62,7 +62,7 @@ export function initNav(motion, audio) {
     audio?.play('whoosh');
     if (reduced()) return;
     gsap.fromTo(menu, { clipPath: 'inset(0% 0% 100% 0%)' }, { clipPath: 'inset(0% 0% 0% 0%)', duration: 0.8, ease: 'big', clearProps: 'clipPath' });
-    gsap.fromTo($$('.menu__links li, .menu__foot', menu), { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.64, stagger: 0.064, delay: 0.24, clearProps: 'all' });
+    gsap.fromTo($$('.menu__links li, .menu__foot', menu), { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.64, delay: 0.24, clearProps: 'all' });
   });
   closeBtn?.addEventListener('click', () => closeMenu());
   menu?.addEventListener('cancel', (e) => { if (e.target !== menu) return; e.preventDefault(); closeMenu(); });

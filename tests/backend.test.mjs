@@ -117,16 +117,17 @@ test('bots: honeypot, too fast, and rate limit', () => {
   assert.equal(busy, 5);
 });
 
-test('phone numbers must have exactly 10 digits', () => {
+test('phone numbers have up to 10 digits (at least 6)', () => {
   const g = createSandbox();
   const code = (phones) => g.doPost(valid({ phones })).fields?.find((f) => f.field === 'phones')?.code;
-  assert.equal(code(['98765432']), 'phone');
+  assert.equal(code(['98765']), 'phone');
+  assert.equal(code(['98765432']), undefined);
   assert.equal(code(['98765432101']), 'phone');
   assert.equal(code(['98765abc10']), 'phone');
   assert.equal(code(['9876543210', '12345']), 'phone');
-  assert.equal(g.doPost(valid({ phones: ['+91 98765 43210', '01892-221234'] })).status, 'registered');
-  const row = g.sheet('Kids registrations').rows[1];
-  assert.equal(row[g.context.COL['Emergency contact number(s)']], '9876543210, 1892221234');
+  assert.equal(g.doPost(valid({ name: 'Phone Kid', phones: ['+91 98765 43210', '01892-221234', '221234'] })).status, 'registered');
+  const row = g.sheet('Kids registrations').rows.at(-1);
+  assert.equal(row[g.context.COL['Emergency contact number(s)']], '9876543210, 1892221234, 221234');
 });
 
 test('a typed name can be used instead of a drawn signature', () => {

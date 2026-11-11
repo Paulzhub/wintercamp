@@ -1,7 +1,7 @@
 // Registration view: choose Kids or Youth (with live seats), four short steps,
 // hand-drawn signature, UPI payment with a required screenshot, one submission.
 // Nothing typed here is written to browser storage.
-import { gsap, reduced } from './motion.js';
+import { gsap, reduced, smoothPanel } from './motion.js';
 import { T, $, $$, fill } from './i18n.js';
 import { openModal } from './modal.js';
 import { fetchSeats, sendRegistration } from './api.js';
@@ -40,6 +40,21 @@ export function initRegistration({ audio }) {
   const state = {
     cat: null, step: 0, seats: null, shot: null, shotUrl: null,
     submissionId: null, started: 0, busy: false, payOk: false, touched: new Set(),
+  };
+
+  // Smooth scrolling inside the registration view (created on first open).
+  let panel = null;
+  const scrollerEl = $('.reg__scroll', dlg);
+  const panelTo = (y, immediate = false) => {
+    const top = Math.max(0, y);
+    if (panel) panel.scrollTo(top, { immediate, duration: 0.9, easing: (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2) });
+    else scrollerEl.scrollTo({ top, behavior: immediate || reduced() ? 'auto' : 'smooth' });
+  };
+  const panelCenter = (el) => {
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const w = scrollerEl.getBoundingClientRect();
+    panelTo(scrollerEl.scrollTop + r.top - w.top - (scrollerEl.clientHeight - r.height) / 2);
   };
 
   // ---------- Fields ----------
@@ -248,7 +263,7 @@ export function initRegistration({ audio }) {
     if (errors.length) {
       const [key] = errors[0];
       const el = key === 'signature' && !typedMode ? $('#sign-wrap') : targets[key]?.();
-      el?.scrollIntoView({ block: 'center', behavior: reduced() ? 'auto' : 'smooth' });
+      panelCenter(el);
       const focusEl = key === 'signature' && !typedMode ? $('#f-sign-clear') : targets[key]?.();
       setTimeout(() => focusEl?.focus({ preventScroll: true }), reduced() ? 0 : 320);
       if (!reduced()) gsap.fromTo(btnNext.hidden ? btnSubmit : btnNext, { x: -8 }, { x: 0, duration: 0.4, ease: 'elastic.out(1, 0.3)', clearProps: 'transform' });
@@ -271,7 +286,7 @@ export function initRegistration({ audio }) {
       a.addEventListener('click', (e) => {
         e.preventDefault();
         (key === 'signature' ? $('#f-sign-clear') : target)?.focus();
-        target?.scrollIntoView({ block: 'center', behavior: reduced() ? 'auto' : 'smooth' });
+        panelCenter(target);
       });
       li.append(a);
       ul.append(li);
@@ -380,7 +395,7 @@ export function initRegistration({ audio }) {
     if (!reduced()) gsap.fromTo(steps[n], { opacity: 0, x: 24 }, { opacity: 1, x: 0, duration: 0.48, clearProps: 'all' });
     const scroller = $('.reg__scroll', dlg);
     const top = form.offsetTop - 16;
-    if (scroller.scrollTop > top) scroller.scrollTo({ top, behavior: reduced() ? 'auto' : 'smooth' });
+    if (scroller.scrollTop > top) panelTo(top);
     if (n === 2) requestAnimationFrame(() => signature.resize());
     if (n === 3) checkBeforePay();
     if (focus) {
@@ -602,7 +617,7 @@ export function initRegistration({ audio }) {
     pick.hidden = true;
     form.hidden = true;
     view.hidden = false;
-    $('.reg__scroll', dlg).scrollTo({ top: 0 });
+    panelTo(0, true);
     view.focus();
   }
 
@@ -629,7 +644,7 @@ export function initRegistration({ audio }) {
     if (!reduced()) {
       gsap.fromTo('.done__ring', { scale: 0, opacity: 1 }, { scale: 2.4, opacity: 0, duration: 1.2, ease: 'big' });
       gsap.fromTo('.done__check', { scale: 0.4, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.64, ease: 'big' });
-      gsap.fromTo('#reg-done > :not(.done__burst)', { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.64, stagger: 0.08, delay: 0.24, clearProps: 'all' });
+      gsap.fromTo('#reg-done > :not(.done__burst)', { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.64, delay: 0.24, clearProps: 'all' });
     }
   }
 
@@ -637,7 +652,7 @@ export function initRegistration({ audio }) {
     resetForm();
     showOutcome(lastView);
     audio.play('low');
-    if (!reduced()) gsap.fromTo('#reg-last > *', { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.64, stagger: 0.08, clearProps: 'all' });
+    if (!reduced()) gsap.fromTo('#reg-last > *', { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.64, clearProps: 'all' });
   }
 
   // ---------- Save or share the confirmation as an image ----------
@@ -700,6 +715,9 @@ export function initRegistration({ audio }) {
   // ---------- Open and close ----------
   function open(trigger) {
     if (dlg.open) return;
+    if (!panel) panel = smoothPanel(scrollerEl, $('.reg__inner', dlg));
+    panel?.start();
+    panelTo(0, true);
     const finished = !doneView.hidden || !lastView.hidden;
     if (finished) resetView();
     if (!f.signDate.value) f.signDate.value = todayIso();

@@ -42,4 +42,6 @@ export function dobProblem(dob, category, cats, today = todayIso()) {
 }
 
 export const normPhone = (p) => String(p || '').replace(/[\s\-().]/g, '');
-export const validPhone = (p) => /^\d{10}$/.test(normPhone(p));
+// Up to 10 digits; at least 6 so a stray digit or two can't pass as a number.
+export const PHONE_MIN = 6;
+export const validPhone = (p) => /^\d{6,10}$/.test(normPhone(p));
