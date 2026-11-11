@@ -1,6 +1,6 @@
 # Winter Camp 2027 Website Plan
 
-Status: v5, ready to build. The build prompt is in `BUILD_PROMPT.md`.
+Status: v6, ready to build. The build prompt is in `BUILD_PROMPT.md`.
 
 ## 1. Decisions made on Paul's behalf (change any of these)
 
@@ -10,7 +10,7 @@ Status: v5, ready to build. The build prompt is in `BUILD_PROMPT.md`.
 | 2 | Age is checked against the first day of that category's camp (Youth: 4 Jan 2027, Kids: 11 Jan 2027) | The form needs one rule to match date of birth to Kids or Youth |
 | 3 | A seat is given only when the form is submitted together with a payment screenshot. The site cannot verify the payment itself, so organisers check the screenshots | Paul's decision: no unpaid registrations hold seats |
 | 4 | If someone pays but the last seat goes before they submit, their details and screenshot are still saved in a separate "Paid, no seat" tab | Organisers can refund them or make room when they call |
-| 5 | A typed-name alternative sits beside the signature canvas | A drawn signature cannot be made with a keyboard or screen reader |
+| 5 | The signature is hand-drawn on the canvas only, with no typed alternative | Paul's decision. Anyone who cannot draw one is told to call +91-8219012669 |
 | 6 | A short "Camp facts and FAQ" block sits above the footer | Needed for answer engines and for parents; see section 9 |
 | 8 | The UPI QR image stays in the repo rather than on Google Drive, and the payee name "Achui Sareo" and UPI ID are shown as text beside it | Drive would not make it harder to replace; see section 11 |
 | 7 | Tibetan has its own address (`/bo/`) as well as the toggle | Search and AI engines can only index Tibetan if it has a URL |
@@ -152,7 +152,7 @@ Plain-text answers to the questions parents and answer engines ask: who is it fo
 | 7 | Any special dietary requirements or allergies we need to be aware of? | Multi-line text | No | "None" accepted |
 | 8 | Medical emergency consent | Radio: YES / NO | Yes | Shown with the full statement below |
 | 9 | "I have read and understood the above and am happy for my child to be involved in Winter Camp 2027." | Checkbox | Yes | |
-| 10 | Signed | Signature canvas with the prompt "Sign here", a Clear button, and a "Type your name instead" option | Yes | Works with finger, stylus or mouse |
+| 10 | Signed | Hand-drawn signature canvas with the prompt "Sign here" and a Clear button | Yes | Works with finger, stylus or mouse |
 | 11 | Date of signing | Date | Yes | Filled with today's date, editable |
 | 12 | Payment screenshot | Image upload | Yes | Saved to Google Drive, not GitHub |
 | 13 | UPI transaction reference | Text | No | |
@@ -223,7 +223,7 @@ So that search engines, answer engines and AI assistants can read and quote the 
 - Colour contrast at least 4.5:1 for text and 3:1 for large text and controls.
 - Everything works by keyboard; visible focus rings; skip-to-content link; focus trapped in the menu, registration view and lightbox, and returned on close.
 - Form: every field has a visible label; errors are described in text, linked to the field and announced; required fields marked; no time limits.
-- Signature: typed-name alternative; Clear button; canvas has an accessible name.
+- Signature: hand-drawn only, by Paul's decision, so this one field is a known exception to WCAG. The canvas has an accessible name, a Clear button, and a note beside it giving the contact number for anyone who cannot draw a signature.
 - Carousel: buttons and arrow keys, pause control for any auto-motion, slide position announced.
 - Motion: honours reduced-motion; nothing flashes more than three times a second; the custom cursor never replaces the system cursor for keyboard or assistive users.
 - Audio: off by default, with a visible toggle.
