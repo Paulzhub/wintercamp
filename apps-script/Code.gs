@@ -240,7 +240,7 @@ function validate_(d) {
   }
 
   var phones = Array.isArray(d.phones) ? d.phones.slice(0, 4) : [];
-  // 10-digit numbers only (a leading +91 or 0 is dropped first).
+  // Numbers only, 6 to 10 digits (a leading +91 or 0 on a longer number is dropped first).
   c.phones = phones.map(function (p) {
     var raw = String(p || '');
     var digits = raw.replace(/\D/g, '');
@@ -248,7 +248,7 @@ function validate_(d) {
     else if (digits.length === 11 && digits.charAt(0) === '0') digits = digits.slice(1);
     return /[^\d\s\-().+]/.test(raw) ? 'x' : digits;
   }).filter(Boolean);
-  if (!c.phones.length || !c.phones.every(function (p) { return /^\d{10}$/.test(p); })) add('phones', 'phone');
+  if (!c.phones.length || !c.phones.every(function (p) { return /^\d{6,10}$/.test(p); })) add('phones', 'phone');
 
   var typed = clean_(d.signatureTyped, CONFIG.max.signatureTyped);
   if (typed === null) add('signature', 'tooLong');

@@ -215,8 +215,10 @@ html.is-modal { overflow: hidden; }
 .nav__link.is-active { background: rgb(245 245 245 / 0.12); }
 .nav__link.is-active > span::after { content: ''; position: absolute; left: 50%; bottom: 6px; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%; background: var(--c-red); }
 .nav__actions { display: flex; align-items: center; gap: var(--s1); }
-.nav__actions .lang, .nav__actions .sound { display: none; }
-@media (min-width: 768px) { .nav__actions .lang, .nav__actions .sound { display: inline-flex; } }
+.nav__actions .lang { display: none; }
+@media (min-width: 768px) { .nav__actions .lang { display: inline-flex; } }
+/* The sound button shows on every screen size. */
+.nav__actions .sound { display: inline-grid; }
 @media (min-width: 1024px) { .nav__nav { display: block; } .nav__burger { display: none; } }
 .sound .sound__on, .sound[aria-pressed='true'] .sound__off { display: none; }
 .sound[aria-pressed='true'] .sound__on { display: inline; }
@@ -606,6 +608,14 @@ select.input { appearance: none; padding-right: var(--s6); background-image: lin
 
 /* ---------- Reveal defaults (JS sets the starting state, so content is visible without JS) ---------- */
 [data-reveal], [data-title] { will-change: auto; }
+
+/* ---------- Falling particles behind sections (src/js/particles.js) ---------- */
+.has-particles:not(dialog) { position: relative; }
+.has-particles { isolation: isolate; }
+.particles { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
+.has-particles > :not(.particles) { position: relative; z-index: 1; }
+.reg.has-particles > .reg__bar, .reg.has-particles > .reg__scroll { position: relative; z-index: 1; }
+.reg.has-particles > .reg__bar { z-index: 2; }
 
 /* ---------- Tibetan typography ---------- */
 :lang(bo) { letter-spacing: 0 !important; text-transform: none !important; font-synthesis: none; }

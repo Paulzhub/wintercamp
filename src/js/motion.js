@@ -39,10 +39,20 @@ function splitWords(el) {
   return inner;
 }
 
+// Smooth scrolling for a scrolling panel (the registration view).
+export function smoothPanel(wrapper, content) {
+  if (reduced()) return null;
+  const l = new Lenis({ wrapper, content, autoRaf: false, lerp: 0.09, smoothWheel: true, wheelMultiplier: 0.9 });
+  gsap.ticker.add((t) => l.raf(t * 1000));
+  return l;
+}
+
 export function initMotion() {
   let lenis = null;
   if (!reduced()) {
-    lenis = new Lenis({ autoRaf: false, duration: 1.1, easing: inOutCubic, smoothWheel: true });
+    // Wheel and trackpad: a gentle glide that follows the input (lerp), which feels
+    // smoother than a fixed-length curve. Jumps to a section use the in-out curve.
+    lenis = new Lenis({ autoRaf: false, lerp: 0.09, smoothWheel: true, wheelMultiplier: 0.9, touchMultiplier: 1, syncTouch: false });
     lenis.on('scroll', ScrollTrigger.update);
     gsap.ticker.add((t) => lenis.raf(t * 1000));
     gsap.ticker.lagSmoothing(0);
@@ -99,11 +109,11 @@ export function initMotion() {
       return;
     }
     const tl = gsap.timeline();
-    tl.to(heroLetters, { yPercent: 0, opacity: 1, filter: 'blur(0px)', duration: 0.96, ease: 'big', stagger: 0.064, clearProps: 'filter' });
-    tl.to(heroIn, { opacity: 1, y: 0, duration: 0.8, stagger: 0.08, clearProps: 'transform' }, 0.32);
+    tl.to(heroLetters, { yPercent: 0, opacity: 1, filter: 'blur(0px)', duration: 0.96, ease: 'big', clearProps: 'filter' });
+    tl.to(heroIn, { opacity: 1, y: 0, duration: 0.8, clearProps: 'transform' }, 0.32);
   }
 
-  // Fade and lift (staggered) for everything marked data-reveal.
+  // Fade and lift for everything marked data-reveal (all together, no stagger).
   const reveal = $$('[data-reveal]');
   if (reveal.length) {
     gsap.set(reveal, reduced() ? { opacity: 0 } : { opacity: 0, y: 32 });
@@ -113,8 +123,8 @@ export function initMotion() {
       onEnter: (batch) => {
         batch.forEach((b) => b.classList.add('is-in'));
         gsap.to(batch, reduced()
-          ? { opacity: 1, duration: 0.32, stagger: 0.064 }
-          : { opacity: 1, y: 0, duration: 0.8, stagger: 0.08, clearProps: 'transform' });
+          ? { opacity: 1, duration: 0.32 }
+          : { opacity: 1, y: 0, duration: 0.8, clearProps: 'transform' });
       },
     });
     // Keyboard users must never land on something still invisible.
@@ -136,7 +146,7 @@ export function initMotion() {
       trigger: title,
       start: 'top 90%',
       once: true,
-      onEnter: () => gsap.to(words, { yPercent: 0, duration: 0.96, ease: 'big', stagger: 0.07 }),
+      onEnter: () => gsap.to(words, { yPercent: 0, duration: 0.96, ease: 'big' }),
     });
   });
 

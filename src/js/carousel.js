@@ -44,7 +44,10 @@ export function initCarousel(audio) {
       const s = 1 - Math.min(a, 3) * 0.08;
       it.style.setProperty('transform', `translate3d(${x.toFixed(1)}px,0,${z.toFixed(1)}px) rotateY(${rot.toFixed(2)}deg) scale(${s.toFixed(3)})`);
       it.style.setProperty('z-index', String(100 - Math.round(a * 10)));
-      it.style.setProperty('opacity', a > 3.6 ? '0' : String(1 - Math.max(0, a - 2.6)));
+      // Cross-fade: the centre item is fully visible and its neighbours fade with
+      // distance, so each 0.7 s move fades one item out as the next fades in.
+      const op = a <= 1 ? 1 - 0.62 * a : Math.max(0, 0.38 - 0.19 * (a - 1));
+      it.style.setProperty('opacity', op.toFixed(3));
       it.style.setProperty('visibility', a > 3.6 ? 'hidden' : 'visible');
       it.style.setProperty('filter', `brightness(${(1 - Math.min(a, 3) * 0.2).toFixed(2)})`);
     });

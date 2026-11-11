@@ -218,12 +218,12 @@ function registration(lang, t) {
   <p class="cat__chosen" data-chosen hidden><span class="cat__check" aria-hidden="true">${icons.check}</span> ${esc(fill(r.chosen, { category: r[key] }))} <button type="button" class="link cat__change" data-change>${esc(r.change)}</button></p>
 </article>`;
 
-  return `<dialog class="reg" id="register" aria-labelledby="reg-title">
+  return `<dialog class="reg" id="register" data-particles="accent" data-particles-density="0.6" aria-labelledby="reg-title">
 <div class="reg__bar">
   <h2 class="reg__title" id="reg-title">${esc(r.title)}</h2>
   <button type="button" class="icon-btn" data-close-register aria-label="${esc(t.common.close)}">${icons.close}</button>
 </div>
-<div class="reg__scroll" data-lenis-prevent>
+<div class="reg__scroll">
 <div class="reg__inner">
 
 <section class="reg__pick" id="reg-pick" aria-labelledby="reg-pick-title">
@@ -274,7 +274,7 @@ function registration(lang, t) {
     </div>
     <div class="field">
       <label class="field__label" for="f-address">${esc(f.address)} ${req}</label>
-      <textarea class="input" id="f-address" name="address" rows="3" maxlength="400" autocomplete="street-address" required aria-describedby="err-address"></textarea>
+      <textarea data-lenis-prevent class="input" id="f-address" name="address" rows="3" maxlength="400" autocomplete="street-address" required aria-describedby="err-address"></textarea>
       ${err('address')}
     </div>
     <fieldset class="field field--group" id="f-phones" aria-describedby="err-phones">
@@ -288,13 +288,13 @@ function registration(lang, t) {
     <div class="field">
       <label class="field__label" for="f-medical">${esc(f.medical)} ${opt}</label>
       <p class="field__help" id="help-medical">${esc(f.noneOk)}</p>
-      <textarea class="input" id="f-medical" name="medical" rows="3" maxlength="1000" aria-describedby="help-medical err-medical"></textarea>
+      <textarea data-lenis-prevent class="input" id="f-medical" name="medical" rows="3" maxlength="1000" aria-describedby="help-medical err-medical"></textarea>
       ${err('medical')}
     </div>
     <div class="field">
       <label class="field__label" for="f-dietary">${esc(f.dietary)} ${opt}</label>
       <p class="field__help" id="help-dietary">${esc(f.noneOk)}</p>
-      <textarea class="input" id="f-dietary" name="dietary" rows="3" maxlength="1000" aria-describedby="help-dietary err-dietary"></textarea>
+      <textarea data-lenis-prevent class="input" id="f-dietary" name="dietary" rows="3" maxlength="1000" aria-describedby="help-dietary err-dietary"></textarea>
       ${err('dietary')}
     </div>
   </fieldset>
@@ -544,7 +544,7 @@ ${siteHeader(lang, t, 'home')}
   <p class="sr-only">${esc(t.hero.sceneAlt)}</p>
 </section>
 
-<section class="section light activities" id="activities" data-section aria-labelledby="activities-title">
+<section class="section light activities" id="activities" data-particles="accent" data-section aria-labelledby="activities-title">
   <div class="wrap">
     <p class="eyebrow" data-reveal>${esc(a.eyebrow)}</p>
     <h2 class="title" id="activities-title" data-title>${esc(a.title)}</h2>
@@ -563,7 +563,7 @@ ${siteHeader(lang, t, 'home')}
   </div>
 </section>
 
-<section class="section dark gallery" id="gallery" data-section aria-labelledby="gallery-title">
+<section class="section dark gallery" id="gallery" data-particles="secondary" data-section aria-labelledby="gallery-title">
   <div class="wrap">
     <p class="eyebrow" data-reveal>${esc(t.gallery.eyebrow)}</p>
     <h2 class="title" id="gallery-title" data-title>${esc(t.gallery.title)}</h2>
@@ -588,7 +588,7 @@ ${galleryItems(lang, t)}
   }
 </section>
 
-<section class="section light faq" id="faq" data-section aria-labelledby="faq-title">
+<section class="section light faq" id="faq" data-particles="accent" data-section aria-labelledby="faq-title">
   <div class="wrap wrap--narrow">
     <p class="eyebrow" data-reveal>${esc(t.faq.eyebrow)}</p>
     <h2 class="title" id="faq-title" data-title>${esc(t.faq.title)}</h2>
@@ -608,7 +608,7 @@ ${galleryItems(lang, t)}
 
 </main>
 
-<footer class="footer dark" id="contact" data-section>
+<footer class="footer dark" id="contact" data-particles="secondary" data-section>
   <div class="wrap">
     <div class="footer__grid">
       <div data-reveal>
@@ -667,7 +667,7 @@ ${head({ lang, t, title: p.metaTitle, description: p.metaDescription, pathKey: '
 <body>
 <a class="skip" href="#main">${esc(t.common.skip)}</a>
 ${siteHeader(lang, t, 'privacy')}
-<main id="main" class="section light plain" tabindex="-1">
+<main id="main" class="section light plain" data-particles="accent" tabindex="-1">
   <div class="wrap wrap--narrow prose">
     <p><a class="link" href="${urls[lang].home}">← ${esc(p.back)}</a></p>
     <h1 class="title">${esc(p.title)}</h1>
@@ -676,7 +676,7 @@ ${siteHeader(lang, t, 'privacy')}
     <p><a class="btn btn--dark" href="${tel}"><span class="btn__icon" aria-hidden="true">${icons.phone}</span><span class="btn__label">${esc(fill(t.common.call, { phone }))}</span></a></p>
   </div>
 </main>
-<footer class="footer dark footer--plain">
+<footer class="footer dark footer--plain" data-particles="secondary">
   <p class="footer__line wrap">${esc(t.footer.line)} · <span lang="en">${esc(config.camp.organiser)}</span></p>
 </footer>
 <script type="application/json" id="i18n">${JSON.stringify({ lang, common: t.common, phone, tel }).replace(/</g, '\\u003c')}</script>

@@ -9,6 +9,7 @@ import { initCarousel } from './carousel.js';
 import { initRegistration } from './register.js';
 import { initHero } from './hero.js';
 import { initLoader } from './loader.js';
+import { initParticles } from './particles.js';
 
 export function boot() {
   const html = document.documentElement;
@@ -23,6 +24,7 @@ export function boot() {
     initPointer(audio);
     initFaq(audio);
     initCarousel(audio);
+    initParticles();
     initRegistration({ audio, motion });
     initLoader({ audio, motion, hero });
   } catch (err) {

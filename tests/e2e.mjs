@@ -196,6 +196,7 @@ async function main() {
         .map(([el, r]) => `${el.className || el.id} ${Math.round(r.width)}x${Math.round(r.height)}`));
       check(`${width}px: touch targets at least 48px (language pills 40px tall in a 48px group)`, small.length === 0, small.slice(0, 5).join(', '));
       await page.screenshot({ path: path.join(out, `full-${width}.png`), fullPage: true });
+      check(`${width}px: sound button visible`, await page.isVisible('#nav [data-sound-toggle]'));
       if (width === 360) {
         await page.evaluate(() => window.scrollTo(0, 0));
         await page.click('#menu-open');
@@ -464,6 +465,7 @@ async function main() {
         sound: Boolean(document.querySelector('#nav [data-sound-toggle]')),
         menu: Boolean(document.getElementById('menu')),
       }));
+      check('Privacy page scrolls smoothly too (Lenis active)', await page.evaluate(() => document.documentElement.classList.contains('lenis')));
       check('Privacy page has the same menu bar (links, Register, sound, phone menu)', sub.links.length === 5 && sub.links[2] === '/wintercamp/#gallery' && sub.reg === '/wintercamp/#register' && sub.sound && sub.menu, JSON.stringify(sub));
       await page.click('#nav .nav__link[href$="#gallery"]');
       await enter(page);
@@ -503,6 +505,25 @@ async function main() {
       check('Full-screen view: swiping moves to the next item', /1 of/.test(cap0) && /2 of/.test(cap1), `${cap0} -> ${cap1}`);
       await page.keyboard.press('Escape');
       await page.waitForTimeout(400);
+
+      // Round 3 checks.
+      await page.waitForTimeout(1000); // let any carousel move finish
+      const r3 = await page.evaluate(() => {
+        const active = document.querySelector('.car__item.is-active');
+        const next = active?.nextElementSibling;
+        return { activeOp: active && getComputedStyle(active).opacity, nextOp: next && Number(getComputedStyle(next).opacity) };
+      });
+      check('Carousel cross-fade: centre item fully visible, neighbours faded', r3.activeOp === '1' && r3.nextOp > 0.2 && r3.nextOp < 0.6, JSON.stringify(r3));
+      const fields = await page.evaluate(() => [...document.querySelectorAll('[data-particles]')].map((h) => [h.id || h.className.split(' ')[0], h.dataset.particles, Boolean(h.querySelector(':scope > canvas.particles'))]));
+      check('Particles: red on light sections, light grey on dark sections', fields.length >= 5 && fields.every(([, , c]) => c) && fields.filter(([id]) => ['activities', 'faq'].includes(id)).every(([, k]) => k === 'accent') && fields.filter(([id]) => ['gallery', 'contact'].includes(id)).every(([, k]) => k === 'secondary'), JSON.stringify(fields));
+      await page.locator('#faq').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(600);
+      const px = async () => page.evaluate(() => { const c = document.querySelector('#faq > canvas.particles'); return c.toDataURL().length + ':' + c.getContext('2d').getImageData(0, 0, c.width, Math.min(c.height, 600)).data.reduce((a, v, i) => (i % 4 === 3 ? a + v : a), 0); });
+      const p1 = await px();
+      await page.waitForTimeout(500);
+      const p2 = await px();
+      check('Particles are drawn and falling (canvas changes over time)', p1 !== p2 && !p1.endsWith(':0'), `${p1} vs ${p2}`);
+      await page.screenshot({ path: path.join(out, 'faq-particles-1280.png') });
 
       // Hero text stays after scrolling away and back.
       await page.evaluate(() => window.scrollTo(0, 0));
@@ -556,7 +577,7 @@ async function main() {
       await page.fill('#f-phone-2', '12345');
       await page.click('#reg-next');
       await page.waitForTimeout(400);
-      check('A short phone number blocks "Next" with a 10-digit message', (await page.textContent('#err-phones')).includes('10-digit') && await page.evaluate(() => [...document.querySelectorAll('.step')].findIndex((x) => !x.hidden)) === 1);
+      check('A 5-digit phone number blocks "Next" with a clear message', (await page.textContent('#err-phones')).includes('up to 10 digits') && await page.evaluate(() => [...document.querySelectorAll('.step')].findIndex((x) => !x.hidden)) === 1);
       await page.fill('#f-phone-2', '');
       await page.click('#reg-next');
       await page.click('label.choice:has(input[name="consent"][value="yes"])');
