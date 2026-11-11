@@ -1,6 +1,6 @@
 # Winter Camp 2027 Website Plan
 
-Status: v4, ready to build. The build prompt is in `BUILD_PROMPT.md`.
+Status: v5, ready to build. The build prompt is in `BUILD_PROMPT.md`.
 
 ## 1. Decisions made on Paul's behalf (change any of these)
 
@@ -8,8 +8,8 @@ Status: v4, ready to build. The build prompt is in `BUILD_PROMPT.md`.
 |---|----------|-----|
 | 1 | Registration opens as a full-screen view from "REGISTER NOW" and the menu, rather than sitting between sections | The page order given is hero, activities, gallery, footer; the form is long and needs room |
 | 2 | Age is checked against the first day of that category's camp (Youth: 4 Jan 2027, Kids: 11 Jan 2027) | The form needs one rule to match date of birth to Kids or Youth |
-| 3 | A seat is taken when the form is submitted, not when payment is confirmed | The site cannot verify a UPI payment |
-| 4 | After paying, the visitor uploads a payment screenshot (and may add the UPI transaction reference). The sheet marks each registration "Payment proof received" or "Pending" | Lets organisers match payments to registrations and follow up by phone |
+| 3 | A seat is given only when the form is submitted together with a payment screenshot. The site cannot verify the payment itself, so organisers check the screenshots | Paul's decision: no unpaid registrations hold seats |
+| 4 | If someone pays but the last seat goes before they submit, their details and screenshot are still saved in a separate "Paid, no seat" tab | Organisers can refund them or make room when they call |
 | 5 | A typed-name alternative sits beside the signature canvas | A drawn signature cannot be made with a keyboard or screen reader |
 | 6 | A short "Camp facts and FAQ" block sits above the footer | Needed for answer engines and for parents; see section 9 |
 | 8 | The UPI QR image stays in the repo rather than on Google Drive, and the payee name "Achui Sareo" and UPI ID are shown as text beside it | Drive would not make it harder to replace; see section 11 |
@@ -131,10 +131,12 @@ Plain-text answers to the questions parents and answer engines ask: who is it fo
 2. **Pick a category:** Kids (under 10, 11 to 13 Jan) or Youth (10 to 18, 4 to 6 Jan). Each card shows seats left (skeleton while loading). The form does not appear until one is chosen.
 3. **Seats full:** a full category shows "Seats are full. Kindly contact +91-8219012669." with a tap-to-call link, and cannot be selected.
 4. **Expand and confirm:** the chosen card expands with a clear active state; "Change" goes back.
-5. **Form** (below), in three short steps with a progress indicator: child, parent and health, consent and signature.
-6. **Submit:** loading state on the button; the form locks; data is kept if sending fails, with a retry button.
-7. **Success and payment:** burst of light, check mark, chime. Then payment instructions: ₹500 by UPI using the QR code, the UPI ID (with a copy button) or the phone number, plus a "Pay ₹500 with UPI" button on phones that opens the UPI app with the amount filled in. The payee name "Achui Sareo" is shown with the instruction to check that name in the UPI app before paying.
-8. **Payment proof:** the visitor uploads a screenshot of the payment (JPG, PNG or WebP; resized in the browser before upload; preview, replace and remove controls; upload progress and success state) and may add the UPI transaction reference. If they leave before uploading, the registration stays in the sheet as "Pending" and the screen tells them to contact +91-8219012669.
+5. **Form** (below), in four short steps with a progress indicator: child, parent and health, consent and signature, payment.
+6. **Payment step:** seats are checked again before this step is shown; if the category has filled in the meantime, the seats-full message appears and nobody is asked to pay. Otherwise it shows: ₹500 by UPI using the QR code, the UPI ID (with a copy button) or the phone number, plus a "Pay ₹500 with UPI" button on phones that opens the UPI app with the amount filled in. The payee name "Achui Sareo" is shown with the instruction to check that name in the UPI app before paying.
+7. **Payment screenshot (required):** JPG, PNG or WebP; resized in the browser; preview, replace and remove controls. Optional UPI transaction reference. The submit button stays disabled until a screenshot is attached.
+8. **Submit:** everything is sent in one go. Loading state on the button; the form locks; data and screenshot are kept if sending fails, with a retry button.
+9. **Seat given:** burst of light, check mark, chime, and a confirmation with the child's name, category, dates and venue.
+10. **Last seat just taken:** if the category filled between paying and submitting, show exactly: "Oh No Someone booked the last seat just before you! Kindly contact +91-8219012669" with a tap-to-call link. The submission is saved in the "Paid, no seat" tab.
 
 ### Fields
 
@@ -152,6 +154,8 @@ Plain-text answers to the questions parents and answer engines ask: who is it fo
 | 9 | "I have read and understood the above and am happy for my child to be involved in Winter Camp 2027." | Checkbox | Yes | |
 | 10 | Signed | Signature canvas with the prompt "Sign here", a Clear button, and a "Type your name instead" option | Yes | Works with finger, stylus or mouse |
 | 11 | Date of signing | Date | Yes | Filled with today's date, editable |
+| 12 | Payment screenshot | Image upload | Yes | Saved to Google Drive, not GitHub |
+| 13 | UPI transaction reference | Text | No | |
 
 Statement shown above field 8, word for word:
 
@@ -163,9 +167,9 @@ Statement shown above field 8, word for word:
 - Files go to private Google Drive folders, never to GitHub, and are linked from the sheet row:
   - `Winter Camp 2027/Kids/Payment screenshots/` and `Winter Camp 2027/Kids/Signatures/`
   - `Winter Camp 2027/Youth/Payment screenshots/` and `Winter Camp 2027/Youth/Signatures/`
-- Files are named with the category, child's name and timestamp. Each registration gets a random reference code so the screenshot upload attaches to the right row.
-- Uploads are checked on the server: images only (verified by file content, not just the name), 5 MB maximum, one screenshot per registration unless replaced.
-- The script returns seats left per category, and uses a lock so two people cannot take the last seat. It rejects a submission once a category has 30.
+- Files are named with the category, child's name and timestamp.
+- Uploads are checked on the server: images only (verified by file content, not just the name), 5 MB maximum, and a registration without a valid screenshot is rejected.
+- The script returns seats left per category, and uses a lock so two people cannot take the last seat. Once a category has 30, further submissions get the "last seat" response and are written to the "Paid, no seat" tab with their screenshot instead of the main list.
 - The script source lives in the repo under `apps-script/`; Paul deploys it from his Google account and puts the web app URL in the site config. Setup steps go in the README.
 
 ## 7. Effects map
@@ -234,6 +238,7 @@ The form collects children's personal and medical details, so this matters.
 - No secrets in the repo. The Apps Script URL is public by nature, so the script validates everything again on the server: types, lengths, allowed values, age against category, seat limit.
 - Text is cleaned before it is written to the sheet so that entries cannot run as spreadsheet formulas, and all text is escaped when shown on the page.
 - Spam control: hidden honeypot field, minimum fill time, per-submission rate limit in the script.
+- **Payment screenshots are never stored on GitHub.** The repo and the website are public, the site has no safe way to write to the repo from a visitor's browser, and anything committed stays in the history permanently. Private Google Drive folders are the right place.
 - **Payment QR:** kept in the repo. The QR has to be public to be shown, so the risk is someone replacing it, and that needs write access wherever it is stored. A Drive link would add a second place to protect, is unreliable for showing images on a website, and would weaken the Content Security Policy. Protection comes from: two-factor sign-in on the GitHub account, no extra collaborators, branch protection on `main`, and showing the payee name and UPI ID as text so parents can confirm the name their UPI app displays.
 - The Google Sheet and the Drive folders (signatures, payment screenshots) stay private to the organisers, shared with named people only, never "anyone with the link"; nothing personal is stored in the repo or in the browser after a successful submission.
 - Privacy notice linked from the form and footer: what is collected, why, who sees it, how long it is kept, and how to ask for deletion. Parental consent is captured by fields 8 to 11.
