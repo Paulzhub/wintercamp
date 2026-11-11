@@ -68,5 +68,5 @@ export default {
   // Paste the Google Apps Script web app URL here after deploying it
   // (see apps-script/README.md). It looks like:
   // https://script.google.com/macros/s/AKfy.../exec
-  appsScriptUrl: '',
+  appsScriptUrl: 'https://script.google.com/macros/s/AKfycbyX6DzCn0fdAUJe7b7yUBI8Zff3EFCEz7LPPzVkene5fKA4JC14OfWAQOOEmKnKuTlO/exec',
 };
