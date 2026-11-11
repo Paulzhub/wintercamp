@@ -1,0 +1,770 @@
+// Pre-renders the pages so every word of content is in the delivered HTML:
+//   index.html, bo/index.html, privacy/index.html, bo/privacy/index.html
+// plus public/robots.txt, public/sitemap.xml and public/llms.txt.
+// These outputs are generated files (git-ignored). Edit this script, site.config.js
+// or src/i18n/*.json instead.
+
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import config from '../site.config.js';
+import { icons } from './icons.mjs';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const dev = process.argv.includes('--dev');
+const base = process.env.WC_BASE || config.site.basePath;
+const origin = config.site.origin;
+const appsScriptUrl = process.env.WC_APPS_SCRIPT_URL || config.appsScriptUrl;
+
+const readJson = async (p) => JSON.parse(await readFile(path.join(root, p), 'utf8'));
+const strings = { en: await readJson('src/i18n/en.json'), bo: await readJson('src/i18n/bo.json') };
+const gallery = await readJson('src/generated/gallery.json');
+
+const esc = (s) =>
+  String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const fill = (s, vars) => String(s).replace(/\{(\w+)\}/g, (_, k) => (k in vars ? vars[k] : `{${k}}`));
+const phone = config.contact.phoneDisplay;
+const tel = config.contact.phoneHref;
+
+const urls = {
+  en: { home: base, privacy: `${base}privacy/` },
+  bo: { home: `${base}bo/`, privacy: `${base}bo/privacy/` },
+};
+const abs = (p) => origin + p;
+
+function csp() {
+  if (dev) return '';
+  const connect = ["'self'", 'https://script.google.com', 'https://script.googleusercontent.com', 'https://*.googleusercontent.com'];
+  if (appsScriptUrl) {
+    const o = new URL(appsScriptUrl).origin;
+    if (!/google(usercontent)?\.com$/.test(new URL(appsScriptUrl).hostname)) connect.push(o);
+  }
+  const policy = [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self'",
+    "img-src 'self' data: blob:",
+    "media-src 'self' blob:",
+    "font-src 'self'",
+    `connect-src ${connect.join(' ')}`,
+    "worker-src 'self' blob:",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'none'",
+  ].join('; ');
+  return `<meta http-equiv="Content-Security-Policy" content="${esc(policy)}">`;
+}
+
+function jsonLd(lang, t) {
+  const place = {
+    '@type': 'Place',
+    name: config.venue.name,
+    address: {
+      '@type': 'PostalAddress',
+      streetAddress: `${config.venue.name}, ${config.venue.street}`,
+      addressLocality: config.venue.locality,
+      addressRegion: config.venue.region,
+      postalCode: config.venue.postalCode,
+      addressCountry: config.venue.countryCode,
+    },
+  };
+  const org = {
+    '@type': 'Organization',
+    '@id': abs(base) + '#organisation',
+    name: config.camp.organiser,
+    url: abs(base),
+    telephone: phone,
+    contactPoint: { '@type': 'ContactPoint', telephone: phone, contactType: 'registration', availableLanguage: ['en', 'bo'] },
+  };
+  const event = (key, label, minAge, maxAge) => ({
+    '@type': 'Event',
+    '@id': abs(base) + '#' + key,
+    name: `${config.camp.name}: ${label}`,
+    description: `${config.camp.name}, ${config.camp.theme}: ${config.camp.themeLine}. ${label}. Games, craft, storytelling, music time, snacks and lunch, and a picnic on day 3. Fee ${config.fee.display}. ${config.categories[key].seats} seats, first come first served.`,
+    startDate: config.categories[key].start,
+    endDate: config.categories[key].end,
+    eventStatus: 'https://schema.org/EventScheduled',
+    eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
+    location: place,
+    organizer: { '@id': org['@id'] },
+    image: abs(base) + 'og-image.jpg',
+    inLanguage: ['en', 'bo'],
+    isAccessibleForFree: false,
+    maximumAttendeeCapacity: config.categories[key].seats,
+    audience: { '@type': 'PeopleAudience', suggestedMinAge: minAge, suggestedMaxAge: maxAge },
+    offers: {
+      '@type': 'Offer',
+      price: String(config.fee.amount),
+      priceCurrency: config.fee.currency,
+      availability: 'https://schema.org/InStock',
+      url: abs(urls[lang].home) + '#register',
+      validFrom: '2026-11-11',
+    },
+  });
+  const graph = [
+    org,
+    { '@type': 'WebSite', '@id': abs(base) + '#website', name: config.camp.name, url: abs(base), inLanguage: ['en', 'bo'], publisher: { '@id': org['@id'] } },
+    event('youth', 'Youth (10 to 18)', 10, 18),
+    event('kids', 'Kids (under 10)', 0, 9),
+    {
+      '@type': 'FAQPage',
+      '@id': abs(urls[lang].home) + '#faq',
+      inLanguage: lang,
+      mainEntity: t.faq.items.map((i) => ({ '@type': 'Question', name: i.q, acceptedAnswer: { '@type': 'Answer', text: i.a } })),
+    },
+  ];
+  // "<" is escaped so the data block can never close the script element early.
+  return JSON.stringify({ '@context': 'https://schema.org', '@graph': graph }).replace(/</g, '\\u003c');
+}
+
+function head({ lang, t, title, description, pathKey, withLd }) {
+  const self = urls[lang][pathKey];
+  return `<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+${csp()}
+<title>${esc(title)}</title>
+<meta name="description" content="${esc(description)}">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta name="theme-color" content="#1C1C1C">
+<meta name="color-scheme" content="dark light">
+<link rel="canonical" href="${abs(self)}">
+<link rel="alternate" hreflang="en" href="${abs(urls.en[pathKey])}">
+<link rel="alternate" hreflang="bo" href="${abs(urls.bo[pathKey])}">
+<link rel="alternate" hreflang="x-default" href="${abs(urls.en[pathKey])}">
+<link rel="icon" href="${base}favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="${esc(config.camp.name)}">
+<meta property="og:title" content="${esc(title)}">
+<meta property="og:description" content="${esc(description)}">
+<meta property="og:url" content="${abs(self)}">
+<meta property="og:locale" content="${lang === 'bo' ? 'bo_IN' : 'en_IN'}">
+<meta property="og:image" content="${abs(base)}og-image.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="${esc(t.meta.ogAlt)}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${esc(title)}">
+<meta name="twitter:description" content="${esc(description)}">
+<meta name="twitter:image" content="${abs(base)}og-image.jpg">
+<noscript><link rel="stylesheet" href="${base}nojs.css"></noscript>
+${withLd ? `<script type="application/ld+json">${jsonLd(lang, t)}</script>` : ''}`;
+}
+
+const en = (s) => `<span lang="en">${s}</span>`;
+const brandWord = 'ILLUMINATE';
+
+function langToggle(lang, t, pathKey, extra = '') {
+  const other = lang === 'en' ? 'bo' : 'en';
+  return `<div class="lang ${extra}" role="group" aria-label="Language / སྐད་ཡིག">
+  <span class="lang__opt is-active" lang="${lang}" aria-current="true"><span class="sr-only">${esc(t.common.langCurrentLabel)}</span><span aria-hidden="true">${esc(t.common.langCurrent)}</span></span>
+  <a class="lang__opt" href="${urls[other][pathKey]}" hreflang="${other}" lang="${other}" data-lang="${other}" aria-label="${esc(t.common.langSwitchLabel)}">${esc(t.common.langSwitch)}</a>
+</div>`;
+}
+
+function galleryItems(lang, t) {
+  const total = gallery.length;
+  return gallery
+    .map((item, i) => {
+      const n = i + 1;
+      const fallbackAlt = item.type === 'video' ? t.gallery.videoAlt : t.gallery.photoAlt;
+      const alt = item.alt[lang] || item.alt.en || fallbackAlt;
+      const caption = item.caption[lang] || '';
+      let img;
+      let data = `data-type="${item.type}" data-w="${item.width}" data-h="${item.height}"`;
+      if (item.type === 'photo') {
+        const src = (w) => `${base}gallery/${item.id}-${w}.webp`;
+        const srcset = item.widths.map((w) => `${src(w)} ${w}w`).join(', ');
+        const small = item.widths[0];
+        const ratio = item.height / item.width;
+        img = `<img src="${src(small)}" srcset="${srcset}" sizes="(min-width: 1024px) 480px, 72vw" width="${small}" height="${Math.round(small * ratio)}" alt="${esc(alt)}" loading="lazy" decoding="async" draggable="false">`;
+        data += ` data-full="${src(item.widths[item.widths.length - 1])}"`;
+      } else {
+        const poster = item.poster ? `${base}gallery/${item.id}-poster.webp` : '';
+        img = poster
+          ? `<img src="${poster}" width="${item.width}" height="${item.height}" alt="${esc(alt)}" loading="lazy" decoding="async" draggable="false">`
+          : `<span class="car__noposter" role="img" aria-label="${esc(alt)}"></span>`;
+        data += ` data-video="${base}gallery/${item.id}.mp4"${poster ? ` data-poster="${poster}"` : ''}`;
+      }
+      return `<li class="car__item" ${data}>
+  <button type="button" class="car__btn" aria-label="${esc(fill(t.gallery.open, { n, total }))}" data-cursor="${esc(item.type === 'video' ? t.gallery.cursorPlay : t.gallery.cursorView)}">
+    <span class="car__media skeleton">${img}</span>
+    ${item.type === 'video' ? `<span class="car__play" aria-hidden="true">${icons.play}</span>` : ''}
+  </button>
+  ${caption ? `<p class="car__caption glass">${esc(caption)}</p>` : ''}
+</li>`;
+    })
+    .join('\n');
+}
+
+function registration(lang, t) {
+  const r = t.reg;
+  const f = r.f;
+  const req = `<span class="req" aria-hidden="true">*</span>`;
+  const opt = `<span class="opt">(${esc(r.optional)})</span>`;
+  const err = (id) => `<p class="field__error" id="err-${id}" hidden></p>`;
+  const years = [];
+  for (let y = 2027; y >= 2007; y--) years.push(y);
+  const options = (list) => list.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('');
+  const cat = (key) => `<article class="cat" data-cat="${key}">
+  <div class="cat__head">
+    <h4 class="cat__title">${esc(r[key])}</h4>
+    <span class="cat__icon" aria-hidden="true">${key === 'kids' ? icons.kids : icons.youth}</span>
+  </div>
+  <p class="cat__age">${esc(r[key + 'Age'])}</p>
+  <p class="cat__dates">${esc(r[key + 'Dates'])}</p>
+  <p class="cat__seats" data-seats><span class="skeleton skeleton--text">${esc(r.seatsLoading)}</span></p>
+  <p class="cat__full" data-full hidden><span lang="en">${esc(r.full)}</span>${r.fullLocal ? `<br><span>${esc(r.fullLocal)}</span>` : ''} <a class="link" href="${tel}">${esc(fill(t.common.call, { phone }))}</a></p>
+  <button type="button" class="btn btn--dark cat__choose" data-choose disabled><span class="btn__label">${esc(fill(r.choose, { category: r[key] }))}</span></button>
+  <p class="cat__chosen" data-chosen hidden><span class="cat__check" aria-hidden="true">${icons.check}</span> ${esc(fill(r.chosen, { category: r[key] }))} <button type="button" class="link cat__change" data-change>${esc(r.change)}</button></p>
+</article>`;
+
+  return `<dialog class="reg" id="register" aria-labelledby="reg-title">
+<div class="reg__bar">
+  <h2 class="reg__title" id="reg-title">${esc(r.title)}</h2>
+  <button type="button" class="icon-btn" data-close-register aria-label="${esc(t.common.close)}">${icons.close}</button>
+</div>
+<div class="reg__scroll" data-lenis-prevent>
+<div class="reg__inner">
+
+<section class="reg__pick" id="reg-pick" aria-labelledby="reg-pick-title">
+  <h3 class="reg__h" id="reg-pick-title">${esc(r.pick)}</h3>
+  <p class="reg__help" id="reg-pick-help">${esc(r.pickHelp)}</p>
+  <div class="cats">${cat('kids')}${cat('youth')}</div>
+  <p class="notice notice--error" id="seats-error" role="alert" hidden><span>${esc(fill(r.seatsError, { phone }))}</span> <button type="button" class="link" id="seats-retry">${esc(r.retry)}</button></p>
+</section>
+
+<form class="form" id="reg-form" novalidate hidden autocomplete="on">
+  <ol class="steps" id="reg-steps" aria-label="${esc(r.steps.join(', '))}">
+    ${r.steps.map((s, i) => `<li class="steps__item" data-step-dot="${i}"><span class="steps__num" aria-hidden="true">${i + 1}</span><span class="steps__name">${esc(s)}</span></li>`).join('')}
+  </ol>
+  <p class="sr-only" id="step-status" role="status" aria-live="polite"></p>
+  <div class="notice notice--error form__summary" id="form-summary" role="alert" tabindex="-1" hidden></div>
+  <p class="form__note">${esc(r.requiredNote)}</p>
+
+  <div class="hp" aria-hidden="true"><label for="f-website">Website</label><input type="text" id="f-website" name="website" tabindex="-1" autocomplete="off"></div>
+
+  <fieldset class="step" data-step="0">
+    <legend class="step__legend">${esc(r.steps[0])}</legend>
+    <div class="field">
+      <label class="field__label" for="f-name">${esc(f.name)} ${req}</label>
+      <p class="field__help" id="help-name">${esc(f.nameHelp)}</p>
+      <input class="input" type="text" id="f-name" name="name" maxlength="100" autocomplete="off" required aria-describedby="help-name err-name">
+      ${err('name')}
+    </div>
+    <fieldset class="field field--group" id="f-dob" aria-describedby="err-dob">
+      <legend class="field__label">${esc(f.dob)} ${req}</legend>
+      <div class="dob">
+        <label class="dob__part"><span class="dob__label">${esc(f.day)}</span>
+          <select class="input" id="f-dob-d" name="dobDay" required><option value=""></option>${options(Array.from({ length: 31 }, (_, i) => [i + 1, i + 1]))}</select></label>
+        <label class="dob__part dob__part--wide"><span class="dob__label">${esc(f.month)}</span>
+          <select class="input" id="f-dob-m" name="dobMonth" required><option value=""></option>${options(r.months.map((m, i) => [i + 1, m]))}</select></label>
+        <label class="dob__part"><span class="dob__label">${esc(f.year)}</span>
+          <select class="input" id="f-dob-y" name="dobYear" required><option value=""></option>${options(years.map((y) => [y, y]))}</select></label>
+      </div>
+      ${err('dob')}
+    </fieldset>
+  </fieldset>
+
+  <fieldset class="step" data-step="1" hidden>
+    <legend class="step__legend">${esc(r.steps[1])}</legend>
+    <div class="field">
+      <label class="field__label" for="f-parent">${esc(f.parent)} ${req}</label>
+      <input class="input" type="text" id="f-parent" name="parent" maxlength="150" autocomplete="name" required aria-describedby="err-parent">
+      ${err('parent')}
+    </div>
+    <div class="field">
+      <label class="field__label" for="f-address">${esc(f.address)} ${req}</label>
+      <textarea class="input" id="f-address" name="address" rows="3" maxlength="400" autocomplete="street-address" required aria-describedby="err-address"></textarea>
+      ${err('address')}
+    </div>
+    <fieldset class="field field--group" id="f-phones" aria-describedby="err-phones">
+      <legend class="field__label">${esc(f.phones)} ${req}</legend>
+      <div class="phones" id="phones-list"></div>
+      <button type="button" class="btn btn--ghost btn--sm" id="phone-add"><span class="btn__icon" aria-hidden="true">${icons.plus}</span><span class="btn__label">${esc(f.addPhone)}</span></button>
+      ${err('phones')}
+    </fieldset>
+    <div class="field">
+      <label class="field__label" for="f-medical">${esc(f.medical)} ${opt}</label>
+      <p class="field__help" id="help-medical">${esc(f.noneOk)}</p>
+      <textarea class="input" id="f-medical" name="medical" rows="3" maxlength="1000" aria-describedby="help-medical err-medical"></textarea>
+      ${err('medical')}
+    </div>
+    <div class="field">
+      <label class="field__label" for="f-dietary">${esc(f.dietary)} ${opt}</label>
+      <p class="field__help" id="help-dietary">${esc(f.noneOk)}</p>
+      <textarea class="input" id="f-dietary" name="dietary" rows="3" maxlength="1000" aria-describedby="help-dietary err-dietary"></textarea>
+      ${err('dietary')}
+    </div>
+  </fieldset>
+
+  <fieldset class="step" data-step="2" hidden>
+    <legend class="step__legend">${esc(r.steps[2])}</legend>
+    <div class="statement" id="consent-statement">
+      ${f.consentStatementLocal ? `<p>${esc(f.consentStatementLocal)}</p>` : ''}
+      <p lang="en">${esc(f.consentStatement)}</p>
+    </div>
+    <fieldset class="field field--group" id="f-consent" aria-describedby="consent-statement err-consent">
+      <legend class="field__label">${esc(f.consentLegend)} ${req}</legend>
+      <div class="radios">
+        <label class="choice"><input type="radio" name="consent" value="yes" required><span class="choice__box" aria-hidden="true"></span><span class="choice__text">${esc(f.yes)}</span></label>
+        <label class="choice"><input type="radio" name="consent" value="no"><span class="choice__box" aria-hidden="true"></span><span class="choice__text">${esc(f.no)}</span></label>
+      </div>
+      ${err('consent')}
+    </fieldset>
+    <div class="field">
+      <label class="choice choice--check"><input type="checkbox" id="f-agree" name="agree" required aria-describedby="err-agree"><span class="choice__box" aria-hidden="true">${icons.check}</span><span class="choice__text">${esc(f.agree)} ${req}${f.agreeOriginal ? `<span class="choice__orig" lang="en">${esc(f.agreeOriginal)}</span>` : ''}</span></label>
+      ${err('agree')}
+    </div>
+    <div class="field">
+      <div class="field__row">
+        <span class="field__label" id="sign-label">${esc(f.signed)} ${req}</span>
+        <button type="button" class="tip-btn" data-tip="${esc(f.signTip)}" aria-label="${esc(f.signTip)}">${icons.help}</button>
+      </div>
+      <div class="sign" id="sign-wrap">
+        <canvas class="sign__canvas" id="f-sign" width="640" height="240" role="img" aria-label="${esc(f.signCanvas)}" aria-describedby="sign-note err-signature"></canvas>
+        <span class="sign__prompt" id="sign-prompt" aria-hidden="true">${esc(f.signHere)}</span>
+        <button type="button" class="btn btn--ghost btn--sm sign__clear" id="f-sign-clear"><span class="btn__label">${esc(f.signClear)}</span></button>
+      </div>
+      <p class="field__help" id="sign-note">${esc(f.signNote.replace(phone, '').trim())} <a class="link" href="${tel}">${phone}</a></p>
+      ${err('signature')}
+    </div>
+    <div class="field">
+      <label class="field__label" for="f-signdate">${esc(f.signDate)} ${req}</label>
+      <input class="input input--date" type="date" id="f-signdate" name="signDate" required aria-describedby="err-signDate">
+      ${err('signDate')}
+    </div>
+    <p class="field__help"><a class="link" href="${urls[lang].privacy}" target="_blank" rel="noopener noreferrer">${esc(f.privacy)}</a></p>
+  </fieldset>
+
+  <fieldset class="step" data-step="3" hidden>
+    <legend class="step__legend">${esc(r.steps[3])}</legend>
+    <div class="pay__checking" id="pay-checking" role="status"><span class="spinner" aria-hidden="true"></span> ${esc(r.pay.checking)}</div>
+    <div class="notice notice--full" id="pay-full" role="alert" hidden><span lang="en">${esc(r.full)}</span>${r.fullLocal ? `<br><span>${esc(r.fullLocal)}</span>` : ''} <a class="link" href="${tel}">${esc(fill(t.common.call, { phone }))}</a></div>
+    <div class="pay" id="pay-panel" hidden>
+      <h3 class="pay__title">${esc(r.pay.title)}</h3>
+      <div class="pay__grid">
+        <figure class="pay__qr"><img src="/assets/payment/upi-qr.jpg" width="1152" height="1600" alt="${esc(r.pay.qrAlt)}" loading="lazy" decoding="async"></figure>
+        <div class="pay__details">
+          <p class="pay__row"><span class="pay__k">${esc(r.pay.payee)}</span><strong class="pay__v" lang="en">${esc(config.upi.payeeName)}</strong></p>
+          <p class="notice notice--info">${esc(r.pay.payeeCheck)}</p>
+          <p class="pay__row"><span class="pay__k">${esc(r.pay.upiId)}</span><span class="pay__v pay__v--id" id="upi-id" lang="en">${esc(config.upi.id)}</span>
+            <button type="button" class="btn btn--ghost btn--sm" id="upi-copy" data-tip="${esc(r.pay.copyTip)}"><span class="btn__icon" aria-hidden="true">${icons.copy}</span><span class="btn__label" data-copy-label>${esc(r.pay.copy)}</span></button></p>
+          <p class="sr-only" id="copy-status" role="status" aria-live="polite"></p>
+          <p class="pay__row"><span class="pay__k">${esc(r.pay.phone)}</span><span class="pay__v" lang="en">${esc(config.upi.phone)}</span></p>
+          <a class="btn btn--dark pay__open" id="upi-open" hidden href="upi://pay?pa=${encodeURIComponent(config.upi.id)}&amp;pn=${encodeURIComponent(config.upi.payeeName)}&amp;am=${config.fee.amount}&amp;cu=${config.fee.currency}&amp;tn=${encodeURIComponent(config.upi.note)}"><span class="btn__label">${esc(r.pay.open)}</span></a>
+        </div>
+      </div>
+      <div class="field">
+        <span class="field__label" id="shot-label">${esc(r.pay.shot)} ${req}</span>
+        <p class="field__help" id="help-shot">${esc(r.pay.shotHelp)}</p>
+        <div class="shot" id="shot">
+          <input class="sr-only shot__input" type="file" id="f-shot" name="screenshot" accept="image/jpeg,image/png,image/webp" aria-labelledby="shot-label" aria-describedby="help-shot err-shot">
+          <label class="btn btn--dark shot__choose" for="f-shot" id="shot-choose"><span class="btn__icon" aria-hidden="true">${icons.upload}</span><span class="btn__label" data-shot-label>${esc(r.pay.shotChoose)}</span></label>
+          <div class="shot__preview" id="shot-preview" hidden>
+            <img id="shot-img" alt="${esc(r.pay.shotPreview)}">
+            <button type="button" class="btn btn--ghost btn--sm" id="shot-remove"><span class="btn__label">${esc(r.pay.shotRemove)}</span></button>
+          </div>
+        </div>
+        ${err('shot')}
+      </div>
+      <div class="field">
+        <label class="field__label" for="f-ref">${esc(r.pay.ref)} ${opt}</label>
+        <input class="input" type="text" id="f-ref" name="paymentRef" maxlength="64" autocomplete="off" inputmode="text" aria-describedby="err-ref">
+        ${err('ref')}
+      </div>
+      <p class="field__help" id="submit-hint">${esc(r.pay.submitNeedShot)}</p>
+    </div>
+  </fieldset>
+
+  <div class="notice notice--error" id="send-error" role="alert" hidden></div>
+  <div class="form__nav">
+    <button type="button" class="btn btn--ghost" id="reg-back" hidden><span class="btn__label">${esc(r.back)}</span></button>
+    <button type="button" class="btn btn--red" id="reg-next"><span class="btn__label">${esc(r.next)}</span></button>
+    <button type="submit" class="btn btn--red" id="reg-submit" hidden disabled aria-describedby="submit-hint"><span class="spinner" aria-hidden="true"></span><span class="btn__label">${esc(r.pay.submit)}</span></button>
+  </div>
+</form>
+
+<section class="done" id="reg-done" hidden tabindex="-1" aria-labelledby="done-title">
+  <div class="done__burst" aria-hidden="true"><span class="done__ring"></span><span class="done__check">${icons.check}</span></div>
+  <h3 class="done__title" id="done-title">${esc(r.done.title)}</h3>
+  <p class="done__text" id="done-text"></p>
+  <dl class="done__facts">
+    <div><dt>${esc(r.done.name)}</dt><dd id="done-name"></dd></div>
+    <div><dt>${esc(r.done.category)}</dt><dd id="done-category"></dd></div>
+    <div><dt>${esc(r.done.dates)}</dt><dd id="done-dates"></dd></div>
+    <div><dt>${esc(r.done.venue)}</dt><dd>${esc(r.done.venueValue)}</dd></div>
+  </dl>
+  <button type="button" class="btn btn--dark" data-close-register><span class="btn__label">${esc(r.done.close)}</span></button>
+</section>
+
+<section class="done done--last" id="reg-last" hidden tabindex="-1" aria-labelledby="last-title">
+  <h3 class="done__title" id="last-title" lang="en">${esc(r.lastSeat)}</h3>
+  ${r.lastSeatLocal ? `<p class="done__text">${esc(r.lastSeatLocal)}</p>` : ''}
+  <p class="done__text">${esc(r.lastSeatNote)}</p>
+  <a class="btn btn--red" href="${tel}"><span class="btn__icon" aria-hidden="true">${icons.phone}</span><span class="btn__label">${esc(fill(t.common.call, { phone }))}</span></a>
+</section>
+
+</div>
+</div>
+</dialog>`;
+}
+
+function homePage(lang) {
+  const t = strings[lang];
+  const a = t.activities;
+  const letters = [...brandWord].map((c, i) => `<span class="ltr${i === 0 ? ' ltr--accent' : ''}" aria-hidden="true">${c}</span>`).join('');
+  const navLinks = [
+    ['#home', t.nav.home],
+    ['#activities', t.nav.activities],
+    ['#gallery', t.nav.gallery],
+    ['#faq', t.nav.faq],
+    ['#contact', t.nav.contact],
+  ];
+  const card = (key, extra = '') => `<li class="card ${extra}" data-reveal>
+  <article class="card__in" data-tilt>
+    ${key === 'picnic' ? '<div class="card__body">' : ''}
+    <span class="card__icon icon-${key}" aria-hidden="true">${icons[key]}</span>
+    <h3 class="card__title">${esc(a.cards[key].title)}</h3>
+    <p class="card__text">${esc(a.cards[key].text)}</p>
+    ${key === 'picnic' ? `</div><div class="card__rail"><span class="card__badge">${esc(a.cards.picnic.badge)}</span></div>` : ''}
+  </article>
+</li>`;
+  // Strings the scripts need at run time (no personal data).
+  const clientStrings = { lang, api: appsScriptUrl, common: t.common, gallery: t.gallery, reg: t.reg, phone, tel, cats: config.categories };
+  const venueLine = `${config.venue.name}, ${config.venue.street}, ${config.venue.locality}, ${config.venue.region}, ${config.venue.country}, ${config.venue.postalCode}`;
+
+  return `<!doctype html>
+<html lang="${lang}" class="lang-${lang}">
+<head>
+${head({ lang, t, title: t.meta.title, description: t.meta.description, pathKey: 'home', withLd: true })}
+<script type="module" src="/src/entry-${lang}.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">${esc(t.common.skip)}</a>
+
+<div class="loader" id="loader" role="dialog" aria-modal="true" aria-label="${esc(t.loader.label)}">
+  <div class="loader__in">
+    <p class="loader__word" lang="en" aria-hidden="true">${[...brandWord].map((c) => `<span class="loader__ltr">${c}</span>`).join('')}</p>
+    <p class="loader__sub">${esc(t.hero.sub)}</p>
+    <div class="loader__bar" role="progressbar" aria-label="${esc(t.loader.label)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div>
+    <div class="loader__actions" id="loader-actions">
+      <button type="button" class="btn btn--red" id="enter-sound"><span class="btn__icon" aria-hidden="true">${icons.soundOn}</span><span class="btn__label">${esc(t.loader.withSound)}</span></button>
+      <button type="button" class="btn btn--outline" id="enter-silent"><span class="btn__label">${esc(t.loader.silent)}</span></button>
+    </div>
+  </div>
+</div>
+
+<header class="nav" id="nav">
+  <a class="nav__brand" href="#home" aria-label="Illuminate, ${esc(config.camp.name)}: ${esc(t.nav.home)}"><span class="nav__wordmark" lang="en" aria-hidden="true">${brandWord}</span></a>
+  <nav class="nav__nav" aria-label="${esc(t.nav.label)}">
+    <ul class="nav__links">
+      ${navLinks.map(([href, label]) => `<li><a class="nav__link" href="${href}" data-text="${esc(label)}"><span>${esc(label)}</span></a></li>`).join('')}
+    </ul>
+  </nav>
+  <div class="nav__actions">
+    ${langToggle(lang, t, 'home')}
+    <button type="button" class="icon-btn sound" data-sound-toggle aria-pressed="false" aria-label="${esc(t.common.soundTip)}" data-tip="${esc(t.common.soundTip)}"><span class="sound__on" aria-hidden="true">${icons.soundOn}</span><span class="sound__off" aria-hidden="true">${icons.soundOff}</span></button>
+    <button type="button" class="btn btn--red btn--sm nav__register" data-open-register data-magnetic data-cursor="${esc(t.common.register)}"><span class="btn__label">${esc(t.common.register)}</span></button>
+    <button type="button" class="icon-btn nav__burger" id="menu-open" aria-haspopup="dialog" aria-controls="menu" aria-label="${esc(t.common.menuOpen)}"><span class="burger" aria-hidden="true"><span></span><span></span></span></button>
+  </div>
+</header>
+
+<dialog class="menu" id="menu" aria-label="${esc(t.common.menu)}">
+  <div class="menu__bar">
+    <span class="nav__wordmark is-shown" lang="en" aria-hidden="true">${brandWord}</span>
+    <button type="button" class="icon-btn" id="menu-close" aria-label="${esc(t.common.menuClose)}">${icons.close}</button>
+  </div>
+  <nav aria-label="${esc(t.common.menu)}">
+    <ul class="menu__links">
+      ${navLinks.map(([href, label]) => `<li><a class="menu__link" href="${href}">${esc(label)}</a></li>`).join('')}
+    </ul>
+  </nav>
+  <div class="menu__foot">
+    <button type="button" class="btn btn--red" data-open-register><span class="btn__label">${esc(t.common.registerNow)}</span></button>
+    ${langToggle(lang, t, 'home')}
+    <a class="link" href="${tel}">${phone}</a>
+  </div>
+</dialog>
+
+<main id="main" tabindex="-1">
+
+<section class="hero dark" id="home" data-section>
+  <div class="hero__scene" aria-hidden="true">
+    <div class="hero__glow"></div>
+    <svg class="hero__ridges" viewBox="0 0 1440 600" preserveAspectRatio="xMidYMax slice" focusable="false">
+      <path class="ridge ridge--3" d="M0 380 L120 330 L230 372 L340 290 L450 350 L560 262 L640 318 L760 236 L880 322 L980 276 L1100 340 L1210 286 L1330 346 L1440 300 L1440 600 L0 600Z"/>
+      <path class="ridge ridge--2" d="M0 450 L100 410 L210 452 L330 372 L420 424 L540 350 L660 430 L770 366 L900 440 L1010 384 L1130 446 L1260 392 L1360 436 L1440 404 L1440 600 L0 600Z"/>
+      <path class="ridge ridge--1" d="M0 520 L140 478 L260 516 L380 462 L520 512 L640 470 L780 522 L920 474 L1060 520 L1200 480 L1320 516 L1440 488 L1440 600 L0 600Z"/>
+    </svg>
+    <canvas class="hero__canvas" id="scene"></canvas>
+  </div>
+  <div class="hero__content">
+    <h1 class="hero__h1">
+      <span class="hero__label" data-hero-in>${esc(t.hero.label)}</span>
+      <span class="hero__word" id="hero-word" lang="en"><span class="sr-only">Illuminate</span>${letters}</span>
+      <span class="hero__sub" data-hero-in>${esc(t.hero.sub)}</span>
+    </h1>
+    <dl class="hero__facts" data-hero-in>
+      <div class="hero__fact"><dt>${esc(t.hero.youth)}</dt><dd>${esc(t.hero.youthDates)}</dd></div>
+      <div class="hero__fact"><dt>${esc(t.hero.kids)}</dt><dd>${esc(t.hero.kidsDates)}</dd></div>
+    </dl>
+    <p class="hero__venue" data-hero-in><span class="hero__pin" aria-hidden="true">${icons.pin}</span>${esc(t.hero.venue)}</p>
+    <div class="hero__cta" data-hero-in>
+      <button type="button" class="btn btn--red btn--lg" data-open-register data-magnetic data-cursor="${esc(t.common.register)}"><span class="btn__label">${esc(t.common.registerNow)}</span><span class="btn__icon" aria-hidden="true">${icons.arrow}</span></button>
+      <a class="btn btn--outline btn--lg" href="#activities"><span class="btn__label">${esc(t.hero.secondary)}</span></a>
+    </div>
+    <p class="hero__seats" data-hero-in>${esc(t.hero.seats)}</p>
+    <noscript><p class="hero__seats">${esc(fill(t.common.noJs, { phone }))}</p></noscript>
+  </div>
+  <p class="sr-only">${esc(t.hero.sceneAlt)}</p>
+</section>
+
+<section class="section light activities" id="activities" data-section aria-labelledby="activities-title">
+  <div class="wrap">
+    <p class="eyebrow" data-reveal>${esc(a.eyebrow)}</p>
+    <h2 class="title" id="activities-title" data-title>${esc(a.title)}</h2>
+    <p class="lead" data-reveal>${esc(a.lead)}</p>
+    <ul class="cards">
+      ${card('games')}${card('craft')}${card('story')}${card('music')}${card('food')}${card('picnic', 'card--wide')}
+    </ul>
+    <div class="strip" data-reveal>
+      <dl class="strip__facts">
+        <div><dt>${esc(a.strip.dates)}</dt><dd>${esc(a.strip.datesValue)}</dd></div>
+        <div><dt>${esc(a.strip.venue)}</dt><dd>${esc(a.strip.venueValue)}</dd></div>
+        <div><dt>${esc(a.strip.fee)}</dt><dd>${esc(a.strip.feeValue)}</dd></div>
+      </dl>
+      <button type="button" class="btn btn--red" data-open-register data-magnetic data-cursor="${esc(t.common.register)}"><span class="btn__label">${esc(t.common.registerNow)}</span><span class="btn__icon" aria-hidden="true">${icons.arrow}</span></button>
+    </div>
+  </div>
+</section>
+
+<section class="section dark gallery" id="gallery" data-section aria-labelledby="gallery-title">
+  <div class="wrap">
+    <p class="eyebrow" data-reveal>${esc(t.gallery.eyebrow)}</p>
+    <h2 class="title" id="gallery-title" data-title>${esc(t.gallery.title)}</h2>
+    <p class="lead" data-reveal>${esc(t.gallery.lead)}</p>
+  </div>
+  ${
+    gallery.length
+      ? `<div class="car" id="carousel" role="region" aria-roledescription="carousel" aria-label="${esc(t.gallery.regionLabel)}" tabindex="0" data-cursor="${esc(t.gallery.cursorDrag)}" data-reveal>
+    <ul class="car__track" id="car-track">
+${galleryItems(lang, t)}
+    </ul>
+    <div class="car__controls glass">
+      <button type="button" class="icon-btn car__arrow" id="car-prev" aria-label="${esc(t.gallery.prev)}" data-magnetic>${icons.left}</button>
+      <div class="car__slider">
+        <input type="range" class="range" id="car-range" min="0" max="${gallery.length - 1}" step="1" value="0" aria-label="${esc(t.gallery.slider)}" data-tip="${esc(t.gallery.sliderTip)}">
+      </div>
+      <p class="car__pos" id="car-pos" aria-live="polite">${esc(fill(t.gallery.position, { n: 1, total: gallery.length }))}</p>
+      <button type="button" class="icon-btn car__arrow" id="car-next" aria-label="${esc(t.gallery.next)}" data-magnetic>${icons.right}</button>
+    </div>
+  </div>`
+      : `<div class="wrap"><div class="car-empty glass" data-reveal><span class="car-empty__icon" aria-hidden="true">${icons.image}</span><p>${esc(t.gallery.empty)}</p></div></div>`
+  }
+</section>
+
+<section class="section light faq" id="faq" data-section aria-labelledby="faq-title">
+  <div class="wrap wrap--narrow">
+    <p class="eyebrow" data-reveal>${esc(t.faq.eyebrow)}</p>
+    <h2 class="title" id="faq-title" data-title>${esc(t.faq.title)}</h2>
+    <div class="faq__list">
+      ${t.faq.items
+        .map(
+          (i) => `<details class="qa" data-reveal>
+        <summary class="qa__q"><h3 class="qa__h">${esc(i.q)}</h3><span class="qa__icon" aria-hidden="true">${icons.plus}</span></summary>
+        <div class="qa__a"><p>${esc(i.a)}</p></div>
+      </details>`,
+        )
+        .join('\n      ')}
+    </div>
+    <noscript><p class="notice notice--info">${esc(fill(t.common.noJs, { phone }))}</p></noscript>
+  </div>
+</section>
+
+</main>
+
+<footer class="footer dark" id="contact" data-section>
+  <div class="wrap">
+    <div class="footer__grid">
+      <div data-reveal>
+        <h2 class="footer__h">${esc(t.footer.venueTitle)}</h2>
+        <address class="footer__addr" lang="en">${esc(venueLine)}</address>
+      </div>
+      <div data-reveal>
+        <h2 class="footer__h">${esc(t.footer.contactTitle)}</h2>
+        <p><a class="footer__tel" href="${tel}" aria-label="${esc(fill(t.common.call, { phone }))}"><span aria-hidden="true">${icons.phone}</span> ${phone}</a></p>
+        <p><a class="link" href="${urls[lang].privacy}">${esc(t.footer.privacy)}</a></p>
+      </div>
+      <div class="footer__tools" data-reveal>
+        ${langToggle(lang, t, 'home')}
+        <a class="icon-btn footer__top" href="#home" aria-label="${esc(t.common.backToTop)}" data-tip="${esc(t.common.backToTop)}" data-magnetic>${icons.up}</a>
+      </div>
+    </div>
+    <p class="footer__line">${esc(t.footer.line)}</p>
+  </div>
+  <p class="footer__mark" lang="en" data-clip><span>${esc(config.camp.organiser)}</span></p>
+  <p class="footer__rights wrap" lang="en">${esc(t.footer.rights)}</p>
+</footer>
+
+${registration(lang, t)}
+
+<dialog class="lightbox" id="lightbox" aria-label="${esc(t.gallery.lightbox)}">
+  <button type="button" class="icon-btn lightbox__close" id="lightbox-close" aria-label="${esc(t.common.close)}">${icons.close}</button>
+  <button type="button" class="icon-btn lightbox__nav lightbox__nav--prev" id="lightbox-prev" aria-label="${esc(t.gallery.prev)}">${icons.left}</button>
+  <figure class="lightbox__fig" id="lightbox-fig"><div class="lightbox__stage" id="lightbox-stage"></div><figcaption class="lightbox__cap" id="lightbox-cap" aria-live="polite"></figcaption></figure>
+  <button type="button" class="icon-btn lightbox__nav lightbox__nav--next" id="lightbox-next" aria-label="${esc(t.gallery.next)}">${icons.right}</button>
+</dialog>
+
+<svg class="defs" width="0" height="0" aria-hidden="true" focusable="false">
+  <filter id="liquid-glass" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.008 0.012" numOctaves="2" seed="7" result="noise"/>
+    <feGaussianBlur in="noise" stdDeviation="2" result="soft"/>
+    <feDisplacementMap in="SourceGraphic" in2="soft" scale="56" xChannelSelector="R" yChannelSelector="G" result="bent"/>
+    <feGaussianBlur in="bent" stdDeviation="3"/>
+  </filter>
+</svg>
+
+<script type="application/json" id="i18n">${JSON.stringify(clientStrings).replace(/</g, '\\u003c')}</script>
+</body>
+</html>
+`;
+}
+
+function privacyPage(lang) {
+  const t = strings[lang];
+  const p = t.privacy;
+  return `<!doctype html>
+<html lang="${lang}" class="lang-${lang} page-plain">
+<head>
+${head({ lang, t, title: p.metaTitle, description: p.metaDescription, pathKey: 'privacy', withLd: false })}
+<script type="module" src="/src/entry-plain-${lang}.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">${esc(t.common.skip)}</a>
+<header class="nav nav--plain is-stuck">
+  <a class="nav__brand" href="${urls[lang].home}" aria-label="Illuminate: ${esc(p.back)}"><span class="nav__wordmark is-shown" lang="en" aria-hidden="true">${brandWord}</span></a>
+  <div class="nav__actions">${langToggle(lang, t, 'privacy')}</div>
+</header>
+<main id="main" class="section light plain" tabindex="-1">
+  <div class="wrap wrap--narrow prose">
+    <p><a class="link" href="${urls[lang].home}">← ${esc(p.back)}</a></p>
+    <h1 class="title">${esc(p.title)}</h1>
+    <p class="prose__meta">${esc(p.updated)}</p>
+    ${p.sections.map((s) => `<h2>${esc(s.h)}</h2>${s.p.map((x) => `<p>${esc(x)}</p>`).join('')}`).join('\n    ')}
+    <p><a class="btn btn--dark" href="${tel}"><span class="btn__icon" aria-hidden="true">${icons.phone}</span><span class="btn__label">${esc(fill(t.common.call, { phone }))}</span></a></p>
+  </div>
+</main>
+<footer class="footer dark footer--plain">
+  <p class="footer__line wrap">${esc(t.footer.line)} · <span lang="en">${esc(config.camp.organiser)}</span></p>
+</footer>
+</body>
+</html>
+`;
+}
+
+function llmsTxt() {
+  const t = strings.en;
+  const c = config;
+  return `# ${c.camp.name} (${c.camp.organiser})
+
+> ${c.camp.name} is a three-day winter camp for children and young people, run by ${c.camp.organiser} in McLeodganj, Dharamshala, India. The 2027 theme is "${c.camp.theme}: ${c.camp.themeLine}". This website is where parents register and pay.
+
+## Key facts
+
+- Organiser: ${c.camp.organiser}
+- Theme: ${c.camp.theme}: ${c.camp.themeLine}
+- Youth camp (ages 10 to 18): 4 to 6 January 2027, ${c.categories.youth.seats} seats
+- Kids camp (under 10): 11 to 13 January 2027, ${c.categories.kids.seats} seats
+- Venue: ${c.venue.name}, ${c.venue.street}, ${c.venue.locality}, ${c.venue.region}, ${c.venue.country}, ${c.venue.postalCode}
+- Fee: ${c.fee.display} per child, paid by UPI (UPI ID ${c.upi.id}, payee name ${c.upi.payeeName})
+- Seats: first come, first served. A seat is given only when the registration form is sent with a payment screenshot.
+- Activities: games, craft, storytelling, music time, snacks and a hot lunch every day, and a picnic on day 3 with a treasure hunt, team challenges and prizes
+- Staff ratio: 1 staff member to 7 children
+- Contact: ${c.contact.phoneDisplay}
+- Languages: English and Tibetan
+
+## Pages
+
+- [${c.camp.name} (English)](${abs(urls.en.home)}): camp details, activities, gallery, questions and answers, registration
+- [${c.camp.name} (Tibetan)](${abs(urls.bo.home)}): the same page in Tibetan
+- [Privacy notice](${abs(urls.en.privacy)}): what is collected at registration and how it is used
+
+## Questions and answers
+
+${t.faq.items.map((i) => `### ${i.q}\n${i.a}`).join('\n\n')}
+`;
+}
+
+const robots = `# Winter Camp 2027: search engines and AI crawlers are welcome.
+User-agent: *
+Allow: /
+
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-SearchBot
+Allow: /
+
+User-agent: Claude-User
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+Sitemap: ${abs(base)}sitemap.xml
+`;
+
+function sitemap() {
+  const today = new Date().toISOString().slice(0, 10);
+  const entry = (key) =>
+    ['en', 'bo']
+      .map(
+        (lang) => `  <url>
+    <loc>${abs(urls[lang][key])}</loc>
+    <lastmod>${today}</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="${abs(urls.en[key])}"/>
+    <xhtml:link rel="alternate" hreflang="bo" href="${abs(urls.bo[key])}"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="${abs(urls.en[key])}"/>
+  </url>`,
+      )
+      .join('\n');
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+${entry('home')}
+${entry('privacy')}
+</urlset>
+`;
+}
+
+async function out(rel, content) {
+  const file = path.join(root, rel);
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, content);
+}
+
+await out('index.html', homePage('en'));
+await out('bo/index.html', homePage('bo'));
+await out('privacy/index.html', privacyPage('en'));
+await out('bo/privacy/index.html', privacyPage('bo'));
+await out('public/robots.txt', robots);
+await out('public/sitemap.xml', sitemap());
+await out('public/llms.txt', llmsTxt());
+console.log(`pages: rendered en + bo (${dev ? 'dev, no CSP' : 'production'}), base ${base}`);
