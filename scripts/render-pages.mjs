@@ -80,7 +80,7 @@ function jsonLd(lang, t) {
     '@type': 'Event',
     '@id': abs(base) + '#' + key,
     name: `${config.camp.name}: ${label}`,
-    description: `${config.camp.name}, ${config.camp.theme}: ${config.camp.themeLine}. ${label}. Games, craft, storytelling, music time, snacks and lunch, and a picnic on day 3. Fee ${config.fee.display}. ${config.categories[key].seats} seats, first come first served.`,
+    description: `${config.camp.name}, ${config.camp.theme}: ${config.camp.themeLine}. ${label}. Games, craft, storytelling, music time, snacks and lunch, and a picnic on day 3. Fee ${config.fee.display} (non-refundable). ${config.categories[key].seats} seats, first come first served.`,
     startDate: config.categories[key].start,
     endDate: config.categories[key].end,
     eventStatus: 'https://schema.org/EventScheduled',
@@ -338,6 +338,11 @@ function registration(lang, t) {
     <div class="notice notice--full" id="pay-full" role="alert" hidden><span lang="en">${esc(r.full)}</span>${r.fullLocal ? `<br><span>${esc(r.fullLocal)}</span>` : ''} <a class="link" href="${tel}">${esc(fill(t.common.call, { phone }))}</a></div>
     <div class="pay" id="pay-panel" hidden>
       <h3 class="pay__title">${esc(r.pay.title)}</h3>
+      <div class="field pay__refund">
+        <p class="notice notice--info" id="help-refund">${esc(r.pay.nonRefundable)}</p>
+        <label class="choice choice--check"><input type="checkbox" id="f-refund" name="refundAck" required aria-describedby="help-refund err-refund"><span class="choice__box" aria-hidden="true">${icons.check}</span><span class="choice__text">${esc(r.pay.refundAck)} ${req}</span></label>
+        ${err('refund')}
+      </div>
       <div class="pay__grid">
         <figure class="pay__qr"><img src="/assets/payment/upi-qr.jpg" width="1152" height="1600" alt="${esc(r.pay.qrAlt)}" loading="lazy" decoding="async"></figure>
         <div class="pay__details">
@@ -405,6 +410,7 @@ function registration(lang, t) {
   <h3 class="done__title" id="last-title" lang="en">${esc(r.lastSeat)}</h3>
   ${r.lastSeatLocal ? `<p class="done__text">${esc(r.lastSeatLocal)}</p>` : ''}
   <p class="done__text">${esc(r.lastSeatNote)}</p>
+  <p class="done__text done__text--strong">${esc(r.lastSeatRefund)}</p>
   <a class="btn btn--red" href="${tel}"><span class="btn__icon" aria-hidden="true">${icons.phone}</span><span class="btn__label">${esc(fill(t.common.call, { phone }))}</span></a>
 </section>
 
@@ -693,7 +699,7 @@ function llmsTxt() {
 - Youth camp (age 11 and over): 4 to 6 January 2027, ${c.categories.youth.seats} seats
 - Kids camp (age 11 and under): 11 to 13 January 2027, ${c.categories.kids.seats} seats
 - Venue: ${c.venue.name}, ${c.venue.street}, ${c.venue.locality}, ${c.venue.region}, ${c.venue.country}, ${c.venue.postalCode}
-- Fee: ${c.fee.display} per child, paid by UPI (UPI ID ${c.upi.id}, payee name ${c.upi.payeeName})
+- Fee: ${c.fee.display} per child, paid by UPI (UPI ID ${c.upi.id}, payee name ${c.upi.payeeName}). Non-refundable, except when someone else took the last seat while the family was paying: then the organisers refund it.
 - Seats: first come, first served. A seat is given only when the registration form is sent with a payment screenshot.
 - Activities: games, craft, storytelling, music time, snacks and a hot lunch every day, and a picnic on day 3 with a treasure hunt, team challenges and prizes
 - Staff ratio: 1 staff member to 7 children

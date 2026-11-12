@@ -39,7 +39,7 @@ var HEADERS = [
   "Parent/Guardian's Name(s)", 'Address', 'Emergency contact number(s)',
   'Medical conditions or concerns', 'Dietary requirements or allergies',
   'Medical emergency consent', 'Agreed to take part', 'Date of signing',
-  'Signature', 'Typed signature', 'Payment screenshot', 'UPI transaction reference', 'Language', 'Status', 'Registration PDF',
+  'Signature', 'Typed signature', 'Payment screenshot', 'UPI transaction reference', 'Language', 'Status', 'Registration PDF', 'Fee non-refundable (agreed)',
 ];
 var COL = {};
 HEADERS.forEach(function (h, i) { COL[h] = i; });
@@ -264,6 +264,7 @@ function validate_(d) {
   c.consent = d.consent === 'yes' || d.consent === 'no' ? d.consent : null;
   if (!c.consent) add('consent', 'consent');
   if (d.agree !== true) add('agree', 'agree');
+  if (d.refundAck !== true) add('refund', 'refund');
 
   c.signDate = String(d.signDate || '');
   if (!parseIso_(c.signDate) || c.signDate < '2026-01-01') add('signDate', 'signDate');
@@ -433,9 +434,10 @@ function row_(c, files, status) {
   r[COL['Typed signature']] = files.signature ? '' : c.signatureTyped;
   r[COL['Payment screenshot']] = files.screenshot;
   r[COL['UPI transaction reference']] = c.paymentRef;
-  r[COL.Language] = c.lang === 'bo' ? 'Tibetan' : 'English';
+  r[COL.Language] = c.lang === 'bo' ? 'Tibetan' : 'English'; // kept for rows sent before round 6
   r[COL.Status] = status;
   r[COL['Registration PDF']] = '';
+  r[COL['Fee non-refundable (agreed)']] = 'Yes';
   return r.map(safe_);
 }
 

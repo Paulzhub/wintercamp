@@ -130,6 +130,7 @@ async function fillToPayment(page, { cat, dob }) {
   await page.click('#reg-next');
   try {
     await page.waitForSelector('#pay-panel:not([hidden]), #pay-full:not([hidden])', { timeout: 8000 });
+    if (await page.isVisible('#pay-panel')) await page.click('label.choice:has(#f-refund)');
   } catch (err) {
     await page.screenshot({ path: path.join(out, `debug-${cat}.png`) });
     console.log('DEBUG', await page.evaluate(() => ({ step: [...document.querySelectorAll('.step')].findIndex((s) => !s.hidden), summary: document.getElementById('form-summary').innerText, send: document.getElementById('send-error').innerText, checking: !document.getElementById('pay-checking').hidden, name: document.getElementById('f-name').value })));
@@ -276,6 +277,12 @@ async function main() {
       await page.setInputFiles('#f-shot', shotPng);
       await page.waitForSelector('#shot-preview:not([hidden])');
       check('Screenshot preview shown, submit enabled', await page.isEnabled('#reg-submit'));
+      check('Fee: "non-refundable" is shown on the payment step before paying', (await page.textContent('#help-refund')).includes('non-refundable') && await page.isVisible('#help-refund'));
+      await page.click('label.choice:has(#f-refund)'); // untick
+      await page.click('#reg-submit');
+      await page.waitForTimeout(400);
+      check('Fee: the non-refundable tick box is required before sending', await page.isVisible('#err-refund') && await page.isHidden('#reg-done'));
+      await page.click('label.choice:has(#f-refund)');
       await page.screenshot({ path: path.join(out, 'reg-pay-390.png'), fullPage: false });
       await axe(page, 'Registration: payment step', '#register');
       await page.fill('#f-ref', '412345678901');
@@ -334,6 +341,7 @@ async function main() {
       await page.click('#reg-submit');
       await page.waitForSelector('#reg-last:not([hidden])', { timeout: 10000 });
       const lastText = (await page.textContent('#last-title')).trim();
+      check('Last seat: "Contact the organisers for a refund." is shown (the fee exception)', (await page.textContent('#reg-last')).includes('Contact the organisers for a refund.'));
       check('Last-seat message shown exactly, with tap-to-call', lastText === 'Oh No Someone booked the last seat just before you! Kindly contact +91-8219012669' && await page.isVisible('#reg-last a[href="tel:+918219012669"]'), lastText);
       st = await api('/__state');
       check('Backend: late submission saved in "Paid, no seat" with its screenshot', st.overflow.length === 1 && /https?:\/\/(?:[^/\s"]+\.)?drive\.google\.com(?:[/:?"#]|$)/.test(JSON.stringify(st.overflow[0])));

@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Winter Camp 2027 · Illuminate: Light of the World · Kid's Happy Club",
-    "description": "Winter Camp 2027 by Kid's Happy Club at Snow View Residency, McLeodganj, Dharamshala. Youth (11 and over): 4 to 6 January 2027. Kids (11 and under): 11 to 13 January 2027. Fee ₹500. 30 seats per group, first come first served.",
+    "description": "Winter Camp 2027 by Kid's Happy Club at Snow View Residency, McLeodganj, Dharamshala. Youth (11 and over): 4 to 6 January 2027. Kids (11 and under): 11 to 13 January 2027. Fee ₹500 (non-refundable). 30 seats per group, first come first served.",
     "ogAlt": "Illuminate: Light of the World. Winter Camp 2027, Kid's Happy Club, McLeodganj."
   },
   "common": {
@@ -87,7 +87,7 @@
       "venue": "Venue",
       "venueValue": "Snow View Residency, McLeodganj",
       "fee": "Fee",
-      "feeValue": "₹500 by UPI"
+      "feeValue": "₹500 by UPI, non-refundable"
     }
   },
   "gallery": {
@@ -128,7 +128,7 @@
       },
       {
         "q": "How much does it cost?",
-        "a": "The registration fee is ₹500 per child."
+        "a": "The registration fee is ₹500 per child. It is non-refundable. The one exception: if you have paid but someone took the last seat while you were paying, contact the organisers for a refund."
       },
       {
         "q": "How do I pay?",
@@ -144,7 +144,7 @@
       },
       {
         "q": "What happens when seats are full?",
-        "a": "Each group has 30 seats, given first come, first served. When a group is full, registration for it closes; please contact +91-8219012669."
+        "a": "Each group has 30 seats, given first come, first served. When a group is full, registration for it closes; please contact +91-8219012669. If someone takes the last seat while you are paying, the site tells you, and you can contact the organisers for a refund."
       },
       {
         "q": "Who do I contact?",
@@ -258,7 +258,10 @@
       "ref": "UPI transaction reference",
       "submit": "Submit registration",
       "submitting": "Sending your registration",
-      "submitNeedShot": "Attach the payment screenshot to submit."
+      "submitNeedShot": "Attach the payment screenshot to submit.",
+      "nonRefundable": "The ₹500 registration fee is non-refundable.",
+      "refundAck": "I understand that the ₹500 registration fee is non-refundable.",
+      "nonRefundableShort": "non-refundable"
     },
     "err": {
       "summary": "Please fix the following:",
@@ -286,7 +289,8 @@
       "busy": "Too many registrations are arriving at once. Please wait a minute and try again.",
       "phoneDigits": "Only numbers 0 to 9 can be used. Other characters were removed.",
       "phoneMax": "Phone numbers have 10 digits. Extra digits were removed.",
-      "signTyped": "Type your full name to sign."
+      "signTyped": "Type your full name to sign.",
+      "refund": "Please tick the box to confirm you understand the fee is non-refundable."
     },
     "done": {
       "title": "You are registered!",
@@ -338,8 +342,10 @@
       "screenshot": "Payment screenshot",
       "none": "None given",
       "page": "Page {n} of {total}",
-      "contact": "Kid's Happy Club · +91-8219012669"
-    }
+      "contact": "Kid's Happy Club · +91-8219012669",
+      "fee": "Fee"
+    },
+    "lastSeatRefund": "Contact the organisers for a refund."
   },
   "privacy": {
     "title": "Privacy notice",

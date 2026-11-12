@@ -9,7 +9,7 @@ let n = 0;
 const valid = (over = {}) => ({
   action: 'register', submissionId: `test-${Date.now()}-${++n}`, category: 'kids', name: `Tenzin ${n}`, dob: '2019-03-15',
   parent: 'Dolma', address: 'Jogiwara Road, McLeodganj', phones: ['9876543210'], medical: '', dietary: 'None',
-  consent: 'yes', agree: true, signature: png, signDate: '2026-11-11', screenshot: { type: 'image/jpeg', data: jpeg },
+  consent: 'yes', agree: true, refundAck: true, signature: png, signDate: '2026-11-11', screenshot: { type: 'image/jpeg', data: jpeg },
   paymentRef: 'UPI123', lang: 'en', website: '', elapsedMs: 60000, ...over,
 });
 
@@ -67,6 +67,7 @@ test('every field is validated again on the server', () => {
   assert.equal(got.phones, 'phone');
   assert.equal(got.consent, 'consent');
   assert.equal(got.agree, 'agree');
+  assert.equal(g.doPost(valid({ refundAck: false })).fields[0].field, 'refund'); // fee is non-refundable: must be agreed
   assert.equal(got.signDate, 'signDateFuture');
   assert.equal(g.doPost(valid({ category: 'youth', dob: '2016-01-05' })).fields[0].code, 'dobYouthYoung'); // 10 on 4 Jan 2027
   assert.equal(g.doPost(valid({ category: 'youth', dob: '2016-01-04' })).status, 'registered'); // 11 on 4 Jan 2027
@@ -212,11 +213,11 @@ test('a "Paid, no seat" registration gets its PDF too', () => {
   assert.match(g.sheet('Paid, no seat').rows[1][g.context.COL['Registration PDF']], /^https:\/\/drive\.google\.com\//);
 });
 
-test('tabs made by an earlier version get the "Registration PDF" heading added', () => {
+test('tabs made by an earlier version get the newer headings added', () => {
   const g = createSandbox();
   const sh = g.context.SpreadsheetApp.getActiveSpreadsheet().insertSheet('Kids registrations');
-  sh.appendRow(g.context.HEADERS.slice(0, -1));
+  sh.appendRow(g.context.HEADERS.slice(0, -2));
   g.doGet({ action: 'seats' });
-  assert.equal(sh.rows[0].at(-1), 'Registration PDF');
+  assert.deepEqual(sh.rows[0].slice(-2), ['Registration PDF', 'Fee non-refundable (agreed)']);
   assert.equal(sh.rows[0].length, g.context.HEADERS.length);
 });
