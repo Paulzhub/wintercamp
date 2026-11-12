@@ -18,6 +18,8 @@ All Tibetan text on the site is in `src/i18n/bo.json`. It is a **draft written w
 - **Questions and answers** (`faq.items`) and the **privacy notice** (`privacy.sections`).
 - **Round 4 additions:** the registration PDF labels (`reg.pdf`), the new success-screen text (`reg.done.download`, `preparing`, `downloaded`, `private`, `pdfError`, `shareText`), the loader's `loader.soundLabel`, the language question "སྐད་ཡིག་འདེམས།" on the loading screen, and the new last paragraph of the privacy section on what is stored on your device. If the loading-screen question changes, run `node scripts/subset-toggle-font.mjs` so the English page has its letters.
 
+- **Round 5 addition:** the countdown in the hero (`hero.count`): "དགུན་ཁའི་སྒར་ལ་ཉིན་ {n} ལུས།" for "{n} days to camp" (the same for one day), and "དགུན་ཁའི་སྒར་འགོ་ཚུགས་ཡོད།" for "Camp is on now". The number `{n}` is shown larger on its own, so keep it as a separate word.
+
 ## Kept in English on purpose
 
 These messages must read exactly as written, so they always appear in English, with a Tibetan line beside them:

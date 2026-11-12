@@ -51,6 +51,11 @@ export function initAudio() {
     return musicLoading;
   };
 
+  // Scroll position (0 at the top, 1 at the bottom) to filter cutoff: a gentle,
+  // muffled start that opens to the full sound by the end of the page.
+  let scrollP = 0;
+  const cutoff = (p) => 700 * Math.pow(12000 / 700, p);
+
   async function startAmbient() {
     if (!ensure() || ambient) return;
     const token = {};
@@ -65,7 +70,13 @@ export function initAudio() {
     const src = ctx.createBufferSource();
     src.buffer = buf;
     src.loop = true;
-    src.connect(out);
+    // The music opens up as the page scrolls: a low-pass filter follows the scroll.
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.Q.value = 0.5;
+    lp.frequency.setValueAtTime(cutoff(scrollP), t);
+    src.connect(lp).connect(out);
+    ambient.lp = lp;
     src.start(t);
     ambient.out = out;
     ambient.src = src;
@@ -138,6 +149,7 @@ export function initAudio() {
       case 'copy': tone({ f: 1200, dur: 0.06, gain: 0.03 }); tone({ f: 1600, dur: 0.08, gain: 0.03, at: 0.07 }); break;
       case 'chime': [523.25, 659.25, 783.99, 1046.5, 1318.51].forEach((f, i) => tone({ f, type: 'triangle', dur: 0.9, gain: 0.05, at: i * 0.09 })); break;
       case 'low': tone({ f: 330, to: 220, type: 'triangle', dur: 0.5, gain: 0.05 }); break;
+      case 'glow': [587.33, 739.99, 880, 1174.66].forEach((f) => tone({ f, type: 'sine', dur: 1.6, gain: 0.03 })); break;
       default: break;
     }
   }
@@ -190,6 +202,13 @@ export function initAudio() {
     enable: setEnabled,
     get enabled() { return enabled; },
     stored: () => prefs.get(KEY),
+    setScroll(p) {
+      scrollP = Math.max(0, Math.min(1, p));
+      if (!ambient?.lp || !ctx) return;
+      // Glides to the new value (about 0.3 s) rather than jumping.
+      ambient.lp.frequency.setTargetAtTime(cutoff(scrollP), ctx.currentTime, 0.1);
+    },
+    get musicCutoff() { return ambient?.lp ? ambient.lp.frequency.value : null; },
     duck(on) {
       ducked = on;
       if (!ambient?.out || !ctx) return;

@@ -47,7 +47,12 @@
     "venue": "Snow View Residency, Jogiwara Road, McLeodganj, Dharamshala",
     "seats": "Limited seats, first come first served",
     "secondary": "See what we do",
-    "sceneAlt": "Dawn light rising behind a Himalayan ridge while snow drifts down."
+    "sceneAlt": "Dawn light rising behind a Himalayan ridge while snow drifts down.",
+    "count": {
+      "days": "{n} days to camp",
+      "day": "{n} day to camp",
+      "on": "Camp is on now"
+    }
   },
   "activities": {
     "eyebrow": "Activities",

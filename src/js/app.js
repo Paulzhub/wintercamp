@@ -10,6 +10,7 @@ import { initRegistration } from './register.js';
 import { initHero } from './hero.js';
 import { initLoader } from './loader.js';
 import { initParticles } from './particles.js';
+import { initEffects } from './effects.js';
 
 export function boot() {
   const html = document.documentElement;
@@ -17,6 +18,7 @@ export function boot() {
   if (initLangMemory()) return; // redirecting to the remembered language
   try {
     const audio = initAudio();
+    html.wcAudio = audio; // read by the end-to-end checks
     const motion = initMotion();
     setModalMotion(motion);
     const hero = initHero();
@@ -26,6 +28,9 @@ export function boot() {
     initCarousel(audio);
     initParticles();
     initRegistration({ audio, motion });
+    const fx = initEffects({ audio, hero, motion });
+    const intro = motion.heroIntro;
+    motion.heroIntro = () => { intro(); fx.countdown.play(); };
     initLoader({ audio, motion, hero });
   } catch (err) {
     // Never leave anyone stuck behind the loading screen.

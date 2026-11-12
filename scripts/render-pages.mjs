@@ -177,7 +177,7 @@ function galleryItems(lang, t) {
         const small = item.widths[0];
         const ratio = item.height / item.width;
         img = `<img src="${src(small)}" srcset="${srcset}" sizes="(min-width: 1024px) 480px, 72vw" width="${small}" height="${Math.round(small * ratio)}" alt="${esc(alt)}" loading="lazy" decoding="async" draggable="false">`;
-        data += ` data-full="${src(item.widths[item.widths.length - 1])}"`;
+        data += ` data-full="${src(item.widths[item.widths.length - 1])}" data-fw="${item.widths[item.widths.length - 1]}"`;
       } else {
         const poster = item.poster ? `${base}gallery/${item.id}-poster.webp` : '';
         img = poster
@@ -218,8 +218,8 @@ function registration(lang, t) {
   <p class="cat__chosen" data-chosen hidden><span class="cat__check" aria-hidden="true">${icons.check}</span> ${esc(fill(r.chosen, { category: r[key] }))} <button type="button" class="link cat__change" data-change>${esc(r.change)}</button></p>
 </article>`;
 
-  return `<dialog class="reg" id="register" data-particles="accent" data-particles-density="0.6" aria-labelledby="reg-title">
-<div class="reg__bar">
+  return `<dialog class="reg" id="register" data-tone="light" data-particles="accent" data-particles-density="0.6" aria-labelledby="reg-title">
+<div class="reg__bar" data-tone="dark">
   <h2 class="reg__title" id="reg-title">${esc(r.title)}</h2>
   <button type="button" class="icon-btn" data-close-register aria-label="${esc(t.common.close)}">${icons.close}</button>
 </div>
@@ -440,7 +440,7 @@ function siteHeader(lang, t, pathKey) {
   const registerBtn = (cls, label, extra = '') => onHome
     ? `<button type="button" class="${cls}" data-open-register ${extra}><span class="btn__label">${esc(label)}</span></button>`
     : `<a class="${cls}" href="${pre}#register" ${extra}><span class="btn__label">${esc(label)}</span></a>`;
-  return `<header class="nav${onHome ? '' : ' is-stuck nav--sub'}" id="nav">
+  return `<header class="nav${onHome ? '' : ' is-stuck nav--sub'}" id="nav" data-tone="dark">
   <a class="nav__brand" href="${pre}#home" aria-label="Illuminate, ${esc(config.camp.name)}: ${esc(t.nav.home)}"><span class="nav__wordmark${onHome ? '' : ' is-shown'}" lang="en" aria-hidden="true">${brandWord}</span></a>
   <nav class="nav__nav" aria-label="${esc(t.nav.label)}">
     <ul class="nav__links">
@@ -455,7 +455,7 @@ function siteHeader(lang, t, pathKey) {
   </div>
 </header>
 
-<dialog class="menu" id="menu" aria-label="${esc(t.common.menu)}">
+<dialog class="menu" id="menu" data-tone="dark" aria-label="${esc(t.common.menu)}">
   <div class="menu__bar">
     <span class="nav__wordmark is-shown" lang="en" aria-hidden="true">${brandWord}</span>
     <button type="button" class="icon-btn" id="menu-close" aria-label="${esc(t.common.menuClose)}">${icons.close}</button>
@@ -488,7 +488,7 @@ function homePage(lang) {
   </article>
 </li>`;
   // Strings the scripts need at run time (no personal data).
-  const clientStrings = { lang, api: appsScriptUrl, common: t.common, gallery: t.gallery, reg: t.reg, phone, tel, cats: config.categories, pay: { amount: config.fee.display, payee: config.upi.payeeName, upiId: config.upi.id } };
+  const clientStrings = { lang, api: appsScriptUrl, common: t.common, gallery: t.gallery, reg: t.reg, phone, tel, cats: config.categories, count: t.hero.count, pay: { amount: config.fee.display, payee: config.upi.payeeName, upiId: config.upi.id } };
   const venueLine = `${config.venue.name}, ${config.venue.street}, ${config.venue.locality}, ${config.venue.region}, ${config.venue.country}, ${config.venue.postalCode}`;
 
   return `<!doctype html>
@@ -552,6 +552,7 @@ ${siteHeader(lang, t, 'home')}
       <button type="button" class="btn btn--red btn--lg" data-open-register data-magnetic data-cursor="${esc(t.common.register)}"><span class="btn__label">${esc(t.common.registerNow)}</span><span class="btn__icon" aria-hidden="true">${icons.arrow}</span></button>
       <a class="btn btn--outline btn--lg" href="#activities"><span class="btn__label">${esc(t.hero.secondary)}</span></a>
     </div>
+    <p class="hero__count" id="hero-count" data-hero-in hidden><span class="hero__count-vis" aria-hidden="true"><span class="hero__count-b"></span> <span class="hero__count-n"></span> <span class="hero__count-a"></span></span><span class="sr-only hero__count-sr"></span></p>
     <p class="hero__seats" data-hero-in>${esc(t.hero.seats)}</p>
     <noscript><p class="hero__seats">${esc(fill(t.common.noJs, { phone }))}</p></noscript>
   </div>
@@ -647,7 +648,7 @@ ${galleryItems(lang, t)}
 
 ${registration(lang, t)}
 
-<dialog class="lightbox" id="lightbox" aria-label="${esc(t.gallery.lightbox)}">
+<dialog class="lightbox" id="lightbox" data-tone="dark" aria-label="${esc(t.gallery.lightbox)}">
   <button type="button" class="icon-btn lightbox__close" id="lightbox-close" aria-label="${esc(t.common.close)}">${icons.close}</button>
   <button type="button" class="icon-btn lightbox__nav lightbox__nav--prev" id="lightbox-prev" aria-label="${esc(t.gallery.prev)}">${icons.left}</button>
   <figure class="lightbox__fig" id="lightbox-fig"><div class="lightbox__stage" id="lightbox-stage"></div><figcaption class="lightbox__cap" id="lightbox-cap" aria-live="polite"></figcaption></figure>

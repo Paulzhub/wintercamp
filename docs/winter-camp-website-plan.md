@@ -197,6 +197,16 @@ Statement shown above field 8, word for word:
 | Success feedback | After submission; UPI ID copied | Same |
 | Tooltips | Help icons, toggles, slider thumb | Tap to show |
 | Liquid glass carousel and slider | Gallery | Simplified blur |
+| Cursor follows the background (round 5) | Red over light surfaces (activities, FAQ, registration view), white over dark ones (hero, gallery, full-screen view, menu bar); eases over 0.4 s | Hidden |
+| Spotlight (round 5, A) | A soft light follows the mouse across activity cards and questions | Off |
+| Countdown (round 5, B) | Hero: days to the first day of camp, rolling up once; "Camp is on now" during camp; hidden after | Same |
+| Burst of light (round 5, C) | Registration success: lights travel out together and fade | Same |
+| Seat sweep (round 5, D) | A light sweeps over a seat count when it appears or changes | Same |
+| Slow pan (round 5, E) | The centre gallery photo zooms and drifts slowly | Same |
+| Illuminate (round 5, F) | Hold the hero word: the light and snow brighten, a soft chord plays when full | Hold with a finger |
+| Music follows scroll (round 5, G) | With sound on, the music opens up from muffled at the top to full at the bottom | Same |
+| Section opening (round 5, H) | Sections open from a rounded inset as they scroll in | Off below 768 px (performance) |
+| Settling snow (round 5, I) | Snow gathers along the hero ridges as the page scrolls | Same |
 
 ## 8. Audio
 

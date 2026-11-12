@@ -287,8 +287,14 @@ async function main() {
       await page.click('#reg-submit');
       check('Loading state while sending', await page.locator('#reg-submit.is-loading').count() === 1);
       await page.waitForSelector('#reg-done:not([hidden])', { timeout: 10000 });
-      await page.waitForTimeout(1200);
+      const burstOn = await page.evaluate(() => { const c = document.querySelector('#register > canvas.burst'); return Boolean(c) && getComputedStyle(c).position === 'fixed'; });
+      await page.waitForTimeout(450);
+      await page.screenshot({ path: path.join(out, 'reg-done-burst-390.png') });
+      check('Success: a burst of light over the confirmation', burstOn);
+      await page.waitForTimeout(750);
       await page.screenshot({ path: path.join(out, 'reg-done-390.png') });
+      await page.waitForTimeout(600);
+      check('Success: the burst is removed when it ends', await page.evaluate(() => !document.querySelector('canvas.burst')));
       check('Confirmation shows name, category, dates', (await page.textContent('#reg-done')).includes('Tenzin Norbu') && (await page.textContent('#done-dates')).includes('11 to 13 January 2027'));
       check('Success screen: "Download registration details" button and a privacy note', (await page.textContent('#done-save')).includes('Download registration details') && (await page.textContent('#reg-done')).includes('health details'));
       const [download] = await Promise.all([page.waitForEvent('download'), page.click('#done-save')]);
@@ -931,6 +937,293 @@ async function main() {
       check('Tibetan: the PDF copy reaches Drive', Boolean(st));
       await page.screenshot({ path: path.join(out, 'reg-done-bo-390.png') });
       done();
+      await ctx.close();
+    }
+    // 16. Round 5: opening the full-screen view moves the media on desktop widths too,
+    // with the large file slow to arrive, with and without view transitions.
+    for (const width of [1280, 1440, 1920]) {
+      const ctx = await browser.newContext({ viewport: { width, height: width >= 1920 ? 1080 : 860 } });
+      await ctx.route(/gallery\/.*(-\d{3,4}\.webp|\.mp4)$/, async (rt) => {
+        if (/-480\.webp$/.test(rt.request().url()) || /poster/.test(rt.request().url())) return rt.continue();
+        await new Promise((r) => setTimeout(r, 400));
+        return rt.continue();
+      });
+      const page = await ctx.newPage();
+      const done = watch(page, `Open transition ${width}`);
+      await page.goto(`${SITE}#gallery`);
+      await enter(page);
+      await page.waitForTimeout(900);
+      for (const kind of ['photo', 'video']) {
+        const idx = await page.evaluate((k) => [...document.querySelectorAll('.car__item')].findIndex((i) => i.dataset.type === k), kind);
+        if (idx < 0) { check(`${width}: gallery has a ${kind}`, false); continue; }
+        await page.evaluate(() => { document.getElementById('car-range').value = '0'; });
+        await page.focus('#carousel');
+        await page.keyboard.press('Home');
+        for (let k = 0; k < idx; k++) await page.keyboard.press('ArrowRight');
+        await page.waitForTimeout(900);
+        await page.locator('.car__item.is-active .car__btn').scrollIntoViewIfNeeded();
+        await page.waitForTimeout(700);
+        // With view transitions: sample the shared element's box during the 0.7 s.
+        await page.click('.car__item.is-active .car__btn');
+        const samples = [];
+        const t0 = Date.now();
+        while (Date.now() - t0 < 900) {
+          const v = await page.evaluate(() => {
+            const a = document.getAnimations().find((x) => /view-transition-group\(wc-media\)/.test(x.effect?.pseudoElement || ''));
+            if (!a) return null;
+            const cs = getComputedStyle(document.documentElement, '::view-transition-group(wc-media)');
+            const k = a.effect.getKeyframes();
+            return { w: parseFloat(cs.width), m: cs.transform, endW: parseFloat(k.at(-1).width), endH: parseFloat(k.at(-1).height) };
+          });
+          if (v) samples.push(v);
+          await page.waitForTimeout(60);
+        }
+        await settled(page);
+        const box = await page.locator('#lightbox-stage .lightbox__item > *').boundingBox();
+        const end = samples[0];
+        check(`${width} ${kind}, open with view transition: moves into a real box (not 0×0)`, Boolean(end) && end.endW > 200 && end.endH > 200 && Math.abs(end.endW - box.width) < 4, end ? `${end.endW}×${end.endH} vs ${Math.round(box.width)}×${Math.round(box.height)}` : 'no wc-media animation');
+        const ws = samples.map((x) => Math.round(x.w));
+        const ms = new Set(samples.map((x) => x.m));
+        check(`${width} ${kind}, open with view transition: size and position change over the 0.7 s`, samples.length >= 4 && new Set(ws).size >= 3 && ms.size >= 3, ws.join(','));
+        if (kind === 'photo') {
+          const swapped = await waitFor(() => page.evaluate(() => { const m = document.querySelector('#lightbox-stage img'); return m && m.currentSrc.endsWith(m.dataset.fullSrc.split('/').pop()) && m.naturalWidth > 480; }), 4000);
+          check(`${width}: the large photo replaces the thumbnail once it has loaded`, Boolean(swapped));
+        }
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(900);
+        await settled(page);
+        // Without view transitions: the GSAP fallback flies from the thumbnail.
+        await page.evaluate(() => { window.__vt = document.startViewTransition; document.startViewTransition = undefined; });
+        const thumb = await page.locator('.car__item.is-active .car__media img').boundingBox();
+        await page.click('.car__item.is-active .car__btn');
+        const rects = [];
+        for (let k = 0; k < 12; k++) {
+          rects.push(await page.evaluate(() => { const r = document.querySelector('#lightbox-stage .lightbox__item > *')?.getBoundingClientRect(); return r && { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width }; }));
+          await page.waitForTimeout(60);
+        }
+        await page.waitForTimeout(500);
+        const fin = await page.evaluate(() => { const r = document.querySelector('#lightbox-stage .lightbox__item > *').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width }; });
+        const first = rects.find(Boolean);
+        const near = first && Math.hypot(first.x - (thumb.x + thumb.width / 2), first.y - (thumb.y + thumb.height / 2)) < 80 && Math.abs(first.w - thumb.width) < 0.25 * fin.w + 40;
+        const widths = new Set(rects.filter(Boolean).map((r) => Math.round(r.w)));
+        check(`${width} ${kind}, open without view transitions: starts over the thumbnail and grows into place`, Boolean(near) && widths.size >= 3 && Math.abs(fin.x - width / 2) < 40, first ? `start ${Math.round(first.w)}px at ${Math.round(first.x)},${Math.round(first.y)}; thumb ${Math.round(thumb.width)}px; end ${Math.round(fin.w)}px` : 'no media');
+        if (width === 1440) await page.screenshot({ path: path.join(out, `lightbox-open-${kind}-1440.png`) });
+        await page.click('#lightbox-close');
+        await page.waitForTimeout(900);
+        await page.evaluate(() => { document.startViewTransition = window.__vt; });
+      }
+      done();
+      await ctx.close();
+    }
+    // 17. Round 5: the cursor orb is red over light surfaces and white over dark ones.
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      const page = await ctx.newPage();
+      const done = watch(page, 'Cursor tone');
+      await page.goto(`${SITE}#activities`);
+      await enter(page);
+      await page.waitForTimeout(1200);
+      const orb = () => page.evaluate(() => {
+        const d = document.querySelector('.cursor__dot');
+        const [r, g, b] = getComputedStyle(d).backgroundColor.match(/[\d.]+/g).map(Number);
+        const box = d.getBoundingClientRect();
+      return { r, g, b, tone: d.parentElement.dataset.tone, parent: d.parentElement.parentElement.id || d.parentElement.parentElement.tagName, at: [Math.round(box.x + box.width / 2), Math.round(box.y + box.height / 2)] };
+      });
+      const red = (c) => c.r > 180 && c.g < 90 && c.b < 90;
+      const white = (c) => c.r > 220 && c.g > 220 && c.b > 200;
+      const pointIn = (sel) => page.evaluate((q) => {
+        const r = document.querySelector(q).getBoundingClientRect();
+        const y = Math.min(window.innerHeight - 40, Math.max(120, r.top + 60));
+        return { x: 60, y };
+      }, sel);
+      let pt = await pointIn('#activities');
+      await page.mouse.move(pt.x, pt.y);
+      await page.mouse.move(pt.x + 4, pt.y + 4);
+      await page.waitForTimeout(700);
+      const onLight = await orb();
+      check('Cursor: red over a light section', red(onLight) && onLight.tone === 'light', JSON.stringify(onLight));
+      await page.locator('#gallery').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(1200);
+      pt = await pointIn('#gallery');
+      await page.mouse.move(pt.x, pt.y);
+      await page.waitForTimeout(700);
+      const onDark = await orb();
+      check('Cursor: white over a dark section', white(onDark) && onDark.tone === 'dark', JSON.stringify(onDark));
+      // Still mouse, page scrolls from the gallery (dark) into the FAQ (light).
+      await page.mouse.move(60, 450);
+      await page.waitForTimeout(500);
+      const before = (await orb()).tone;
+      const faqTop = await page.evaluate(() => document.getElementById('faq').getBoundingClientRect().top);
+      for (let k = 0; k < 10 && (await page.evaluate(() => document.getElementById('faq').getBoundingClientRect().top)) > 300; k++) { await page.mouse.wheel(0, 300); await page.waitForTimeout(250); }
+      await page.waitForTimeout(900);
+      const afterScroll = await orb();
+      check('Cursor: changes while the page scrolls under a still mouse', before === 'dark' && afterScroll.tone === 'light' && red(afterScroll), `${before} -> ${afterScroll.tone} (faq top was ${Math.round(faqTop)})`);
+      // Menu bar is dark; the change from red eases over 0.4 s.
+      await page.mouse.move(700, 30);
+      await page.waitForTimeout(200);
+      const mid = await orb();
+      await page.waitForTimeout(700);
+      check('Cursor: the colour eases (in between part-way)', mid.g > 35 && mid.g < 220, JSON.stringify(mid));
+      check('Cursor: white over the frosted menu bar', (await orb()).tone === 'dark');
+      // Full-screen gallery view: inside the dialog, white.
+      await page.locator('#gallery').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(1000);
+      await page.click('.car__item.is-active .car__btn');
+      await page.waitForSelector('#lightbox[open]');
+      await page.waitForTimeout(900);
+      await page.mouse.move(80, 300);
+      await page.waitForTimeout(700);
+      const inLb = await orb();
+      check('Cursor: visible inside the full-screen view, under the mouse, and white', inLb.parent === 'lightbox' && white(inLb) && Math.abs(inLb.at[0] - 80) < 6 && Math.abs(inLb.at[1] - 300) < 6, JSON.stringify(inLb));
+      await page.screenshot({ path: path.join(out, 'cursor-lightbox-1440.png') });
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(1000);
+      check('Cursor: back on the page after closing', (await orb()).parent === 'BODY');
+      // Registration view: inside the dialog, red.
+      await page.evaluate(() => document.querySelector('[data-open-register]').click());
+      await page.waitForSelector('#register[open]');
+      await page.waitForTimeout(1200);
+      await page.mouse.move(300, 400);
+      await page.mouse.move(310, 410);
+      await page.waitForTimeout(700);
+      const inReg = await orb();
+      check('Cursor: visible inside the registration view, under the mouse, and red', inReg.parent === 'register' && red(inReg) && Math.abs(inReg.at[0] - 310) < 6 && Math.abs(inReg.at[1] - 410) < 6, JSON.stringify(inReg));
+      await page.screenshot({ path: path.join(out, 'cursor-register-1440.png') });
+      done();
+      await ctx.close();
+    }
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1024, height: 800 }, reducedMotion: 'reduce' });
+      const page = await ctx.newPage();
+      await page.goto(SITE);
+      await enter(page);
+      const d = await page.evaluate(() => getComputedStyle(document.querySelector('.cursor__dot')).transitionDuration);
+      check('Cursor, reduced motion: the colour switches at once', d.split(',').every((x) => parseFloat(x) === 0), d);
+      await ctx.close();
+    }
+    {
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+      const page = await ctx.newPage();
+      await page.goto(SITE);
+      await enter(page, '#enter-silent', true);
+      check('Cursor: none on touch devices', await page.evaluate(() => !document.querySelector('.cursor')));
+      await ctx.close();
+    }
+    // 18. Round 5 effects.
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      const page = await ctx.newPage();
+      await page.clock.install({ time: new Date(2026, 10, 12, 10, 0) });
+      const done = watch(page, 'Effects 1440');
+      await page.goto(SITE);
+      await enter(page);
+      await page.waitForTimeout(2600);
+      // B. Countdown (clock fixed at 12 Nov 2026: 53 days to 4 Jan 2027).
+      const count = await page.evaluate(() => ({ vis: !document.getElementById('hero-count').hidden, n: document.querySelector('.hero__count-n').textContent, sr: document.querySelector('.hero__count-sr').textContent }));
+      check('B. Countdown: "53 days to camp", rolled up to the number', count.vis && count.n === '53' && count.sr === '53 days to camp', JSON.stringify(count));
+      // F. Hold the hero word.
+      const w = await page.locator('#hero-word').boundingBox();
+      await page.mouse.move(w.x + w.width / 2, w.y + w.height / 2);
+      await page.mouse.down();
+      await page.waitForTimeout(500);
+      const part = await page.evaluate(() => document.getElementById('home').wcBoost);
+      await page.waitForTimeout(1000);
+      const full = await page.evaluate(() => ({ b: document.getElementById('home').wcBoost, scene: document.getElementById('home').wcScene(), lit: document.getElementById('hero-word').classList.contains('is-lit') }));
+      await page.screenshot({ path: path.join(out, 'hero-illuminate-1440.png') });
+      await page.mouse.up();
+      await page.waitForTimeout(1100);
+      const back = await page.evaluate(() => document.getElementById('home').wcBoost);
+      check('F. Holding the word brightens the scene (eases up, then lit)', part > 0.05 && part < 0.95 && full.b === 1 && full.lit && (!full.scene || full.scene.boost === 1), `${part} -> ${JSON.stringify(full)}`);
+      check('F. Releasing eases it back', back < 0.02, String(back));
+      // I. Snow settles as the page scrolls.
+      const s0 = await page.evaluate(() => document.getElementById('home').wcScene()?.settle ?? null);
+      await page.mouse.move(60, 600);
+      for (let k = 0; k < 4; k++) { await page.mouse.wheel(0, 150); await page.waitForTimeout(200); }
+      await page.waitForTimeout(2500);
+      const s1 = await page.evaluate(() => document.getElementById('home').wcScene()?.settle ?? null);
+      check('I. Snow settles on the ridges as the page scrolls', s0 !== null && s0 < 0.05 && s1 > 0.4, `${s0} -> ${s1}`);
+      await page.screenshot({ path: path.join(out, 'hero-settled-1440.png') });
+      // H. Sections open from a rounded inset as they come in.
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.waitForTimeout(600);
+      const clip = async () => page.evaluate(() => getComputedStyle(document.getElementById('faq')).clipPath);
+      await page.evaluate(() => { const f = document.getElementById('faq'); window.scrollTo(0, f.offsetTop - window.innerHeight + 120); });
+      await page.waitForTimeout(1200);
+      const cMid = await clip();
+      await page.evaluate(() => { const f = document.getElementById('faq'); window.scrollTo(0, f.offsetTop - 100); });
+      await page.waitForTimeout(1200);
+      const cEnd = await clip();
+      check('H. A section opens from a rounded inset as it scrolls in', /inset\(.*round/.test(cMid) && !/round 0px\)$|^none$/.test(cMid) && /inset\(0(px|%)?\)?/.test(cEnd), `${cMid} -> ${cEnd}`);
+      // A. Spotlight on a card.
+      await page.locator('.card').first().scrollIntoViewIfNeeded();
+      await page.waitForTimeout(1500);
+      const c = await page.locator('.card__in').first().boundingBox();
+      await page.mouse.move(c.x + 40, c.y + 40);
+      await page.mouse.move(c.x + 60, c.y + 50);
+      await page.waitForTimeout(600);
+      const spot = await page.evaluate(() => { const el = document.querySelector('.card__in'); return { o: getComputedStyle(el, '::after').opacity, mx: el.style.getPropertyValue('--mx') }; });
+      check('A. Spotlight follows the mouse on a card', Number(spot.o) > 0.9 && parseInt(spot.mx, 10) > 40, JSON.stringify(spot));
+      // E. Slow pan on the centre gallery photo.
+      await page.focus('#carousel');
+      await page.keyboard.press('Home');
+      await page.waitForTimeout(900);
+      const kb = await page.evaluate(() => { const i = [...document.querySelectorAll('.car__item')].find((x) => x.dataset.type === 'photo' && x.classList.contains('is-active'))?.querySelector('.car__media img'); const o = document.querySelector('.car__item:not(.is-active) .car__media img'); return { on: i && getComputedStyle(i).animationName, off: o && getComputedStyle(o).animationName }; });
+      check('E. The centre gallery photo pans slowly; the others do not', kb.on === 'ken-burns' && kb.off === 'none', JSON.stringify(kb));
+      // D. Seat count sweeps when it appears.
+      await page.evaluate(() => document.querySelector('[data-open-register]').click());
+      await page.waitForSelector('#register[open]');
+      await page.waitForFunction(() => /\d/.test(document.querySelector('[data-seats]').textContent), null, { timeout: 8000 });
+      const sw = await page.evaluate(() => [...document.querySelectorAll('[data-seats]')].map((s) => s.classList.contains('is-swept') && getComputedStyle(s, '::after').animationName));
+      check('D. Seat counts get a light sweep when they appear', sw.every((x) => x === 'seat-sweep'), JSON.stringify(sw));
+      done();
+      await ctx.close();
+    }
+    {
+      // B. During camp, and the Tibetan page.
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+      const page = await ctx.newPage();
+      await page.clock.install({ time: new Date(2027, 0, 5, 9, 0) });
+      await page.goto(SITE);
+      await enter(page, '#enter-silent', true);
+      check('B. Countdown during camp: "Camp is on now"', (await page.textContent('.hero__count-sr')) === 'Camp is on now' && await page.isHidden('.hero__count-n'));
+      check('A. No spotlight on touch devices', await page.evaluate(() => !document.querySelector('.has-spot')));
+      await ctx.close();
+    }
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1024, height: 800 }, reducedMotion: 'reduce' });
+      const page = await ctx.newPage();
+      await page.clock.install({ time: new Date(2027, 0, 1, 9, 0) });
+      const done = watch(page, 'Effects, reduced motion');
+      await page.goto(`${SITE}bo/`);
+      await enter(page);
+      await page.waitForTimeout(600);
+      const c = await page.evaluate(() => ({ n: document.querySelector('.hero__count-n').textContent, sr: document.querySelector('.hero__count-sr').textContent }));
+      check('B. Tibetan countdown, reduced motion: the number at once', c.n === '3' && c.sr.includes('3'), JSON.stringify(c));
+      check('Reduced motion: no spotlight, no wipe, no gallery pan', await page.evaluate(() => !document.querySelector('.has-spot, .has-wipe') && [...document.querySelectorAll('.car__media img')].every((i) => getComputedStyle(i).animationName === 'none')));
+      const w = await page.locator('#hero-word').boundingBox();
+      await page.mouse.move(w.x + 20, w.y + 20);
+      await page.mouse.down();
+      await page.waitForTimeout(100);
+      check('F. Reduced motion: holding lights the word at once', await page.evaluate(() => document.getElementById('home').wcBoost === 1));
+      await page.mouse.up();
+      done();
+      await ctx.close();
+    }
+    {
+      // G. With sound on, the music's filter opens as the page scrolls.
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+      const page = await ctx.newPage();
+      await page.goto(SITE);
+      await page.waitForSelector('.loader.is-ready', { timeout: 8000 });
+      await page.waitForTimeout(100);
+      if (await page.isVisible('#loader-lang')) await page.click('[data-pick-lang="en"]');
+      await page.click('#enter-sound');
+      await page.waitForSelector('#loader', { state: 'detached', timeout: 5000 });
+      const top = await waitFor(() => page.evaluate(() => document.documentElement.wcAudio?.musicCutoff ?? null), 20000);
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      await page.waitForTimeout(1500);
+      const bottom = await page.evaluate(() => document.documentElement.wcAudio?.musicCutoff ?? null);
+      check('G. Music opens up as the page scrolls (low-pass follows scroll)', top !== null && bottom !== null && top < 1200 && bottom > 8000, `${top} Hz -> ${bottom} Hz`);
       await ctx.close();
     }
   } finally {

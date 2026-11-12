@@ -624,15 +624,17 @@ select.input { appearance: none; padding-right: var(--s6); background-image: lin
 .tip.is-shown { opacity: 1; transform: none; }
 .cursor { position: fixed; left: 0; top: 0; z-index: 2500; pointer-events: none; display: none; }
 .has-cursor .cursor { display: block; }
-.cursor__dot { position: absolute; width: 16px; height: 16px; margin: -8px; border-radius: var(--r-pill); background: rgb(255 248 238 / 0.9); box-shadow: 0 0 16px 4px rgb(255 240 220 / 0.6), 0 0 48px 16px rgb(227 23 26 / 0.24); mix-blend-mode: screen; display: grid; place-items: center; white-space: nowrap; transition: width var(--d-ui) var(--ease), height var(--d-ui) var(--ease), margin var(--d-ui) var(--ease), background-color var(--d-ui) var(--ease), opacity var(--d-ui) var(--ease); }
+.cursor__dot { position: absolute; width: 16px; height: 16px; margin: -8px; border-radius: var(--r-pill); --orb: rgb(255 248 238 / 0.92); --glow: 0 0 16px 4px rgb(255 240 220 / 0.6), 0 0 48px 16px rgb(227 23 26 / 0.24); background: var(--orb); box-shadow: var(--glow); display: grid; place-items: center; white-space: nowrap; transition: width var(--d-ui) var(--ease), height var(--d-ui) var(--ease), margin var(--d-ui) var(--ease), background-color var(--d-ui) var(--ease), box-shadow var(--d-ui) var(--ease), opacity var(--d-ui) var(--ease); }
+/* Over light surfaces the orb turns red; over dark ones it is white. Both ease. */
+.cursor[data-tone='light'] .cursor__dot { --orb: rgb(227 23 26 / 0.92); --glow: 0 0 16px 4px rgb(227 23 26 / 0.4), 0 0 40px 12px rgb(227 23 26 / 0.16); }
 .cursor__label { font-size: 13px; font-weight: 600; color: var(--t-dark); opacity: 0; transition: opacity var(--d-micro) var(--ease); letter-spacing: 0.04em; text-transform: uppercase; }
 .cursor__label:lang(bo) { text-transform: none; letter-spacing: 0; font-size: 14px; }
 .cursor.has-label .cursor__dot { width: 88px; height: 40px; margin: -20px -44px; background: var(--c-red); mix-blend-mode: normal; }
 .cursor.has-label .cursor__label { color: #FFFFFF; }
 .cursor.has-label .cursor__label { opacity: 1; }
 .cursor.is-hidden .cursor__dot { opacity: 0; }
-.cursor__trail { position: absolute; width: 8px; height: 8px; margin: -4px; border-radius: 50%; background: rgb(255 244 228 / 0.5); box-shadow: 0 0 12px rgb(255 240 220 / 0.6); mix-blend-mode: screen; }
-.reg[open] ~ .cursor, .is-modal .cursor__trail { opacity: 0; }
+.cursor__trail { position: absolute; width: 8px; height: 8px; margin: -4px; border-radius: 50%; background: rgb(255 244 228 / 0.5); box-shadow: 0 0 12px rgb(255 240 220 / 0.6); transition: background-color var(--d-ui) var(--ease), box-shadow var(--d-ui) var(--ease); }
+.cursor[data-tone='light'] .cursor__trail { background: rgb(227 23 26 / 0.5); box-shadow: 0 0 12px rgb(227 23 26 / 0.4); }
 
 /* ---------- Reveal defaults (JS sets the starting state, so content is visible without JS) ---------- */
 [data-reveal], [data-title] { will-change: auto; }
@@ -641,7 +643,7 @@ select.input { appearance: none; padding-right: var(--s6); background-image: lin
 .has-particles:not(dialog) { position: relative; }
 .has-particles { isolation: isolate; }
 .particles { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
-.has-particles > :not(.particles) { position: relative; z-index: 1; }
+.has-particles > :not(.particles, .cursor, .tip, .burst) { position: relative; z-index: 1; }
 .reg.has-particles > .reg__bar, .reg.has-particles > .reg__scroll { position: relative; z-index: 1; }
 .reg.has-particles > .reg__bar { z-index: 2; }
 
@@ -668,6 +670,42 @@ select.input { appearance: none; padding-right: var(--s6); background-image: lin
 :lang(en) { font-synthesis: weight style; }
 .lang-bo [lang='en'] { line-height: 1.6; }
 
+/* ---------- Round 5 effects ---------- */
+/* A. Spotlight: a soft light follows the mouse across cards and questions. */
+.qa.has-spot { position: relative; }
+.has-spot::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; background: radial-gradient(280px circle at var(--mx, 50%) var(--my, 50%), rgb(227 23 26 / 0.1), transparent 70%); transition: opacity var(--d-ui) var(--ease); }
+.card--wide .has-spot::after, .card--wide.has-spot::after { background: radial-gradient(320px circle at var(--mx, 50%) var(--my, 50%), rgb(255 244 228 / 0.14), transparent 70%); }
+.has-spot:hover::after { opacity: 1; }
+
+/* B. Countdown to camp, in the hero. */
+.hero__count { margin: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 var(--s1); color: var(--t-dark); font-size: 16px; letter-spacing: 0.04em; text-shadow: 0 1px 12px rgb(0 0 0 / 0.6); }
+.hero__count-vis { display: contents; }
+.hero__count-n { font-family: var(--font-display); font-size: 40px; line-height: 1; color: var(--c-red); font-variant-numeric: tabular-nums; text-shadow: 0 0 24px rgb(227 23 26 / 0.4); }
+.hero__count:lang(bo) { letter-spacing: 0; font-size: 17px; line-height: 1.8; }
+.hero__count-b:empty, .hero__count-a:empty { display: none; }
+
+/* D. Light sweep over a seat count when it appears or changes. */
+[data-seats] { position: relative; overflow: hidden; }
+[data-seats].is-swept::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(100deg, transparent 30%, rgb(227 23 26 / 0.22) 50%, transparent 70%); transform: translateX(-100%); animation: seat-sweep 0.96s cubic-bezier(0.65, 0, 0.35, 1) forwards; }
+@keyframes seat-sweep { to { transform: translateX(100%); } }
+
+/* E. Slow pan on the centre gallery photo. */
+.car__item.is-active[data-type='photo'] .car__media img { animation: ken-burns 16s cubic-bezier(0.65, 0, 0.35, 1) 0.8s infinite alternate both; }
+@keyframes ken-burns { from { scale: 1; translate: 0 0; } to { scale: 1.08; translate: -2% -1.5%; } }
+
+/* F. Hold the hero word to illuminate the scene. */
+.hero__word.can-hold { cursor: pointer; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: manipulation; }
+.hero { --boost: 0; }
+.hero__glow { opacity: calc(1 + var(--boost) * 0.8); }
+.hero__word .ltr { text-shadow: 0 0 calc(8px + 48px * max(var(--lit), var(--boost, 0))) rgb(255 244 228 / calc(0.12 + 0.6 * max(var(--lit), var(--boost, 0)))); }
+.hero__word .ltr--accent { text-shadow: 0 0 calc(16px + 48px * max(var(--lit), var(--boost, 0))) rgb(227 23 26 / calc(0.3 + 0.4 * max(var(--lit), var(--boost, 0)))); }
+
+/* H. Sections open from a rounded inset as they scroll in (wider screens). */
+.section.has-wipe { will-change: clip-path; }
+
+/* Burst of light on a successful registration (C). */
+.burst { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
+
 /* ---------- Reduced motion ---------- */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; animation-delay: 0ms !important; scroll-behavior: auto !important; }
@@ -676,6 +714,9 @@ select.input { appearance: none; padding-right: var(--s6); background-image: lin
   .skeleton::after { display: none; }
   .spinner { animation: none; border-right-color: currentColor; opacity: 0.6; }
   .cursor__trail { display: none; }
+  .cursor__dot { transition-duration: 0ms !important; }
+  .car__item.is-active .car__media img { animation: none !important; }
+  [data-seats].is-swept::after { display: none; }
 }
 
 @media (forced-colors: active) {

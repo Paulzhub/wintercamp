@@ -17,6 +17,23 @@ export function initLightbox({ items, onIndex, audio }) {
   const cap = $('#lightbox-cap');
   let index = 0;
 
+  // The size the media will have in the view, known before it loads, so the opening
+  // transition (and the GSAP fallback) always has a real box to move into.
+  function fit(it) {
+    const w = Number(it.dataset.w) || 1600;
+    const h = Number(it.dataset.h) || 1200;
+    const natural = Number(it.dataset.fw) || w; // photos: width of the largest file
+    const maxW = Math.max(1, window.innerWidth - 32);
+    const maxH = Math.max(1, window.innerHeight - 176);
+    const s = Math.min(natural / w, maxW / w, maxH / h);
+    return { width: Math.round(w * s), height: Math.round(h * s) };
+  }
+  function size(el, it) {
+    const { width, height } = fit(it);
+    el.style.setProperty('width', `${width}px`);
+    el.style.setProperty('height', `${height}px`);
+  }
+
   function media(i) {
     const it = items[i];
     const thumb = it.querySelector('img');
@@ -34,17 +51,35 @@ export function initLightbox({ items, onIndex, audio }) {
       el.autoplay = !reduced();
     } else {
       el = document.createElement('img');
-      el.src = it.dataset.full;
       el.alt = alt;
       el.draggable = false;
-      el.width = Number(it.dataset.w) || 1600;
-      el.height = Number(it.dataset.h) || 1200;
+      el.decoding = 'sync';
+      // Start with the thumbnail the carousel already decoded, then swap in the
+      // large file once it has loaded and decoded, so nothing ever shows blank.
+      const full = it.dataset.full;
+      const ready = thumb && thumb.complete && thumb.naturalWidth ? thumb.currentSrc : '';
+      if (ready && ready !== new URL(full, location.href).href) {
+        el.src = ready;
+        const hi = new Image();
+        hi.src = full;
+        const swap = () => { el.src = full; };
+        hi.decode().then(swap, swap);
+      } else {
+        el.src = full;
+      }
     }
+    el.dataset.fullSrc = it.dataset.full || it.dataset.video || '';
+    size(el, it);
     // The wrapper slides; the media inside it zooms.
     const wrap = document.createElement('div');
     wrap.className = 'lightbox__item';
     wrap.append(el);
     return { wrap, el, caption: caption || alt };
+  }
+  // Waits (briefly) until the media can be painted, so the new snapshot has pixels.
+  function painted(el, ms = 150) {
+    const wait = el?.decode ? el.decode().catch(() => {}) : Promise.resolve();
+    return Promise.race([wait, new Promise((r) => setTimeout(r, ms))]);
   }
 
   const current = () => stage.querySelector('.lightbox__item:not(.is-leaving)');
@@ -172,6 +207,7 @@ export function initLightbox({ items, onIndex, audio }) {
       if (thumb) thumb.style.removeProperty('view-transition-name');
       openModal(box, { trigger });
       $('#lightbox-close').focus();
+      return painted(currentMedia());
     };
     audio.play('expand');
     if (reduced()) { doOpen(); return; }
@@ -238,6 +274,11 @@ export function initLightbox({ items, onIndex, audio }) {
     tl.to([cap, ...box.querySelectorAll('button')], { opacity: 0 }, 0);
     if (el) tl.to(el, fromThumb(el, thumb), 0);
   }
+
+  window.addEventListener('resize', () => {
+    if (!box.open) return;
+    stage.querySelectorAll('.lightbox__item > *').forEach((el) => size(el, items[index]));
+  });
 
   $('#lightbox-close').addEventListener('click', close);
   $('#lightbox-prev').addEventListener('click', () => step(-1));
