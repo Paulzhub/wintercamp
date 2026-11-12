@@ -17,10 +17,11 @@ export function initHero() {
   const canvas = $('#scene');
   const letters = $$('#hero-word .ltr');
   const word = $('#hero-word');
-  if (!hero) return { ready: Promise.resolve(), rise() {} };
+  if (!hero) return { ready: Promise.resolve(), rise() {}, boost() {}, settle() {} };
 
   let scene = null;
   let pending = null;
+  let settleP = 0;
   const light = (cx, cy) => {
     letters.forEach((l) => {
       const r = l.getBoundingClientRect();
@@ -81,6 +82,7 @@ export function initHero() {
       .then((m) => m.createScene(canvas, { reduced: reduced() }))
       .then((s) => {
         scene = s;
+        s.settle(settleP);
         document.documentElement.classList.add('has-webgl');
         if ('IntersectionObserver' in window) {
           new IntersectionObserver(([e]) => s.setActive(e.isIntersecting)).observe(hero);
@@ -94,5 +96,12 @@ export function initHero() {
     document.documentElement.classList.remove('has-webgl');
   });
 
-  return { ready, rise: () => scene?.rise() };
+  hero.wcScene = () => scene?.state || null; // read by the end-to-end checks
+  return {
+    ready,
+    rise: () => scene?.rise(),
+    boost: (b) => scene?.boost(b),
+    settle: (p) => { settleP = p; scene?.settle(p); },
+    get settleP() { return settleP; },
+  };
 }

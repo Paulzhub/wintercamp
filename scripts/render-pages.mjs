@@ -488,7 +488,7 @@ function homePage(lang) {
   </article>
 </li>`;
   // Strings the scripts need at run time (no personal data).
-  const clientStrings = { lang, api: appsScriptUrl, common: t.common, gallery: t.gallery, reg: t.reg, phone, tel, cats: config.categories, pay: { amount: config.fee.display, payee: config.upi.payeeName, upiId: config.upi.id } };
+  const clientStrings = { lang, api: appsScriptUrl, common: t.common, gallery: t.gallery, reg: t.reg, phone, tel, cats: config.categories, count: t.hero.count, pay: { amount: config.fee.display, payee: config.upi.payeeName, upiId: config.upi.id } };
   const venueLine = `${config.venue.name}, ${config.venue.street}, ${config.venue.locality}, ${config.venue.region}, ${config.venue.country}, ${config.venue.postalCode}`;
 
   return `<!doctype html>
@@ -552,6 +552,7 @@ ${siteHeader(lang, t, 'home')}
       <button type="button" class="btn btn--red btn--lg" data-open-register data-magnetic data-cursor="${esc(t.common.register)}"><span class="btn__label">${esc(t.common.registerNow)}</span><span class="btn__icon" aria-hidden="true">${icons.arrow}</span></button>
       <a class="btn btn--outline btn--lg" href="#activities"><span class="btn__label">${esc(t.hero.secondary)}</span></a>
     </div>
+    <p class="hero__count" id="hero-count" data-hero-in hidden><span class="hero__count-vis" aria-hidden="true"><span class="hero__count-b"></span> <span class="hero__count-n"></span> <span class="hero__count-a"></span></span><span class="sr-only hero__count-sr"></span></p>
     <p class="hero__seats" data-hero-in>${esc(t.hero.seats)}</p>
     <noscript><p class="hero__seats">${esc(fill(t.common.noJs, { phone }))}</p></noscript>
   </div>

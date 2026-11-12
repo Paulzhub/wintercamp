@@ -1,5 +1,5 @@
 // three.js hero: layered Himalayan ridges, light rising behind them with soft
-// rays, and glowing snow. Loaded on demand; paused when off screen.
+// rays, glowing snow, and snow that settles on the ridges as the page scrolls. Loaded on demand; paused when off screen.
 import {
   WebGLRenderer, Scene, OrthographicCamera, Mesh, PlaneGeometry, ShaderMaterial, Shape, ShapeGeometry,
   MeshBasicMaterial, BufferGeometry, BufferAttribute, Points, Color, AdditiveBlending, Vector2, Float32BufferAttribute,
@@ -9,19 +9,20 @@ const SKY_VERT = /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Positio
 const SKY_FRAG = /* glsl */ `
 precision highp float;
 varying vec2 vUv;
-uniform float uAspect; uniform float uTime; uniform float uRise; uniform vec2 uLight;
+uniform float uAspect; uniform float uTime; uniform float uRise; uniform vec2 uLight; uniform float uBoost;
 float hash(float n){ return fract(sin(n) * 43758.5453); }
 float noise(float x){ float i = floor(x); float f = fract(x); return mix(hash(i), hash(i + 1.0), f * f * (3.0 - 2.0 * f)); }
 void main(){
   vec2 p = vec2((vUv.x * 2.0 - 1.0) * uAspect, vUv.y * 2.0 - 1.0);
   vec3 col = mix(vec3(0.098), vec3(0.06), smoothstep(-1.0, 1.0, p.y));
   vec2 d = p - uLight; float r = length(d);
-  col += vec3(1.0, 0.93, 0.84) * exp(-r * 2.4) * 0.42 * uRise;
-  col += vec3(0.89, 0.09, 0.10) * exp(-r * 1.3) * 0.08 * uRise;
+  float k = uRise * (1.0 + uBoost * 1.3);
+  col += vec3(1.0, 0.93, 0.84) * exp(-r * (2.4 - uBoost * 0.9)) * 0.42 * k;
+  col += vec3(0.89, 0.09, 0.10) * exp(-r * 1.3) * 0.08 * k;
   float a = atan(d.y, d.x);
   float rays = noise(a * 10.0 + uTime * 0.12) * noise(a * 23.0 - uTime * 0.08);
   rays = pow(rays, 1.6) * smoothstep(1.9, 0.05, r) * smoothstep(-0.2, 0.5, d.y / max(r, 0.001));
-  col += vec3(1.0, 0.95, 0.88) * rays * 0.26 * uRise;
+  col += vec3(1.0, 0.95, 0.88) * rays * 0.26 * k;
   col *= 1.0 - 0.32 * smoothstep(0.6, 1.7, length(p * vec2(0.7, 1.0)));
   col += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 255.0;
   gl_FragColor = vec4(col, 1.0);
@@ -29,7 +30,7 @@ void main(){
 
 const SNOW_VERT = /* glsl */ `
 attribute vec3 aSeed;
-uniform float uTime; uniform float uAspect; uniform float uPx; uniform vec2 uWind; uniform vec2 uLight; uniform float uRise;
+uniform float uTime; uniform float uAspect; uniform float uPx; uniform vec2 uWind; uniform vec2 uLight; uniform float uRise; uniform float uBoost;
 varying float vAlpha;
 void main(){
   float speed = 0.035 + aSeed.z * 0.07;
@@ -38,12 +39,35 @@ void main(){
   gl_Position = projectionMatrix * modelViewMatrix * vec4(x, y, 0.0, 1.0);
   gl_PointSize = (1.6 + aSeed.z * 3.6) * uPx;
   float near = exp(-length(vec2(x, y) - uLight) * 1.5);
-  vAlpha = (0.22 + aSeed.z * 0.48) * (0.55 + near * 1.6 * uRise);
+  vAlpha = (0.22 + aSeed.z * 0.48) * (0.55 + near * 1.6 * uRise * (1.0 + uBoost));
 }`;
 const SNOW_FRAG = /* glsl */ `
 precision mediump float;
 varying float vAlpha;
 void main(){ float d = length(gl_PointCoord - 0.5); gl_FragColor = vec4(vec3(1.0, 0.97, 0.92), smoothstep(0.5, 0.0, d) * vAlpha); }`;
+
+// Snow settling on the ridge lines: a strip that hugs each ridge and thickens with uSettle.
+const CAP_VERT = /* glsl */ `
+attribute float aSide; attribute float aThick;
+uniform float uSettle;
+varying float vSide;
+void main(){
+  vec3 p = position;
+  // The lower edge sits just under the ridge line; the upper edge rises with uSettle.
+  p.y += aSide > 0.0 ? aThick * uSettle : -0.0025;
+  vSide = aSide;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+}`;
+const CAP_FRAG = /* glsl */ `
+precision highp float;
+uniform float uSettle; uniform float uRise; uniform float uOpacity;
+varying float vSide;
+void main(){
+  // Brightest along the ridge line, fading softly towards the top of the drift.
+  float t = (vSide + 1.0) * 0.5;
+  float a = (1.0 - smoothstep(0.35, 1.0, t)) * uOpacity * min(1.0, uSettle * 3.0);
+  gl_FragColor = vec4(vec3(0.914, 0.925, 0.937) * (0.75 + 0.25 * uRise), a);
+}`;
 
 // Seeded ridge profile: a few layered sines read as a mountain line.
 function ridgeY(x, k) {
@@ -78,6 +102,7 @@ export function createScene(canvas, { reduced = false } = {}) {
   const uniforms = {
     uAspect: { value: 1 }, uTime: { value: 0 }, uRise: { value: reduced ? 1 : 0.12 },
     uLight: { value: new Vector2(0, -0.62) }, uPx: { value: dpr }, uWind: { value: new Vector2(0, 0) },
+    uBoost: { value: 0 }, uSettle: { value: 0 },
   };
   const sky = new Mesh(new PlaneGeometry(2, 2), new ShaderMaterial({ vertexShader: SKY_VERT, fragmentShader: SKY_FRAG, uniforms, depthWrite: false, depthTest: false }));
   sky.frustumCulled = false;
@@ -86,7 +111,19 @@ export function createScene(canvas, { reduced = false } = {}) {
 
   const ridges = RIDGE.map((r, k) => {
     const m = new Mesh(new BufferGeometry(), new MeshBasicMaterial({ vertexColors: true, depthTest: false, depthWrite: false }));
-    m.renderOrder = 1 + k;
+    m.renderOrder = 1 + k * 2;
+    scene.add(m);
+    return m;
+  });
+  // Snow caps: drawn just after their own ridge, so nearer ridges still cover them.
+  const caps = RIDGE.map((r, k) => {
+    const mat = new ShaderMaterial({
+      vertexShader: CAP_VERT, fragmentShader: CAP_FRAG, transparent: true, depthTest: false, depthWrite: false,
+      uniforms: { uSettle: uniforms.uSettle, uRise: uniforms.uRise, uOpacity: { value: [0.35, 0.55, 0.8][k] } },
+    });
+    const m = new Mesh(new BufferGeometry(), mat);
+    m.renderOrder = 2 + k * 2;
+    m.frustumCulled = false;
     scene.add(m);
     return m;
   });
@@ -115,6 +152,32 @@ export function createScene(canvas, { reduced = false } = {}) {
       geo.setAttribute('color', new Float32BufferAttribute(colors, 3));
       mesh.geometry.dispose();
       mesh.geometry = geo;
+      // The matching snow cap: two vertices per step, one each side of the ridge line.
+      const n = 241;
+      const pos2 = new Float32Array(n * 2 * 3);
+      const side = new Float32Array(n * 2);
+      const thick = new Float32Array(n * 2);
+      const idx = [];
+      const x0c = -aspect - 0.4; const x1c = aspect + 0.4;
+      const base = [0.005, 0.008, 0.012][k];
+      for (let i = 0; i < n; i++) {
+        const x = x0c + ((x1c - x0c) * i) / (n - 1);
+        const y = ridgeY(x, k);
+        // Thicker where the ridge is flatter, thinner on steep slopes.
+        const slope = Math.abs(ridgeY(x + 0.01, k) - ridgeY(x - 0.01, k)) / 0.02;
+        const t = base * (1.4 - Math.min(1, slope * 0.9)) * (0.8 + 0.4 * Math.abs(Math.sin(x * 13.1 + k)));
+        pos2.set([x, y, 0, x, y, 0], i * 6);
+        side.set([1, -1], i * 2);
+        thick.set([t, t], i * 2);
+        if (i < n - 1) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+      }
+      const cg = new BufferGeometry();
+      cg.setAttribute('position', new BufferAttribute(pos2, 3));
+      cg.setAttribute('aSide', new BufferAttribute(side, 1));
+      cg.setAttribute('aThick', new BufferAttribute(thick, 1));
+      cg.setIndex(idx);
+      caps[k].geometry.dispose();
+      caps[k].geometry = cg;
     });
   }
 
@@ -126,7 +189,7 @@ export function createScene(canvas, { reduced = false } = {}) {
   snowGeo.setAttribute('aSeed', new BufferAttribute(seeds, 3));
   const snow = new Points(snowGeo, new ShaderMaterial({ vertexShader: SNOW_VERT, fragmentShader: SNOW_FRAG, uniforms, transparent: true, depthWrite: false, depthTest: false, blending: AdditiveBlending }));
   snow.frustumCulled = false;
-  snow.renderOrder = 5;
+  snow.renderOrder = 10;
   scene.add(snow);
 
   function resize() {
@@ -145,6 +208,7 @@ export function createScene(canvas, { reduced = false } = {}) {
   const cur = new Vector2(0, 0);
   let rise = uniforms.uRise.value;
   let riseTarget = rise;
+  let settleTarget = 0;
   let running = false;
   let active = true;
   let started = false; // stays on a still frame until the visitor leaves the loader
@@ -158,7 +222,7 @@ export function createScene(canvas, { reduced = false } = {}) {
   function render() {
     uniforms.uLight.value.set(cur.x * 0.3, -0.62 + rise * 0.24 - cur.y * 0.06);
     uniforms.uWind.value.set(cur.x, 0);
-    ridges.forEach((m, k) => { m.position.x = cur.x * RIDGE[k].depth; m.position.y = -cur.y * RIDGE[k].depth * 0.3; });
+    ridges.forEach((m, k) => { m.position.x = cur.x * RIDGE[k].depth; m.position.y = -cur.y * RIDGE[k].depth * 0.3; caps[k].position.copy(m.position); });
     renderer.render(scene, camera);
     if (resolveFirst) { resolveFirst(); resolveFirst = null; }
   }
@@ -176,6 +240,8 @@ export function createScene(canvas, { reduced = false } = {}) {
     cur.lerp(target, 1 - Math.pow(0.001, dt));
     rise += (riseTarget - rise) * (1 - Math.pow(0.12, dt));
     uniforms.uRise.value = rise;
+    // Snow settles towards the scroll position, easing (critically damped follow).
+    uniforms.uSettle.value += (settleTarget - uniforms.uSettle.value) * (1 - Math.pow(0.05, dt));
     render();
   }
 
@@ -201,6 +267,12 @@ export function createScene(canvas, { reduced = false } = {}) {
   return {
     firstFrame,
     setPointer(x, y) { target.set(x, y); if (reduced) { cur.copy(target); render(); } },
+    boost(b) { uniforms.uBoost.value = b; if (!running) render(); },
+    settle(p) {
+      settleTarget = p;
+      if (reduced || !running) { uniforms.uSettle.value = p; render(); }
+    },
+    get state() { return { boost: uniforms.uBoost.value, settle: uniforms.uSettle.value }; },
     setActive(on) { active = on && !document.hidden; setRunning(active); },
     rise() {
       riseTarget = 1;

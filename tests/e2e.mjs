@@ -287,8 +287,14 @@ async function main() {
       await page.click('#reg-submit');
       check('Loading state while sending', await page.locator('#reg-submit.is-loading').count() === 1);
       await page.waitForSelector('#reg-done:not([hidden])', { timeout: 10000 });
-      await page.waitForTimeout(1200);
+      const burstOn = await page.evaluate(() => { const c = document.querySelector('#register > canvas.burst'); return Boolean(c) && getComputedStyle(c).position === 'fixed'; });
+      await page.waitForTimeout(450);
+      await page.screenshot({ path: path.join(out, 'reg-done-burst-390.png') });
+      check('Success: a burst of light over the confirmation', burstOn);
+      await page.waitForTimeout(750);
       await page.screenshot({ path: path.join(out, 'reg-done-390.png') });
+      await page.waitForTimeout(600);
+      check('Success: the burst is removed when it ends', await page.evaluate(() => !document.querySelector('canvas.burst')));
       check('Confirmation shows name, category, dates', (await page.textContent('#reg-done')).includes('Tenzin Norbu') && (await page.textContent('#done-dates')).includes('11 to 13 January 2027'));
       check('Success screen: "Download registration details" button and a privacy note', (await page.textContent('#done-save')).includes('Download registration details') && (await page.textContent('#reg-done')).includes('health details'));
       const [download] = await Promise.all([page.waitForEvent('download'), page.click('#done-save')]);
@@ -1101,6 +1107,123 @@ async function main() {
       await page.goto(SITE);
       await enter(page, '#enter-silent', true);
       check('Cursor: none on touch devices', await page.evaluate(() => !document.querySelector('.cursor')));
+      await ctx.close();
+    }
+    // 18. Round 5 effects.
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      const page = await ctx.newPage();
+      await page.clock.install({ time: new Date(2026, 10, 12, 10, 0) });
+      const done = watch(page, 'Effects 1440');
+      await page.goto(SITE);
+      await enter(page);
+      await page.waitForTimeout(2600);
+      // B. Countdown (clock fixed at 12 Nov 2026: 53 days to 4 Jan 2027).
+      const count = await page.evaluate(() => ({ vis: !document.getElementById('hero-count').hidden, n: document.querySelector('.hero__count-n').textContent, sr: document.querySelector('.hero__count-sr').textContent }));
+      check('B. Countdown: "53 days to camp", rolled up to the number', count.vis && count.n === '53' && count.sr === '53 days to camp', JSON.stringify(count));
+      // F. Hold the hero word.
+      const w = await page.locator('#hero-word').boundingBox();
+      await page.mouse.move(w.x + w.width / 2, w.y + w.height / 2);
+      await page.mouse.down();
+      await page.waitForTimeout(500);
+      const part = await page.evaluate(() => document.getElementById('home').wcBoost);
+      await page.waitForTimeout(1000);
+      const full = await page.evaluate(() => ({ b: document.getElementById('home').wcBoost, scene: document.getElementById('home').wcScene(), lit: document.getElementById('hero-word').classList.contains('is-lit') }));
+      await page.screenshot({ path: path.join(out, 'hero-illuminate-1440.png') });
+      await page.mouse.up();
+      await page.waitForTimeout(1100);
+      const back = await page.evaluate(() => document.getElementById('home').wcBoost);
+      check('F. Holding the word brightens the scene (eases up, then lit)', part > 0.05 && part < 0.95 && full.b === 1 && full.lit && (!full.scene || full.scene.boost === 1), `${part} -> ${JSON.stringify(full)}`);
+      check('F. Releasing eases it back', back < 0.02, String(back));
+      // I. Snow settles as the page scrolls.
+      const s0 = await page.evaluate(() => document.getElementById('home').wcScene()?.settle ?? null);
+      await page.mouse.move(60, 600);
+      for (let k = 0; k < 4; k++) { await page.mouse.wheel(0, 150); await page.waitForTimeout(200); }
+      await page.waitForTimeout(2500);
+      const s1 = await page.evaluate(() => document.getElementById('home').wcScene()?.settle ?? null);
+      check('I. Snow settles on the ridges as the page scrolls', s0 !== null && s0 < 0.05 && s1 > 0.4, `${s0} -> ${s1}`);
+      await page.screenshot({ path: path.join(out, 'hero-settled-1440.png') });
+      // H. Sections open from a rounded inset as they come in.
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.waitForTimeout(600);
+      const clip = async () => page.evaluate(() => getComputedStyle(document.getElementById('faq')).clipPath);
+      await page.evaluate(() => { const f = document.getElementById('faq'); window.scrollTo(0, f.offsetTop - window.innerHeight + 120); });
+      await page.waitForTimeout(1200);
+      const cMid = await clip();
+      await page.evaluate(() => { const f = document.getElementById('faq'); window.scrollTo(0, f.offsetTop - 100); });
+      await page.waitForTimeout(1200);
+      const cEnd = await clip();
+      check('H. A section opens from a rounded inset as it scrolls in', /inset\(.*round/.test(cMid) && !/round 0px\)$|^none$/.test(cMid) && /inset\(0(px|%)?\)?/.test(cEnd), `${cMid} -> ${cEnd}`);
+      // A. Spotlight on a card.
+      await page.locator('.card').first().scrollIntoViewIfNeeded();
+      await page.waitForTimeout(1500);
+      const c = await page.locator('.card__in').first().boundingBox();
+      await page.mouse.move(c.x + 40, c.y + 40);
+      await page.mouse.move(c.x + 60, c.y + 50);
+      await page.waitForTimeout(600);
+      const spot = await page.evaluate(() => { const el = document.querySelector('.card__in'); return { o: getComputedStyle(el, '::after').opacity, mx: el.style.getPropertyValue('--mx') }; });
+      check('A. Spotlight follows the mouse on a card', Number(spot.o) > 0.9 && parseInt(spot.mx, 10) > 40, JSON.stringify(spot));
+      // E. Slow pan on the centre gallery photo.
+      await page.focus('#carousel');
+      await page.keyboard.press('Home');
+      await page.waitForTimeout(900);
+      const kb = await page.evaluate(() => { const i = [...document.querySelectorAll('.car__item')].find((x) => x.dataset.type === 'photo' && x.classList.contains('is-active'))?.querySelector('.car__media img'); const o = document.querySelector('.car__item:not(.is-active) .car__media img'); return { on: i && getComputedStyle(i).animationName, off: o && getComputedStyle(o).animationName }; });
+      check('E. The centre gallery photo pans slowly; the others do not', kb.on === 'ken-burns' && kb.off === 'none', JSON.stringify(kb));
+      // D. Seat count sweeps when it appears.
+      await page.evaluate(() => document.querySelector('[data-open-register]').click());
+      await page.waitForSelector('#register[open]');
+      await page.waitForFunction(() => /\d/.test(document.querySelector('[data-seats]').textContent), null, { timeout: 8000 });
+      const sw = await page.evaluate(() => [...document.querySelectorAll('[data-seats]')].map((s) => s.classList.contains('is-swept') && getComputedStyle(s, '::after').animationName));
+      check('D. Seat counts get a light sweep when they appear', sw.every((x) => x === 'seat-sweep'), JSON.stringify(sw));
+      done();
+      await ctx.close();
+    }
+    {
+      // B. During camp, and the Tibetan page.
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+      const page = await ctx.newPage();
+      await page.clock.install({ time: new Date(2027, 0, 5, 9, 0) });
+      await page.goto(SITE);
+      await enter(page, '#enter-silent', true);
+      check('B. Countdown during camp: "Camp is on now"', (await page.textContent('.hero__count-sr')) === 'Camp is on now' && await page.isHidden('.hero__count-n'));
+      check('A. No spotlight on touch devices', await page.evaluate(() => !document.querySelector('.has-spot')));
+      await ctx.close();
+    }
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1024, height: 800 }, reducedMotion: 'reduce' });
+      const page = await ctx.newPage();
+      await page.clock.install({ time: new Date(2027, 0, 1, 9, 0) });
+      const done = watch(page, 'Effects, reduced motion');
+      await page.goto(`${SITE}bo/`);
+      await enter(page);
+      await page.waitForTimeout(600);
+      const c = await page.evaluate(() => ({ n: document.querySelector('.hero__count-n').textContent, sr: document.querySelector('.hero__count-sr').textContent }));
+      check('B. Tibetan countdown, reduced motion: the number at once', c.n === '3' && c.sr.includes('3'), JSON.stringify(c));
+      check('Reduced motion: no spotlight, no wipe, no gallery pan', await page.evaluate(() => !document.querySelector('.has-spot, .has-wipe') && [...document.querySelectorAll('.car__media img')].every((i) => getComputedStyle(i).animationName === 'none')));
+      const w = await page.locator('#hero-word').boundingBox();
+      await page.mouse.move(w.x + 20, w.y + 20);
+      await page.mouse.down();
+      await page.waitForTimeout(100);
+      check('F. Reduced motion: holding lights the word at once', await page.evaluate(() => document.getElementById('home').wcBoost === 1));
+      await page.mouse.up();
+      done();
+      await ctx.close();
+    }
+    {
+      // G. With sound on, the music's filter opens as the page scrolls.
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+      const page = await ctx.newPage();
+      await page.goto(SITE);
+      await page.waitForSelector('.loader.is-ready', { timeout: 8000 });
+      await page.waitForTimeout(100);
+      if (await page.isVisible('#loader-lang')) await page.click('[data-pick-lang="en"]');
+      await page.click('#enter-sound');
+      await page.waitForSelector('#loader', { state: 'detached', timeout: 5000 });
+      const top = await waitFor(() => page.evaluate(() => document.documentElement.wcAudio?.musicCutoff ?? null), 20000);
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      await page.waitForTimeout(1500);
+      const bottom = await page.evaluate(() => document.documentElement.wcAudio?.musicCutoff ?? null);
+      check('G. Music opens up as the page scrolls (low-pass follows scroll)', top !== null && bottom !== null && top < 1200 && bottom > 8000, `${top} Hz -> ${bottom} Hz`);
       await ctx.close();
     }
   } finally {

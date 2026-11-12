@@ -4,6 +4,7 @@
 import { gsap, reduced, smoothPanel } from './motion.js';
 import { T, $, $$, fill } from './i18n.js';
 import { openModal } from './modal.js';
+import { burst, sweep } from './effects.js';
 import { fetchSeats, sendRegistration, sendPdf } from './api.js';
 import { initSignature } from './signature.js';
 import { prepareScreenshot } from './image.js';
@@ -323,7 +324,10 @@ export function initRegistration({ audio }) {
       const full = info.left <= 0;
       card.classList.toggle('is-full', full);
       $('[data-full]', card).hidden = !full;
-      seatsEl.textContent = fill(R.seatsLeft, { n: Math.max(0, info.left), total: info.total });
+      const seatText = fill(R.seatsLeft, { n: Math.max(0, info.left), total: info.total });
+      const changed = seatsEl.textContent !== seatText;
+      seatsEl.textContent = seatText;
+      if (changed) sweep(seatsEl);
       seatsEl.classList.toggle('is-low', info.left <= 5);
       choose.disabled = full;
     });
@@ -642,6 +646,7 @@ export function initRegistration({ audio }) {
     if (!reduced()) {
       gsap.fromTo('.done__ring', { scale: 0, opacity: 1 }, { scale: 2.4, opacity: 0, duration: 1.2, ease: 'big' });
       gsap.fromTo('.done__check', { scale: 0.4, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.64, ease: 'big' });
+      burst($('.done__burst'));
       gsap.fromTo('#reg-done > :not(.done__burst)', { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.64, delay: 0.24, clearProps: 'all' });
     }
   }
