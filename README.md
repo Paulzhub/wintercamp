@@ -66,6 +66,7 @@ These checks cover:
 - the no-JavaScript fallback
 - the Content Security Policy and third-party requests
 - a full registration, the seats-full case, the last-seat case and a failed send with retry
+- seat holds (countdown, expiry, a second family blocked while the last seat is held), the consent gate, the payment warning and code, duplicates before and after paying, the saved draft after a reload, and sending again when back online
 
 Screenshots go to `test-results/`.
 

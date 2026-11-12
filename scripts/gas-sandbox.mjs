@@ -3,6 +3,7 @@
 // backend tests and by the local mock backend, so both exercise the real script.
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -20,10 +21,12 @@ function fmtDate(d, tz, fmt) {
 export function createSandbox() {
   const files = [];
   const cache = new Map();
+  const props = new Map();
   let fileId = 0;
+  let clockOffset = 0; // moved by advance(), for hold expiry tests
 
   class Sheet {
-    constructor(name) { this.name = name; this.rows = []; }
+    constructor(name) { this.name = name; this.rows = []; this.validations = []; }
     getMaxRows() { return 1000; }
     getLastRow() { return this.rows.length; }
     getLastColumn() { return Math.max(0, ...this.rows.map((r) => r.length)); }
@@ -52,6 +55,7 @@ export function createSandbox() {
         setValue(v) { return range.setValues([[v]]); },
         setNumberFormat: () => range,
         setFontWeight: () => range,
+        setDataValidation: (rule) => { self.validations.push({ r, c, nr, nc, rule }); return range; },
       };
       return range;
     }
@@ -85,7 +89,22 @@ export function createSandbox() {
 
   const context = vm.createContext({
     console,
-    SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet, flush() {} },
+    SpreadsheetApp: {
+      getActiveSpreadsheet: () => spreadsheet,
+      flush() {},
+      newDataValidation() {
+        const rule = { values: null };
+        const b = { requireValueInList: (v) => { rule.values = v; return b; }, setAllowInvalid: () => b, build: () => rule };
+        return b;
+      },
+    },
+    PropertiesService: {
+      getScriptProperties: () => ({
+        getProperty: (k) => (props.has(k) ? props.get(k) : null),
+        setProperty: (k, v) => { props.set(k, String(v)); },
+        deleteProperty: (k) => { props.delete(k); },
+      }),
+    },
     DriveApp: { getRootFolder: () => driveRoot },
     LockService: { getScriptLock: () => ({ tryLock: () => true, waitLock() {}, releaseLock() {} }) },
     CacheService: { getScriptCache: () => ({ get: (k) => (cache.has(k) ? cache.get(k) : null), put: (k, v) => cache.set(k, String(v)) }) },
@@ -93,6 +112,8 @@ export function createSandbox() {
       base64Decode: (s) => Array.from(Buffer.from(s, 'base64'), (b) => (b > 127 ? b - 256 : b)),
       newBlob: (bytes, mime, name) => ({ bytes, mime, name }),
       formatDate: fmtDate,
+      DigestAlgorithm: { SHA_256: 'sha256' },
+      computeDigest: (alg, bytes) => Array.from(createHash(alg).update(Buffer.from(bytes.map((b) => b & 0xff))).digest(), (b) => (b > 127 ? b - 256 : b)),
     },
     ContentService: {
       MimeType: { JSON: 'application/json' },
@@ -100,6 +121,7 @@ export function createSandbox() {
     },
   });
   vm.runInContext(readFileSync(path.join(root, 'apps-script/Code.gs'), 'utf8'), context, { filename: 'Code.gs' });
+  context.now_ = () => Date.now() + clockOffset;
 
   const api = {
     context,
@@ -120,6 +142,10 @@ export function createSandbox() {
       }
     },
     resetRate: () => cache.clear(),
+    props,
+    holds: () => JSON.parse(props.get('holds') || '{"kids":{},"youth":{}}'),
+    // Move the script's clock forward (hold expiry, PDF window).
+    advance(ms) { clockOffset += ms; return clockOffset; },
     // An old single "Registrations" tab, as created by the first version.
     seedOldTab(rows) {
       const sh = spreadsheet.insertSheet('Registrations');

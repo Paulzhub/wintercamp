@@ -1,11 +1,14 @@
 // Registration view: choose Kids or Youth (with live seats), four short steps,
 // hand-drawn signature, UPI payment with a required screenshot, one submission.
-// Nothing typed here is written to browser storage.
+// The seat is held for 5 minutes once the payment step opens (server "hold").
+// A draft of the form (never the payment screenshot) is kept in sessionStorage,
+// so it survives the tab being reloaded while the family pays in their UPI app;
+// it is deleted when the registration is sent and ends with the browser tab.
 import { gsap, reduced, smoothPanel } from './motion.js';
 import { T, $, $$, fill } from './i18n.js';
 import { openModal } from './modal.js';
 import { burst, sweep } from './effects.js';
-import { fetchSeats, sendRegistration, sendPdf } from './api.js';
+import { fetchSeats, sendRegistration, sendPdf, sendHold, sendRelease } from './api.js';
 import { initSignature } from './signature.js';
 import { prepareScreenshot } from './image.js';
 import { MAX, isoDate, dobProblem, todayIso, validPhone, normPhone, ageOn } from './validate.js';
@@ -17,6 +20,10 @@ const STEP_OF = {
   refund: 3, shot: 3, ref: 3,
 };
 const MAX_PHONES = 4;
+const DRAFT_KEY = 'wc-reg-draft';
+const DRAFT_HOURS = 24;
+const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`);
+export const regCode = (id) => String(id || '').replace(/-/g, '').slice(0, 8).toUpperCase();
 
 export function initRegistration({ audio }) {
   const dlg = $('#register');
@@ -28,6 +35,7 @@ export function initRegistration({ audio }) {
   const pick = $('#reg-pick');
   const doneView = $('#reg-done');
   const lastView = $('#reg-last');
+  const dupView = $('#reg-dup');
   const steps = $$('.step', form);
   const dots = $$('[data-step-dot]', form);
   const summary = $('#form-summary');
@@ -41,7 +49,11 @@ export function initRegistration({ audio }) {
   const state = {
     cat: null, step: 0, seats: null, shot: null, shotUrl: null,
     submissionId: null, started: 0, busy: false, payOk: false, touched: new Set(),
+    panelShown: false, // the payment details were shown: the family may have paid
+    sent: false, pending: false, // pending: a send failed on the network and will be retried
+    hold: { exp: 0, timer: 0, warned: false }, // exp: local time the hold ends
   };
+  const HOLD_MS = (T.holdMinutes || 5) * 60000;
 
   // Smooth scrolling inside the registration view (created on first open).
   let panel = null;
@@ -221,7 +233,10 @@ export function initRegistration({ audio }) {
     },
     medical: () => (text(f.medical).length > MAX.medical ? E.tooLong : ''),
     dietary: () => (text(f.dietary).length > MAX.dietary ? E.tooLong : ''),
-    consent: () => (consentInputs.some((i) => i.checked) ? '' : E.consent),
+    consent: () => {
+      const v = consentInputs.find((i) => i.checked)?.value;
+      return !v ? E.consent : v !== 'yes' ? E.consentYes : '';
+    },
     agree: () => (f.agree.checked ? '' : E.agree),
     signature: () => {
       if (!typedMode) return signature.hasInk() ? '' : E.signature;
@@ -236,7 +251,11 @@ export function initRegistration({ audio }) {
     },
     refund: () => (f.refund.checked ? '' : E.refund),
     shot: () => (state.shot ? '' : E.shot),
-    ref: () => (text(f.ref).length > MAX.ref ? E.tooLong : ''),
+    ref: () => {
+      const v = text(f.ref).replace(/[\s-]/g, '');
+      if (text(f.ref).length > MAX.ref) return E.tooLong;
+      return v && !/^\d{12}$/.test(v) ? E.refFormat : '';
+    },
   };
   const STEP_FIELDS = [['name', 'dob'], ['parent', 'address', 'phones', 'medical', 'dietary'], ['consent', 'agree', 'signature', 'signDate'], ['refund', 'shot', 'ref']];
 
@@ -307,8 +326,17 @@ export function initRegistration({ audio }) {
     if (f.dobD.value && f.dobM.value && f.dobY.value) { state.touched.add('dob'); check('dob'); }
     else if (state.touched.has('dob')) check('dob');
   }));
-  consentInputs.forEach((i) => i.addEventListener('change', () => { check('consent'); audio.play('tick'); }));
-  f.agree.addEventListener('change', () => { if (state.touched.has('agree') || f.agree.checked) check('agree'); });
+  consentInputs.forEach((i) => i.addEventListener('change', () => { state.touched.add('consent'); check('consent'); updateGate(); audio.play('tick'); }));
+  f.agree.addEventListener('change', () => { if (state.touched.has('agree') || f.agree.checked) check('agree'); updateGate(); });
+
+  // Consent and signature: Next stays disabled until medical emergency consent
+  // is YES and the agreement box is ticked.
+  function updateGate() {
+    const ok = consentInputs.find((i) => i.checked)?.value === 'yes' && f.agree.checked;
+    const gated = state.step === 2 && !ok;
+    btnNext.disabled = gated;
+    $('#step-gate').hidden = !gated;
+  }
   f.refund.addEventListener('change', () => { if (state.touched.has('refund') || f.refund.checked) check('refund'); });
 
   // ---------- Seats and category ----------
@@ -326,6 +354,8 @@ export function initRegistration({ audio }) {
       const full = info.left <= 0;
       card.classList.toggle('is-full', full);
       $('[data-full]', card).hidden = !full;
+      // Full only because families are paying right now: a seat may open soon.
+      $('[data-held]', card).hidden = !(full && info.held > 0);
       const seatText = fill(R.seatsLeft, { n: Math.max(0, info.left), total: info.total });
       const changed = seatsEl.textContent !== seatText;
       seatsEl.textContent = seatText;
@@ -333,6 +363,7 @@ export function initRegistration({ audio }) {
       seatsEl.classList.toggle('is-low', info.left <= 5);
       choose.disabled = full;
     });
+    if (state.seats) document.dispatchEvent(new CustomEvent('wc:seats', { detail: state.seats }));
   }
 
   async function loadSeats() {
@@ -350,9 +381,10 @@ export function initRegistration({ audio }) {
     }
   }
   $('#seats-retry').addEventListener('click', loadSeats);
+  $$('[data-recheck]', dlg).forEach((b) => b.addEventListener('click', loadSeats));
 
-  function choose(cat) {
-    if (!state.seats || state.seats[cat].left <= 0) return;
+  function choose(cat, { force = false, step = 0 } = {}) {
+    if (!force && (!state.seats || state.seats[cat].left <= 0)) return;
     state.cat = cat;
     if (!state.started) state.started = Date.now();
     dlg.classList.add('has-choice');
@@ -367,12 +399,15 @@ export function initRegistration({ audio }) {
       gsap.fromTo(form, { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.64, delay: 0.08, clearProps: 'all' });
     }
     if (state.touched.has('dob')) check('dob');
-    goStep(0, { focus: true });
+    goStep(step, { focus: true });
+    saveDraft();
   }
   Object.entries(cards).forEach(([cat, card]) => {
     $('[data-choose]', card).addEventListener('click', () => choose(cat));
     $('[data-change]', card).addEventListener('click', () => {
       const prev = state.cat;
+      releaseHold();
+      clearDraft();
       state.cat = null;
       dlg.classList.remove('has-choice');
       Object.values(cards).forEach((c) => { c.classList.remove('is-chosen'); $('[data-chosen]', c).hidden = true; });
@@ -398,12 +433,14 @@ export function initRegistration({ audio }) {
     summary.hidden = true;
     sendError.hidden = true;
     $('#step-blocked').hidden = true;
+    updateGate();
     if (!reduced()) gsap.fromTo(steps[n], { opacity: 0, x: 24 }, { opacity: 1, x: 0, duration: 0.48, clearProps: 'all' });
     const scroller = $('.reg__scroll', dlg);
     const top = form.offsetTop - 16;
     if (scroller.scrollTop > top) panelTo(top);
     if (n === 2) requestAnimationFrame(() => signature.resize());
     if (n === 3) checkBeforePay();
+    saveDraft();
     if (focus) {
       const first = { 0: f.name, 1: f.parent, 2: consentInputs[0], 3: $('#pay-checking') }[n];
       if (n === 3) $('#pay-checking').setAttribute('tabindex', '-1');
@@ -417,13 +454,89 @@ export function initRegistration({ audio }) {
   });
   btnBack.addEventListener('click', () => goStep(state.step - 1));
 
-  // Seats are checked again before anyone is asked to pay.
-  async function checkBeforePay() {
-    state.payOk = false;
-    $('#pay-checking').hidden = false;
-    $('#pay-panel').hidden = true;
-    $('#pay-full').hidden = true;
+  // Before anyone is asked to pay, the server holds a seat for 5 minutes. The
+  // same submission ID is used for the hold and the registration, so a retry,
+  // a reload (draft) or "Hold my seat again" never takes a second seat.
+  function ensureId() {
+    if (!state.submissionId) state.submissionId = newId();
+    const code = regCode(state.submissionId);
+    $('#pay-code').textContent = code;
+    const open = $('#upi-open');
+    open.href = open.getAttribute('href').replace(/([?&]tn=)[^&]*/, `$1${encodeURIComponent(`${open.dataset.note} ${code}`)}`);
+  }
+
+  function showPanel() {
+    const first = $('#pay-panel').hidden;
+    state.payOk = true;
+    state.panelShown = true;
+    $('#pay-panel').hidden = false;
+    if (first) {
+      if (!reduced()) gsap.fromTo('#pay-panel', { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.48, clearProps: 'all' });
+      $('#pay-panel .pay__title').setAttribute('tabindex', '-1');
+      $('#pay-panel .pay__title').focus({ preventScroll: true });
+    }
+    saveDraft();
     updateSubmit();
+  }
+
+  function showFull(reason) {
+    $('#pay-full').hidden = false;
+    $('#pay-held').hidden = reason !== 'held';
+    $('#pay-full').setAttribute('tabindex', '-1');
+    $('#pay-full').focus();
+    audio.play('low');
+  }
+
+  async function checkBeforePay({ again = false } = {}) {
+    if (!state.cat) return;
+    ensureId();
+    const paid = state.panelShown; // the payment details were shown: keep them, the family may have paid
+    if (!paid) { state.payOk = false; $('#pay-panel').hidden = true; }
+    $('#pay-checking').hidden = paid;
+    $('#pay-full').hidden = true;
+    $('#pay-dup').hidden = true;
+    updateSubmit();
+    const p = payload({ forHold: true });
+    let res;
+    try {
+      res = await sendHold({ action: 'hold', submissionId: state.submissionId, category: state.cat, name: p.name, dob: p.dob });
+    } catch {
+      $('#pay-checking').hidden = true;
+      if (paid) { holdEnded('offline'); return; }
+      showSendError(fill(R.seatsError, { phone }), () => checkBeforePay({ again }));
+      return;
+    }
+    if (state.step !== 3) return; // moved on meanwhile
+    $('#pay-checking').hidden = true;
+    if (res?.seats) { state.seats = res.seats; renderSeats(); }
+    if (res?.ok && ['registered', 'last_seat', 'duplicate_paid'].includes(res.status)) { outcome(res); return; } // already sent earlier
+    if (res?.error === 'duplicate') {
+      stopHold(true);
+      $('#pay-dup').hidden = false;
+      $('#pay-dup').setAttribute('tabindex', '-1');
+      $('#pay-dup').focus();
+      audio.play('low');
+      return;
+    }
+    if (res?.ok && res.status === 'held') {
+      startHold(res);
+      showPanel();
+      announce(again ? R.hold.againDone : R.hold.start);
+      return;
+    }
+    if (res?.ok && res.status === 'full') {
+      stopHold(true);
+      if (paid) holdEnded('full'); else showFull(res.reason);
+      return;
+    }
+    if (res?.ok && res.status === 'limit') { stopHold(true); showPanel(); holdEnded('limit'); return; }
+    if (res?.error === 'busy') { showSendError(E.busy, () => checkBeforePay({ again })); return; }
+    // A backend without seat holds (before round 7): check the seats as before.
+    await legacyCheck();
+  }
+
+  async function legacyCheck() {
+    $('#pay-checking').hidden = false;
     try {
       state.seats = await fetchSeats();
       renderSeats();
@@ -433,20 +546,65 @@ export function initRegistration({ audio }) {
       return;
     }
     $('#pay-checking').hidden = true;
-    if (state.seats[state.cat].left <= 0) {
-      $('#pay-full').hidden = false;
-      $('#pay-full').setAttribute('tabindex', '-1');
-      $('#pay-full').focus();
-      audio.play('low');
-      return;
-    }
-    state.payOk = true;
-    $('#pay-panel').hidden = false;
-    if (!reduced()) gsap.fromTo('#pay-panel', { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.48, clearProps: 'all' });
-    $('#pay-panel .pay__title').setAttribute('tabindex', '-1');
-    $('#pay-panel .pay__title').focus({ preventScroll: true });
+    if (state.seats[state.cat].left <= 0 && !state.panelShown) { showFull('taken'); return; }
+    showPanel();
+  }
+
+  // ---------- Hold countdown ----------
+  const announce = (msg) => { $('#hold-live').textContent = ''; requestAnimationFrame(() => { $('#hold-live').textContent = msg; }); };
+  function startHold(res) {
+    // The server's clock decides; the phone's clock may be wrong.
+    state.hold.exp = Date.now() + (res.expiresAt - res.now);
+    state.hold.warned = state.hold.exp - Date.now() <= 60000;
+    $('#hold').hidden = false;
+    $('#hold').classList.remove('is-ended');
+    $('#hold-ended').hidden = true;
+    $('.hold__bar', dlg).hidden = false;
+    $('#hold-text').hidden = false;
+    clearInterval(state.hold.timer);
+    state.hold.timer = setInterval(tick, 1000);
+    tick();
+  }
+  function tick() {
+    if (!state.hold.exp) return;
+    const left = state.hold.exp - Date.now();
+    if (left <= 0) { stopHold(); holdEnded('time'); return; }
+    const sec = Math.ceil(left / 1000);
+    $('#hold-text').textContent = fill(R.hold.left, { time: `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}` });
+    $('#hold-fill').style.transform = `scaleX(${Math.max(0, Math.min(1, left / HOLD_MS))})`;
+    $('#hold').classList.toggle('is-low', left <= 60000);
+    if (!state.hold.warned && left <= 60000) { state.hold.warned = true; announce(R.hold.oneMin); }
+  }
+  function stopHold(hide = false) {
+    clearInterval(state.hold.timer);
+    state.hold.timer = 0;
+    state.hold.exp = 0;
+    if (hide) $('#hold').hidden = true;
+  }
+  function holdEnded(kind) {
+    const msg = { time: R.hold.ended, full: R.hold.endedFull, limit: R.hold.limit, offline: R.hold.offline }[kind];
+    $('#hold').hidden = false;
+    $('#hold').classList.add('is-ended');
+    $('.hold__bar', dlg).hidden = true;
+    $('#hold-text').hidden = true;
+    $('#hold-ended-text').textContent = msg;
+    $('#hold-again .btn__label').textContent = kind === 'full' ? R.checkAgain : kind === 'offline' ? R.retry : R.hold.again;
+    $('#hold-again').hidden = kind === 'limit';
+    $('#hold-ended').hidden = false;
+    announce(msg);
+    audio.play('low');
     updateSubmit();
   }
+  $('#hold-again').addEventListener('click', () => checkBeforePay({ again: true }));
+  $('#pay-recheck').addEventListener('click', () => checkBeforePay());
+  function releaseHold({ keepalive = false } = {}) {
+    // Never give back the seat of a family who may have paid (screenshot attached).
+    if (!state.submissionId || state.shot || state.sent || state.busy) return;
+    if (!state.hold.exp) return;
+    stopHold(true);
+    sendRelease(state.submissionId, { keepalive });
+  }
+  window.addEventListener('pagehide', () => releaseHold({ keepalive: true }));
 
   // ---------- Payment ----------
   const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (window.matchMedia('(pointer: coarse)').matches && 'ontouchstart' in window);
@@ -541,8 +699,9 @@ export function initRegistration({ audio }) {
     updateSubmit();
   }
 
-  function payload() {
+  function payload({ forHold = false } = {}) {
     const iso = isoDate(f.dobY.value, f.dobM.value, f.dobD.value);
+    if (forHold) return { name: text(f.name), dob: iso };
     return {
       action: 'register',
       submissionId: state.submissionId,
@@ -560,18 +719,22 @@ export function initRegistration({ audio }) {
       signature: typedMode ? '' : signature.toDataURL(),
       signatureTyped: typedMode ? typedInput.value.trim() : '',
       signDate: f.signDate.value,
-      screenshot: { type: state.shot.type, data: state.shot.dataUrl },
-      paymentRef: text(f.ref),
+      screenshot: state.shot ? { type: state.shot.type, data: state.shot.dataUrl } : null,
+      paymentRef: text(f.ref).replace(/[\s-]/g, ''),
       lang: T.lang,
       website: f.website.value,
       elapsedMs: Date.now() - (state.started || Date.now()),
     };
   }
 
-  async function submit() {
-    if (state.busy) return;
-    if (!validateStep(3)) { audio.play('low'); return; }
-    if (!state.submissionId) state.submissionId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+  let busyTries = 0;
+  let busyTimer = 0;
+  async function submit({ auto = false } = {}) {
+    if (state.busy || state.sent) return;
+    if (!auto && !validateStep(3)) { audio.play('low'); return; }
+    if (!state.shot) return;
+    ensureId();
+    clearTimeout(busyTimer);
     sendError.hidden = true;
     lock(true);
     let res;
@@ -580,18 +743,28 @@ export function initRegistration({ audio }) {
     } catch (err) {
       console.warn(err);
       lock(false);
-      showSendError(fill(E.send, { phone }), submit);
+      // The family has paid: keep everything and send again when the connection returns.
+      state.pending = true;
+      showSendError(fill(E.sendAuto, { phone }), () => submit());
       return;
     }
     lock(false);
-    if (res?.ok && (res.status === 'registered' || res.status === 'last_seat')) {
-      // Make the registration PDF from what was sent, before the form is cleared.
-      startPdf(record(res.submittedAt));
-      if (res.status === 'registered') success(); else lastSeat();
+    state.pending = false;
+    if (res?.ok && ['registered', 'last_seat', 'duplicate_paid'].includes(res.status)) { busyTries = 0; outcome(res); return; }
+    if (res?.error === 'duplicate') { showSendError(fill(E.duplicate, { phone })); return; } // a backend before round 7
+    if (res?.error === 'busy') {
+      // Safe to repeat (same submission ID): try again by itself, a few times.
+      const waits = [5, 10, 20];
+      if (busyTries < waits.length) {
+        const s = waits[busyTries++];
+        showSendError(fill(E.busyAuto, { s }), () => submit());
+        busyTimer = setTimeout(() => submit({ auto: true }), s * 1000);
+      } else {
+        busyTries = 0;
+        showSendError(E.busy, () => submit());
+      }
       return;
     }
-    if (res?.error === 'duplicate') { showSendError(fill(E.duplicate, { phone })); return; }
-    if (res?.error === 'busy') { showSendError(E.busy, submit); return; }
     if (res?.error === 'validation' && Array.isArray(res.fields)) {
       const known = res.fields.filter((x) => x.field in STEP_OF);
       if (known.length) {
@@ -602,9 +775,30 @@ export function initRegistration({ audio }) {
         return;
       }
     }
-    showSendError(fill(E.server, { phone }), submit);
+    showSendError(fill(E.server, { phone }), () => submit());
   }
-  form.addEventListener('submit', (e) => { e.preventDefault(); if (state.step === 3) submit(); else btnNext.click(); });
+  form.addEventListener('submit', (e) => { e.preventDefault(); if (state.step === 3) submit(); else if (!btnNext.disabled) btnNext.click(); });
+
+  // A send that failed on the network goes again by itself when the phone is back online.
+  const resendSoon = () => { if (state.pending && !state.busy && !state.sent && navigator.onLine !== false) submit({ auto: true }); };
+  window.addEventListener('online', resendSoon);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { resendSoon(); tick(); } });
+  // Warn before leaving with a payment screenshot that has not been sent.
+  window.addEventListener('beforeunload', (e) => {
+    if (state.shot && !state.sent) { e.preventDefault(); e.returnValue = ''; }
+  });
+
+  function outcome(res) {
+    state.sent = true;
+    state.pending = false;
+    stopHold(true);
+    clearDraft();
+    // Make the registration PDF from what was sent, before the form is cleared.
+    if (state.shot) startPdf(record(res.submittedAt));
+    if (res.status === 'registered') success();
+    else if (res.status === 'duplicate_paid') duplicatePaid();
+    else lastSeat();
+  }
 
   // ---------- Outcomes ----------
   function resetForm() {
@@ -622,6 +816,11 @@ export function initRegistration({ audio }) {
     state.submissionId = null;
     state.started = 0;
     state.payOk = false;
+    state.panelShown = false;
+    stopHold(true);
+    $('#pay-code').textContent = '';
+    $('#draft-note').hidden = true;
+    $('#pay-dup').hidden = true;
   }
 
   function showOutcome(view) {
@@ -652,6 +851,13 @@ export function initRegistration({ audio }) {
       burst($('.done__burst'));
       gsap.fromTo('#reg-done > :not(.done__burst)', { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.64, delay: 0.24, clearProps: 'all' });
     }
+  }
+
+  function duplicatePaid() {
+    resetForm();
+    showOutcome(dupView);
+    audio.play('low');
+    if (!reduced()) gsap.fromTo('#reg-dup > *', { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.64, clearProps: 'all' });
   }
 
   function lastSeat() {
@@ -783,6 +989,8 @@ export function initRegistration({ audio }) {
     doneView.hidden = true;
     doneView.classList.remove('is-shown');
     lastView.hidden = true;
+    dupView.hidden = true;
+    state.sent = false;
     ['#done-text', '#done-name', '#done-category', '#done-dates'].forEach((s) => { $(s).textContent = ''; });
     pick.hidden = false;
     state.cat = null;
@@ -797,17 +1005,28 @@ export function initRegistration({ audio }) {
     if (!panel) panel = smoothPanel(scrollerEl, $('.reg__inner', dlg));
     panel?.start();
     panelTo(0, true);
-    const finished = !doneView.hidden || !lastView.hidden;
+    const finished = !doneView.hidden || !lastView.hidden || !dupView.hidden;
     if (finished) resetView();
     if (!f.signDate.value) f.signDate.value = todayIso();
     f.signDate.max = todayIso();
-    openModal(dlg, { trigger, onClose: () => { audio.duck(false); if (!doneView.hidden || !lastView.hidden) resetView(); } });
+    openModal(dlg, {
+      trigger,
+      onClose: () => {
+        audio.duck(false);
+        if (!doneView.hidden || !lastView.hidden || !dupView.hidden) resetView();
+        else releaseHold();
+        loadSeatsQuietly();
+      },
+    });
     audio.duck(true);
     audio.play('whoosh');
     $('#reg-title').setAttribute('tabindex', '-1');
     $('#reg-title').focus();
     if (!reduced()) gsap.fromTo(dlg, { clipPath: 'inset(100% 0% 0% 0%)' }, { clipPath: 'inset(0% 0% 0% 0%)', duration: 0.8, ease: 'big', clearProps: 'clipPath' });
-    if (!state.cat) loadSeats();
+    if (!state.cat) {
+      const draft = readDraft();
+      if (draft) { loadSeats(); restoreDraft(draft); } else loadSeats();
+    } else if (state.step === 3 && !state.sent) checkBeforePay(); // hold again after closing
   }
   let closing = false;
   function close() {
@@ -837,6 +1056,68 @@ export function initRegistration({ audio }) {
     if (fromMenu) setTimeout(() => open($('#menu-open')), 0);
     else open(b);
   }));
-  document.addEventListener('wc:ready', () => { if (location.hash === '#register') open(null); });
+  document.addEventListener('wc:ready', () => {
+    // Back from the UPI app with the tab reloaded: open the form where it was.
+    const draft = readDraft();
+    if (location.hash === '#register' || (draft && draft.step === 3)) open(null);
+  });
   f.signDate.value = todayIso();
+
+  // Seats for the line under the hero's Register button (see seats-line.js).
+  async function loadSeatsQuietly() {
+    try { state.seats = await fetchSeats(); renderSeats(); } catch { /* the line keeps its last value */ }
+  }
+
+  // ---------- Draft (sessionStorage) ----------
+  let draftTimer = 0;
+  function saveDraft() {
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(writeDraft, 250);
+  }
+  function writeDraft() {
+    if (!state.cat || state.sent) return;
+    const d = {
+      v: 1, at: Date.now(), cat: state.cat, step: state.step, id: state.submissionId, started: state.started, panelShown: state.panelShown,
+      fields: Object.fromEntries(['name', 'dobD', 'dobM', 'dobY', 'parent', 'address', 'medical', 'dietary', 'signDate', 'ref'].map((k) => [k, f[k].value])),
+      phones: $$('.phone input', phoneList).map((i) => i.value),
+      consent: consentInputs.find((i) => i.checked)?.value || '',
+      agree: f.agree.checked, refund: f.refund.checked,
+      typedMode, typed: typedInput.value, strokes: signature.strokes(),
+    };
+    try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify(d)); } catch { /* storage full or blocked: memory only */ }
+  }
+  function readDraft() {
+    try {
+      const d = JSON.parse(sessionStorage.getItem(DRAFT_KEY) || 'null');
+      if (!d || d.v !== 1 || !['kids', 'youth'].includes(d.cat) || Date.now() - d.at > DRAFT_HOURS * 3600000) return null;
+      return d;
+    } catch { return null; }
+  }
+  function clearDraft() {
+    clearTimeout(draftTimer);
+    try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* nothing kept */ }
+  }
+  function restoreDraft(d) {
+    Object.entries(d.fields || {}).forEach(([k, v]) => { if (f[k] && typeof v === 'string') f[k].value = v; });
+    phoneList.replaceChildren();
+    const list = (d.phones || []).filter((x) => typeof x === 'string').slice(0, MAX_PHONES);
+    (list.length ? list : ['']).forEach((v) => addPhone(v));
+    consentInputs.forEach((i) => { i.checked = i.value === d.consent; });
+    f.agree.checked = d.agree === true;
+    f.refund.checked = d.refund === true;
+    setSignMode(d.typedMode === true, { focus: false });
+    typedInput.value = typeof d.typed === 'string' ? d.typed : '';
+    signature.setStrokes(d.strokes);
+    if (typeof d.id === 'string' && /^[A-Za-z0-9-]{8,64}$/.test(d.id)) state.submissionId = d.id;
+    state.started = Number(d.started) || Date.now();
+    state.panelShown = d.panelShown === true;
+    const step = Math.max(0, Math.min(3, Number(d.step) || 0));
+    choose(d.cat, { force: true, step });
+    const note = $('#draft-note');
+    note.textContent = step === 3 && state.panelShown ? `${R.draftRestored} ${R.draftShot}` : R.draftRestored;
+    note.hidden = false;
+  }
+  form.addEventListener('input', saveDraft);
+  form.addEventListener('change', saveDraft);
+  $('#f-sign').addEventListener('pointerup', saveDraft);
 }

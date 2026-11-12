@@ -12,6 +12,11 @@
  *  - stores the registration PDF made by the family's browser (action "pdf") in a
  *    private "Registration PDFs" folder and links it from the row
  *  - neutralises text that could run as a spreadsheet formula
+ *  - holds a seat for 5 minutes while a family pays (action "hold"), counted as
+ *    taken while it lasts, kept in Script Properties (action "release" frees it)
+ *  - never loses a payment: a paid duplicate goes to "Paid, no seat" as "Paid, duplicate"
+ *  - gives each registration a code for the UPI note, flags reused screenshots and
+ *    UPI references, and adds a "Payment check" column for the organisers
  * Uploads are never stored in GitHub. Deployment steps: apps-script/README.md.
  *
  * Keep CONFIG in step with site.config.js.
@@ -23,13 +28,18 @@ var CONFIG = {
   ages: { kids: [0, 11], youth: [11, null] }, // inclusive, on the first day of that camp; Youth has no upper limit
   labels: { kids: 'Kids', youth: 'Youth' },
   rootFolder: 'Winter Camp 2027',
-  sheets: { kids: 'Kids registrations', youth: 'Youth registrations', overflow: 'Paid, no seat', old: 'Registrations' },
+  sheets: { kids: 'Kids registrations', youth: 'Youth registrations', overflow: 'Paid, no seat', summary: 'Summary', old: 'Registrations' },
+  fee: 500,
   maxImageBytes: 5 * 1024 * 1024,
   maxPdfBytes: 8 * 1024 * 1024,
   pdfWindowMinutes: 30, // the PDF must arrive within this time of its registration
   maxBodyChars: 16 * 1024 * 1024,
   minFillMs: 5000, // four steps in under 5 seconds is a bot
-  maxPerMinute: 30, // simple rate limit across all visitors
+  maxPerMinute: 120, // rate limit across all visitors for registrations and PDFs
+  maxPerIdPerMinute: 10, // and per submission (retries are safe, floods are not)
+  maxHoldsPerMinute: 300, // hold, release and seat checks are small and cheap
+  holdMinutes: 5, // a seat is held this long once the payment step opens
+  maxHoldMinutes: 15, // one submission can hold (and hold again) for this long in all
   timeZone: 'Asia/Kolkata',
   max: { name: 100, parent: 150, address: 400, medical: 1000, dietary: 1000, ref: 64, signatureTyped: 150 },
 };
@@ -40,7 +50,12 @@ var HEADERS = [
   'Medical conditions or concerns', 'Dietary requirements or allergies',
   'Medical emergency consent', 'Agreed to take part', 'Date of signing',
   'Signature', 'Typed signature', 'Payment screenshot', 'UPI transaction reference', 'Language', 'Status', 'Registration PDF', 'Fee non-refundable (agreed)',
+  'Registration code', 'Payment check', 'Possible duplicate payment', 'Screenshot fingerprint',
 ];
+// Filled in by the organisers. "Not received" and "Refunded" give the seat back.
+var PAYMENT_CHECK = ['Not checked', 'Received', 'Not received', 'Refund due', 'Refunded'];
+var FREES_SEAT = { 'Not received': true, 'Refunded': true };
+var STATUS = { seat: 'Seat given', noSeat: 'Paid, no seat', duplicate: 'Paid, duplicate' };
 var COL = {};
 HEADERS.forEach(function (h, i) { COL[h] = i; });
 
@@ -50,7 +65,7 @@ function doGet(e) {
   var action = e && e.parameter && e.parameter.action;
   if (action === 'seats') {
     migrateOldTab_();
-    return json_({ ok: true, seats: seats_() });
+    return json_({ ok: true, seats: seats_(), now: now_() });
   }
   return json_({ ok: true, service: 'Winter Camp 2027 registration' });
 }
@@ -66,6 +81,8 @@ function doPost(e) {
   }
   try {
     if (data && data.action === 'pdf') return json_(savePdf_(data));
+    if (data && data.action === 'hold') return json_(hold_(data));
+    if (data && data.action === 'release') return json_(release_(data));
     return json_(register_(data));
   } catch (err) {
     console.error(err && err.stack ? err.stack : err);
@@ -78,6 +95,7 @@ function setup() {
   sheet_(CONFIG.sheets.kids);
   sheet_(CONFIG.sheets.youth);
   sheet_(CONFIG.sheets.overflow);
+  summary_();
   migrateOldTab_();
   ['kids', 'youth'].forEach(function (cat) {
     folder_([CONFIG.rootFolder, CONFIG.labels[cat], 'Signatures']);
@@ -130,8 +148,9 @@ function register_(d) {
   // Honeypot and minimum fill time: quietly refuse bots.
   if (d.website) return validationError_([{ field: 'form', code: 'server' }]);
   if (typeof d.elapsedMs !== 'number' || d.elapsedMs < CONFIG.minFillMs) return validationError_([{ field: 'form', code: 'server' }]);
-  if (!rateOk_()) return { ok: false, error: 'busy' };
+  if (!rateOk_(d.submissionId)) return { ok: false, error: 'busy' };
   migrateOldTab_();
+  summary_();
 
   var v = validate_(d);
   if (v.errors.length) return validationError_(v.errors);
@@ -150,8 +169,10 @@ function register_(d) {
 
   var prior = findSubmission_(c.submissionId);
   if (prior) return prior;
-  if (isDuplicate_(c)) return { ok: false, error: 'duplicate' };
 
+  // The family has paid by now, so nothing below refuses to save: a duplicate
+  // or a full group is recorded in "Paid, no seat" for the organisers.
+  c.fingerprint = fingerprint_(shot.bytes);
   var files = saveFiles_(c, shot, sig);
 
   var lock = LockService.getScriptLock();
@@ -159,18 +180,151 @@ function register_(d) {
   try {
     prior = findSubmission_(c.submissionId);
     if (prior) return prior;
-    if (isDuplicate_(c)) return { ok: false, error: 'duplicate' };
+    var holds = loadHolds_();
+    var others = activeHolds_(holds, c.category, c.submissionId);
+    dropHold_(holds, c.submissionId);
+    saveHolds_(holds);
+    c.flag = paymentFlag_(c);
+    if (isDuplicate_(c)) {
+      var dup = row_(c, files, STATUS.duplicate);
+      sheet_(CONFIG.sheets.overflow).appendRow(dup);
+      SpreadsheetApp.flush();
+      return { ok: true, status: 'duplicate_paid', submittedAt: dup[COL.Timestamp] };
+    }
     var taken = countCategory_(c.category);
-    var full = taken >= CONFIG.seats[c.category];
-    var row = row_(c, files, full ? 'Paid, no seat' : 'Seat given');
+    var full = taken + others >= CONFIG.seats[c.category];
+    var row = row_(c, files, full ? STATUS.noSeat : STATUS.seat);
     sheet_(full ? CONFIG.sheets.overflow : CONFIG.sheets[c.category]).appendRow(row);
     SpreadsheetApp.flush();
     var at = row[COL.Timestamp];
     if (full) return { ok: true, status: 'last_seat', submittedAt: at };
-    return { ok: true, status: 'registered', seatsLeft: CONFIG.seats[c.category] - taken - 1, submittedAt: at };
+    return { ok: true, status: 'registered', seatsLeft: Math.max(0, CONFIG.seats[c.category] - taken - others - 1), submittedAt: at };
   } finally {
     lock.releaseLock();
   }
+}
+
+// ---------- Seat holds ----------
+//
+// A hold keeps one seat for a family while they pay. Holds live in Script
+// Properties as one small JSON value, { kids: { id: { exp, first } }, youth: {...} },
+// read and written only under the script lock. A hold counts as a taken seat
+// until it expires (CONFIG.holdMinutes) or the form is sent. The same submission
+// can hold again after expiry, up to CONFIG.maxHoldMinutes from its first hold.
+
+function hold_(d) {
+  var id = validId_(d.submissionId);
+  var cat = d.category === 'kids' || d.category === 'youth' ? d.category : null;
+  if (!id || !cat) return { ok: false, error: 'bad_request' };
+  if (!holdRateOk_()) return { ok: false, error: 'busy' };
+  migrateOldTab_();
+  // Tell the family before they pay if this child is already registered.
+  var name = clean_(d.name, CONFIG.max.name);
+  var dob = parseIso_(d.dob) ? String(d.dob) : '';
+  if (name && dob && isDuplicate_({ category: cat, name: name, dob: dob })) return { ok: false, error: 'duplicate' };
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) return { ok: false, error: 'busy' };
+  try {
+    var prior = findSubmission_(id);
+    if (prior) return prior;
+    var now = now_();
+    var holds = loadHolds_();
+    var mine = holds[cat][id];
+    if (mine && mine.exp > now) return held_(holds, cat, mine, now); // retry-safe
+    var other = cat === 'kids' ? 'youth' : 'kids';
+    if (holds[other][id]) delete holds[other][id]; // changed group
+    var first = mine ? mine.first : now;
+    var exp = Math.min(now + CONFIG.holdMinutes * 60000, first + CONFIG.maxHoldMinutes * 60000);
+    if (exp <= now) { saveHolds_(holds); return { ok: true, status: 'limit', now: now, seats: seatsFrom_(holds, now) }; }
+    var rows = countCategory_(cat);
+    var heldByOthers = activeHolds_(holds, cat, id, now);
+    if (rows + heldByOthers >= CONFIG.seats[cat]) {
+      saveHolds_(holds);
+      var res = { ok: true, status: 'full', reason: rows >= CONFIG.seats[cat] ? 'taken' : 'held', now: now, seats: seatsFrom_(holds, now) };
+      if (res.reason === 'held') res.until = nextExpiry_(holds, cat, now);
+      return res;
+    }
+    holds[cat][id] = { exp: exp, first: first };
+    saveHolds_(holds);
+    return held_(holds, cat, holds[cat][id], now);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function held_(holds, cat, h, now) {
+  return { ok: true, status: 'held', expiresAt: h.exp, now: now, seats: seatsFrom_(holds, now) };
+}
+
+function release_(d) {
+  var id = validId_(d.submissionId);
+  if (!id) return { ok: false, error: 'bad_request' };
+  if (!holdRateOk_()) return { ok: false, error: 'busy' };
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) return { ok: false, error: 'busy' };
+  try {
+    var holds = loadHolds_();
+    dropHold_(holds, id);
+    saveHolds_(holds);
+    return { ok: true, status: 'released' };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function validId_(v) {
+  return /^[A-Za-z0-9-]{8,64}$/.test(String(v || '')) ? String(v) : null;
+}
+
+/** Reads the holds, dropping any that can no longer be renewed. */
+function loadHolds_() {
+  var raw = PropertiesService.getScriptProperties().getProperty('holds');
+  var holds = { kids: {}, youth: {} };
+  try {
+    var parsed = raw ? JSON.parse(raw) : null;
+    if (parsed && parsed.kids) holds.kids = parsed.kids;
+    if (parsed && parsed.youth) holds.youth = parsed.youth;
+  } catch (err) { /* a damaged value is treated as no holds */ }
+  // An ended hold is remembered for 30 minutes after its 15-minute limit, so the
+  // limit cannot be reset by waiting; after that it is forgotten.
+  var now = now_();
+  ['kids', 'youth'].forEach(function (cat) {
+    Object.keys(holds[cat]).forEach(function (id) {
+      var h = holds[cat][id];
+      if (!h || typeof h.exp !== 'number' || h.first + (CONFIG.maxHoldMinutes + 30) * 60000 < now) delete holds[cat][id];
+    });
+  });
+  return holds;
+}
+
+function saveHolds_(holds) {
+  var json = JSON.stringify(holds);
+  if (json.length > 8000) {
+    // Stay under the 9 KB limit of a property value: forget holds that have ended.
+    var now = now_();
+    ['kids', 'youth'].forEach(function (cat) {
+      Object.keys(holds[cat]).forEach(function (id) { if (holds[cat][id].exp <= now) delete holds[cat][id]; });
+    });
+    json = JSON.stringify(holds);
+  }
+  PropertiesService.getScriptProperties().setProperty('holds', json);
+}
+
+function dropHold_(holds, id) {
+  delete holds.kids[id];
+  delete holds.youth[id];
+}
+
+/** Holds still running in a group, leaving out one submission's own hold. */
+function activeHolds_(holds, cat, exceptId, now) {
+  var t = now || now_();
+  return Object.keys(holds[cat]).filter(function (id) { return id !== exceptId && holds[cat][id].exp > t; }).length;
+}
+
+function nextExpiry_(holds, cat, now) {
+  var times = Object.keys(holds[cat]).map(function (id) { return holds[cat][id].exp; }).filter(function (x) { return x > now; });
+  return times.length ? Math.min.apply(null, times) : now;
 }
 
 function validationError_(fields) {
@@ -201,8 +355,13 @@ function ageOn_(dob, on) {
   return age;
 }
 
+/** The current time in ms. One place, so the tests can move the clock. */
+function now_() {
+  return Date.now();
+}
+
 function today_(offsetDays) {
-  var d = new Date(Date.now() + (offsetDays || 0) * 86400000);
+  var d = new Date(now_() + (offsetDays || 0) * 86400000);
   return Utilities.formatDate(d, CONFIG.timeZone, 'yyyy-MM-dd');
 }
 
@@ -228,9 +387,11 @@ function validate_(d) {
     if (v === null) add(k, 'tooLong');
     c[k] = v || '';
   });
+  // Optional UPI transaction reference (UTR): 12 digits when given.
   var ref = clean_(d.paymentRef, CONFIG.max.ref);
   if (ref === null) add('ref', 'tooLong');
-  c.paymentRef = ref || '';
+  else if (ref && !/^\d{12}$/.test(ref.replace(/[\s-]/g, ''))) add('ref', 'refFormat');
+  c.paymentRef = ref ? ref.replace(/[\s-]/g, '') : '';
 
   // Date of birth against the category's age range on that camp's first day.
   c.dob = String(d.dob || '');
@@ -261,8 +422,9 @@ function validate_(d) {
   else if (typed && typed.length < 2) add('signature', 'signTyped');
   c.signatureTyped = typed || '';
 
-  c.consent = d.consent === 'yes' || d.consent === 'no' ? d.consent : null;
-  if (!c.consent) add('consent', 'consent');
+  // Medical emergency consent must be YES to take part.
+  c.consent = d.consent === 'yes' ? 'yes' : null;
+  if (!c.consent) add('consent', d.consent === 'no' ? 'consentYes' : 'consent');
   if (d.agree !== true) add('agree', 'agree');
   if (d.refundAck !== true) add('refund', 'refund');
 
@@ -271,6 +433,7 @@ function validate_(d) {
   else if (c.signDate > today_(1)) add('signDate', 'signDateFuture');
 
   c.lang = d.lang === 'bo' ? 'bo' : 'en';
+  c.code = c.submissionId ? regCode_(c.submissionId) : '';
   return { errors: errors, clean: c };
 }
 
@@ -338,15 +501,64 @@ function sheet_(name) {
     sh.getRange(1, 1, sh.getMaxRows(), HEADERS.length).setNumberFormat('@');
     sh.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]).setFontWeight('bold');
     sh.setFrozenRows(1);
+    checkColumn_(sh);
   } else if (!headerChecked_[name]) {
     // Tabs made by an earlier version lack the newest columns (e.g. "Registration PDF"): add their headings.
     var have = sh.getRange(1, 1, 1, HEADERS.length).getValues()[0].map(String);
+    var added = false;
     HEADERS.forEach(function (h, i) {
-      if (!have[i]) sh.getRange(1, i + 1).setValue(h).setNumberFormat('@').setFontWeight('bold');
+      if (!have[i]) { sh.getRange(1, i + 1).setNumberFormat('@').setValue(h).setFontWeight('bold'); added = true; }
     });
+    if (added) sh.getRange(2, HEADERS.length - 3, Math.max(1, sh.getMaxRows() - 1), 4).setNumberFormat('@');
+    if (added) checkColumn_(sh);
   }
   headerChecked_[name] = true;
   return sh;
+}
+
+/** The organisers' "Payment check" column: a dropdown on every row. */
+function checkColumn_(sh) {
+  var rule = SpreadsheetApp.newDataValidation().requireValueInList(PAYMENT_CHECK, true).setAllowInvalid(false).build();
+  sh.getRange(2, COL['Payment check'] + 1, Math.max(1, sh.getMaxRows() - 1), 1).setDataValidation(rule);
+}
+
+function colLetter_(i) {
+  var s = '';
+  for (var n = i + 1; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s;
+  return s;
+}
+
+/**
+ * A "Summary" tab with live totals, for reconciling money against the bank
+ * statement. Made once; the organisers can move or format it freely.
+ */
+function summary_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (ss.getSheetByName(CONFIG.sheets.summary)) return;
+  var sh = ss.insertSheet(CONFIG.sheets.summary);
+  var name = colLetter_(COL.Name), check = colLetter_(COL['Payment check']), flag = colLetter_(COL['Possible duplicate payment']);
+  var fee = CONFIG.fee;
+  var q = function (tab) { return "'" + tab + "'!"; };
+  var rows = [['Group', 'Rows', 'Seats taken', 'Payment: not checked', 'Received', 'Not received', 'Refund due', 'Refunded', 'Possible duplicates', 'Money expected (₹)', 'Money received (₹)']];
+  [CONFIG.sheets.kids, CONFIG.sheets.youth, CONFIG.sheets.overflow].forEach(function (tab) {
+    var t = q(tab), n = t + name + '2:' + name, c = t + check + '2:' + check;
+    rows.push([
+      tab,
+      '=COUNTA(' + n + ')',
+      tab === CONFIG.sheets.overflow ? '0' : '=COUNTA(' + n + ')-COUNTIF(' + c + ',"Not received")-COUNTIF(' + c + ',"Refunded")',
+      '=COUNTA(' + n + ')-COUNTIF(' + c + ',"Received")-COUNTIF(' + c + ',"Not received")-COUNTIF(' + c + ',"Refund due")-COUNTIF(' + c + ',"Refunded")',
+      '=COUNTIF(' + c + ',"Received")',
+      '=COUNTIF(' + c + ',"Not received")',
+      '=COUNTIF(' + c + ',"Refund due")',
+      '=COUNTIF(' + c + ',"Refunded")',
+      '=COUNTIF(' + t + flag + '2:' + flag + ',"?*")',
+      '=(COUNTA(' + n + ')-COUNTIF(' + c + ',"Not received"))*' + fee,
+      '=COUNTIF(' + c + ',"Received")*' + fee,
+    ]);
+  });
+  sh.getRange(1, 1, rows.length, rows[0].length).setValues(rows);
+  sh.getRange(1, 1, 1, rows[0].length).setFontWeight('bold');
+  sh.setFrozenRows(1);
 }
 var headerChecked_ = {};
 
@@ -362,16 +574,24 @@ function text_(v) {
   return String(v === null || v === undefined ? '' : v).replace(/^'/, '');
 }
 
-/** Seats taken = filled rows in that group's tab. */
+/** Seats taken = filled rows in that group's tab, except rows the organisers marked "Not received" or "Refunded". */
 function countCategory_(cat) {
-  return rows_(CONFIG.sheets[cat]).filter(function (r) { return text_(r[COL.Name]) !== ''; }).length;
+  return rows_(CONFIG.sheets[cat]).filter(function (r) {
+    return text_(r[COL.Name]) !== '' && !FREES_SEAT[text_(r[COL['Payment check']])];
+  }).length;
 }
 
 function seats_() {
+  return seatsFrom_(loadHolds_(), now_());
+}
+
+/** { kids: { left, total, held }, youth: {...} }: "left" already counts holds as taken. */
+function seatsFrom_(holds, now) {
   var out = {};
   ['kids', 'youth'].forEach(function (cat) {
     var taken = countCategory_(cat);
-    out[cat] = { left: Math.max(0, CONFIG.seats[cat] - taken), total: CONFIG.seats[cat] };
+    var held = Math.min(activeHolds_(holds, cat, null, now), Math.max(0, CONFIG.seats[cat] - taken));
+    out[cat] = { left: Math.max(0, CONFIG.seats[cat] - taken - held), total: CONFIG.seats[cat], held: held };
   });
   return out;
 }
@@ -382,7 +602,9 @@ function findSubmission_(id) {
   var at = String(found.row[COL.Timestamp] instanceof Date
     ? Utilities.formatDate(found.row[COL.Timestamp], CONFIG.timeZone, 'yyyy-MM-dd HH:mm:ss')
     : text_(found.row[COL.Timestamp]));
-  return { ok: true, status: found.tab === 'overflow' ? 'last_seat' : 'registered', submittedAt: at };
+  var status = found.tab !== 'overflow' ? 'registered'
+    : text_(found.row[COL.Status]) === STATUS.duplicate ? 'duplicate_paid' : 'last_seat';
+  return { ok: true, status: status, submittedAt: at };
 }
 
 /** Finds a submission's row: { tab: 'kids' | 'youth' | 'overflow', index (1-based sheet row), row }. */
@@ -408,6 +630,35 @@ function isDuplicate_(c) {
   });
 }
 
+/** A short code for the UPI note and the PDF: the first 8 characters of the submission ID. */
+function regCode_(id) {
+  return String(id).replace(/-/g, '').slice(0, 8).toUpperCase();
+}
+
+function fingerprint_(bytes) {
+  var digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, bytes);
+  return digest.map(function (b) { return ('0' + (b & 0xff).toString(16)).slice(-2); }).join('');
+}
+
+/**
+ * Flags (never blocks) a payment that may have been used before: the same
+ * screenshot, or the same UPI reference, in any tab. One payment for two
+ * siblings is allowed; the organisers decide.
+ */
+function paymentFlag_(c) {
+  var hits = [];
+  var tabs = { kids: 'Kids', youth: 'Youth', overflow: 'Paid, no seat' };
+  Object.keys(tabs).forEach(function (t) {
+    rows_(CONFIG.sheets[t]).forEach(function (r, i) {
+      var what = [];
+      if (c.fingerprint && text_(r[COL['Screenshot fingerprint']]) === c.fingerprint) what.push('screenshot');
+      if (c.paymentRef && text_(r[COL['UPI transaction reference']]).replace(/[\s-]/g, '') === c.paymentRef) what.push('UPI reference');
+      if (what.length) hits.push('Same ' + what.join(' and ') + ' as ' + tabs[t] + ' row ' + (i + 2) + ' (' + text_(r[COL.Name]) + ')');
+    });
+  });
+  return hits.slice(0, 5).join('; ');
+}
+
 /** Text starting with = + - @ (or a tab/return) is stored with a leading apostrophe so it cannot run as a formula. */
 function safe_(v) {
   var s = String(v === null || v === undefined ? '' : v);
@@ -416,7 +667,7 @@ function safe_(v) {
 
 function row_(c, files, status) {
   var r = [];
-  r[COL.Timestamp] = Utilities.formatDate(new Date(), CONFIG.timeZone, 'yyyy-MM-dd HH:mm:ss');
+  r[COL.Timestamp] = Utilities.formatDate(new Date(now_()), CONFIG.timeZone, 'yyyy-MM-dd HH:mm:ss');
   r[COL['Submission ID']] = c.submissionId;
   r[COL.Category] = CONFIG.labels[c.category];
   r[COL.Name] = c.name;
@@ -438,6 +689,10 @@ function row_(c, files, status) {
   r[COL.Status] = status;
   r[COL['Registration PDF']] = '';
   r[COL['Fee non-refundable (agreed)']] = 'Yes';
+  r[COL['Registration code']] = c.code;
+  r[COL['Payment check']] = 'Not checked';
+  r[COL['Possible duplicate payment']] = c.flag || '';
+  r[COL['Screenshot fingerprint']] = c.fingerprint || '';
   return r.map(safe_);
 }
 
@@ -451,7 +706,7 @@ function row_(c, files, status) {
 function savePdf_(d) {
   var id = /^[A-Za-z0-9-]{8,64}$/.test(String(d.submissionId || '')) ? String(d.submissionId) : null;
   if (!id) return { ok: false, error: 'bad_request' };
-  if (!rateOk_()) return { ok: false, error: 'busy' };
+  if (!rateOk_(id)) return { ok: false, error: 'busy' };
   var pdf = decodePdf_(d.pdf);
   if (!pdf) return { ok: false, error: 'pdf' };
 
@@ -462,7 +717,7 @@ function savePdf_(d) {
     if (!found) return { ok: false, error: 'not_found' };
     if (text_(found.row[COL['Registration PDF']])) return { ok: true, status: 'saved' }; // already stored: retry-safe
     var at = text_(found.row[COL.Timestamp]);
-    var limit = Utilities.formatDate(new Date(Date.now() - CONFIG.pdfWindowMinutes * 60000), CONFIG.timeZone, 'yyyy-MM-dd HH:mm:ss');
+    var limit = Utilities.formatDate(new Date(now_() - CONFIG.pdfWindowMinutes * 60000), CONFIG.timeZone, 'yyyy-MM-dd HH:mm:ss');
     if (!at || at < limit) return { ok: false, error: 'too_late' };
 
     var cat = text_(found.row[COL.Category]) === CONFIG.labels.youth ? 'youth' : 'kids';
@@ -499,12 +754,22 @@ function decodePdf_(dataUrl) {
 
 // ---------- Utilities ----------
 
-function rateOk_() {
+function count_(key, limit) {
   var cache = CacheService.getScriptCache();
-  var key = 'rate:' + Math.floor(Date.now() / 60000);
-  var n = Number(cache.get(key) || 0) + 1;
-  cache.put(key, String(n), 120);
-  return n <= CONFIG.maxPerMinute;
+  var k = key + ':' + Math.floor(now_() / 60000);
+  var n = Number(cache.get(k) || 0) + 1;
+  cache.put(k, String(n), 120);
+  return n <= limit;
+}
+
+/** Registrations and PDFs: a limit across all visitors and a smaller one per submission. */
+function rateOk_(id) {
+  if (id && !count_('rate-id:' + String(id).slice(0, 64), CONFIG.maxPerIdPerMinute)) return false;
+  return count_('rate', CONFIG.maxPerMinute);
+}
+
+function holdRateOk_() {
+  return count_('rate-hold', CONFIG.maxHoldsPerMinute);
 }
 
 function json_(obj) {

@@ -47,6 +47,9 @@ export default {
     postalCode: '176219',
   },
 
+  // A seat is held this long once a family reaches the payment step (Code.gs CONFIG.holdMinutes).
+  holdMinutes: 5,
+
   fee: {
     amount: 500,
     currency: 'INR',

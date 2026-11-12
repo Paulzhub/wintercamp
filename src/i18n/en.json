@@ -48,6 +48,12 @@
       "days": "{n} days to camp",
       "day": "{n} day to camp",
       "on": "Camp is on now"
+    },
+    "live": {
+      "line": "{group}: {n} of {total} seats left",
+      "full": "{group}: Seats are full",
+      "held": "{group}: all seats held, check again soon",
+      "allFull": "Seats are full. Kindly contact +91-8219012669."
     }
   },
   "activities": {
@@ -132,7 +138,7 @@
       },
       {
         "q": "How do I pay?",
-        "a": "Pay ₹500 by UPI during registration, using the QR code, the UPI ID achuisr1985.27-1@okhdfcbank or the phone number 8219012669. The payee name is Achui Sareo. You then upload a screenshot of the payment."
+        "a": "Pay exactly ₹500 by UPI during registration, using the QR code, the UPI ID achuisr1985.27-1@okhdfcbank or the phone number 8219012669. The payee name is Achui Sareo. Type your registration code (shown on the payment step) in the payment note, then upload a screenshot of the payment. If anything goes wrong after you pay, call +91-8219012669 with your payment screenshot."
       },
       {
         "q": "What is provided?",
@@ -140,11 +146,11 @@
       },
       {
         "q": "How do I register?",
-        "a": "Press Register now on this website, choose Kids or Youth, fill in the form, sign it, pay ₹500 by UPI and upload the payment screenshot. A seat is given only when the form is sent with the screenshot."
+        "a": "Press Register now on this website, choose Kids or Youth, fill in the form, sign it, pay ₹500 by UPI and upload the payment screenshot. A seat is given only when the form is sent with the screenshot. When you reach payment, your seat is held for 5 minutes."
       },
       {
         "q": "What happens when seats are full?",
-        "a": "Each group has 30 seats, given first come, first served. When a group is full, registration for it closes; please contact +91-8219012669. If someone takes the last seat while you are paying, the site tells you, and you can contact the organisers for a refund."
+        "a": "Each group has 30 seats, given first come, first served. A seat is held for 5 minutes while a family pays, so a group can show as full for a few minutes and then open again: check again soon. When a group is full, registration for it closes; please contact +91-8219012669. If someone takes the last seat while you are paying, the site tells you, and you can contact the organisers for a refund."
       },
       {
         "q": "Who do I contact?",
@@ -255,13 +261,18 @@
       "shotReplace": "Replace",
       "shotRemove": "Remove",
       "shotPreview": "Preview of your payment screenshot",
-      "ref": "UPI transaction reference",
+      "ref": "UPI transaction ID (UTR)",
       "submit": "Submit registration",
       "submitting": "Sending your registration",
       "submitNeedShot": "Attach the payment screenshot to submit.",
       "nonRefundable": "The ₹500 registration fee is non-refundable.",
       "refundAck": "I understand that the ₹500 registration fee is non-refundable.",
-      "nonRefundableShort": "non-refundable"
+      "nonRefundableShort": "non-refundable",
+      "help": "If anything goes wrong after you pay, call +91-8219012669 with your payment screenshot.",
+      "warn": "CHECK AND PAY ₹ 500/- ONLY",
+      "code": "Registration code",
+      "codeHelp": "Type this code in the payment note (message) in your UPI app, so the organisers can match your payment.",
+      "refHelp": "The 12-digit number in your UPI app's payment details. It helps the organisers find your payment."
     },
     "err": {
       "summary": "Please fix the following:",
@@ -290,7 +301,12 @@
       "phoneDigits": "Only numbers 0 to 9 can be used. Other characters were removed.",
       "phoneMax": "Phone numbers have 10 digits. Extra digits were removed.",
       "signTyped": "Type your full name to sign.",
-      "refund": "Please tick the box to confirm you understand the fee is non-refundable."
+      "refund": "Please tick the box to confirm you understand the fee is non-refundable.",
+      "consentYes": "Medical emergency consent must be YES for your child to take part in Winter Camp 2027.",
+      "refFormat": "A UPI transaction ID has 12 digits, for example 412345678901. Leave it empty if you can't find it.",
+      "duplicateBefore": "This child is already registered for this group, so there is no need to pay. For help, call {phone}.",
+      "sendAuto": "We could not send your registration yet. Your details and screenshot are still here, and they will be sent automatically when your connection returns. Please keep this page open, or call {phone}.",
+      "busyAuto": "Many registrations are arriving at once. Trying again automatically in {s} seconds."
     },
     "done": {
       "title": "You are registered!",
@@ -345,7 +361,29 @@
       "contact": "Kid's Happy Club · +91-8219012669",
       "fee": "Fee"
     },
-    "lastSeatRefund": "Contact the organisers for a refund."
+    "lastSeatRefund": "Contact the organisers for a refund.",
+    "holdNote": "When you reach payment, your seat is held for 5 minutes.",
+    "heldNote": "Some seats are held by families who are paying right now. If they don't finish, a seat may open within 5 minutes.",
+    "checkAgain": "Check again",
+    "consentGate": "To continue, choose YES for medical emergency consent and tick the box to agree.",
+    "draftRestored": "We kept the details you were filling in. Please check them before you continue.",
+    "draftShot": "Please attach your payment screenshot again.",
+    "hold": {
+      "left": "Your seat is held for {time}",
+      "start": "Your seat is held for 5 minutes. Pay and send the form before the time runs out.",
+      "oneMin": "1 minute left. Please pay and send the form.",
+      "again": "Hold my seat again",
+      "againDone": "Your seat is held again for 5 minutes.",
+      "ended": "Your 5 minutes are up, so your seat is no longer held. Hold it again to keep your place. If you have already paid, you can still send the form.",
+      "endedFull": "Seats are now full or held by other families. If you have not paid, please do not pay now. If you have already paid, send the form anyway: your payment will be recorded and the organisers will refund you.",
+      "limit": "Your seat cannot be held any longer. If you have already paid, send the form now: if the seat has gone, your payment will be recorded and the organisers will refund you.",
+      "offline": "We could not reach the server to hold your seat. Check your connection and try again."
+    },
+    "dup": {
+      "title": "This child is already registered for this group",
+      "text": "We have saved this payment and your details for the organisers.",
+      "call": "Please call +91-8219012669 with your payment screenshot."
+    }
   },
   "privacy": {
     "title": "Privacy notice",
@@ -393,7 +431,7 @@
       {
         "h": "What this website stores on your device",
         "p": [
-          "This website uses no cookies, advertising or tracking. It remembers only your language and sound settings in your browser. What you type in the form is held in the page until it is sent and is not saved on your device.",
+          "This website uses no cookies, advertising or tracking. It remembers only your sound setting in your browser. While you fill in the form, a draft of what you type (never your payment screenshot) is kept in this browser tab, so nothing is lost if the page reloads while you pay in your UPI app. The draft is deleted when your registration is sent, and when you close the tab.",
           "After you register, your phone makes a PDF of the registration for you to download or share, and sends a copy to the organisers' private Google Drive. It holds your child's health details, so keep the downloaded file safe."
         ]
       },

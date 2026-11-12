@@ -6,6 +6,7 @@ import { initPointer } from './pointer.js';
 import { initFaq } from './faq.js';
 import { initCarousel } from './carousel.js';
 import { initRegistration } from './register.js';
+import { initSeatLine } from './seats-line.js';
 import { initHero } from './hero.js';
 import { initLoader } from './loader.js';
 import { initParticles } from './particles.js';
@@ -26,6 +27,7 @@ export function boot() {
     initCarousel(audio);
     initParticles();
     initRegistration({ audio, motion });
+    initSeatLine();
     const fx = initEffects({ audio, hero, motion });
     const intro = motion.heroIntro;
     motion.heroIntro = () => { intro(); fx.countdown.play(); };

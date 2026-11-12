@@ -203,6 +203,7 @@ function registration(lang, t) {
   <p class="cat__dates">${esc(r[key + 'Dates'])}</p>
   <p class="cat__seats" data-seats><span class="skeleton skeleton--text">${esc(r.seatsLoading)}</span></p>
   <p class="cat__full" data-full hidden><span lang="en">${esc(r.full)}</span>${r.fullLocal ? `<br><span>${esc(r.fullLocal)}</span>` : ''} <a class="link" href="${tel}">${esc(fill(t.common.call, { phone }))}</a></p>
+  <p class="cat__held" data-held hidden><span>${esc(r.heldNote)}</span> <button type="button" class="link" data-recheck>${esc(r.checkAgain)}</button></p>
   <button type="button" class="btn btn--dark cat__choose" data-choose disabled><span class="btn__label">${esc(fill(r.choose, { category: r[key] }))}</span></button>
   <p class="cat__chosen" data-chosen hidden><span class="cat__check" aria-hidden="true">${icons.check}</span> ${esc(fill(r.chosen, { category: r[key] }))} <button type="button" class="link cat__change" data-change>${esc(r.change)}</button></p>
 </article>`;
@@ -218,6 +219,7 @@ function registration(lang, t) {
 <section class="reg__pick" id="reg-pick" aria-labelledby="reg-pick-title">
   <h3 class="reg__h" id="reg-pick-title">${esc(r.pick)}</h3>
   <p class="reg__help" id="reg-pick-help">${esc(r.pickHelp)}</p>
+  <p class="notice notice--info reg__hold-note" id="reg-hold-note">${esc(r.holdNote)}</p>
   <div class="cats">${cat('kids')}${cat('youth')}</div>
   <p class="notice notice--error" id="seats-error" role="alert" hidden><span>${esc(fill(r.seatsError, { phone }))}</span> <button type="button" class="link" id="seats-retry">${esc(r.retry)}</button></p>
 </section>
@@ -229,6 +231,7 @@ function registration(lang, t) {
   <p class="sr-only" id="step-status" role="status" aria-live="polite"></p>
   <div class="notice notice--error form__summary" id="form-summary" role="alert" tabindex="-1" hidden></div>
   <p class="form__note">${esc(r.requiredNote)}</p>
+  <p class="notice notice--info" id="draft-note" role="status" hidden></p>
 
   <div class="hp" aria-hidden="true"><label for="f-website">Website</label><input type="text" id="f-website" name="website" tabindex="-1" autocomplete="off"></div>
 
@@ -335,14 +338,26 @@ function registration(lang, t) {
   <fieldset class="step" data-step="3" hidden>
     <legend class="step__legend">${esc(r.steps[3])}</legend>
     <div class="pay__checking" id="pay-checking" role="status"><span class="spinner" aria-hidden="true"></span> ${esc(r.pay.checking)}</div>
-    <div class="notice notice--full" id="pay-full" role="alert" hidden><span lang="en">${esc(r.full)}</span>${r.fullLocal ? `<br><span>${esc(r.fullLocal)}</span>` : ''} <a class="link" href="${tel}">${esc(fill(t.common.call, { phone }))}</a></div>
+    <div class="notice notice--full" id="pay-full" role="alert" hidden><span lang="en">${esc(r.full)}</span>${r.fullLocal ? `<br><span>${esc(r.fullLocal)}</span>` : ''} <a class="link" href="${tel}">${esc(fill(t.common.call, { phone }))}</a>
+      <p class="pay__held" id="pay-held" hidden><span>${esc(r.heldNote)}</span> <button type="button" class="link" id="pay-recheck">${esc(r.checkAgain)}</button></p></div>
+    <div class="notice notice--error" id="pay-dup" role="alert" hidden>${esc(fill(r.err.duplicateBefore, { phone }))}</div>
     <div class="pay" id="pay-panel" hidden>
       <h3 class="pay__title">${esc(r.pay.title)}</h3>
+      <div class="hold" id="hold" hidden>
+        <p class="hold__text" id="hold-text" aria-hidden="true"></p>
+        <span class="hold__bar" aria-hidden="true"><span class="hold__fill" id="hold-fill"></span></span>
+        <p class="sr-only" id="hold-live" role="status" aria-live="polite"></p>
+        <div class="hold__ended" id="hold-ended" hidden>
+          <p id="hold-ended-text"></p>
+          <button type="button" class="btn btn--red btn--sm" id="hold-again"><span class="btn__label">${esc(r.hold.again)}</span></button>
+        </div>
+      </div>
       <div class="field pay__refund">
         <p class="notice notice--info" id="help-refund">${esc(r.pay.nonRefundable)}</p>
         <label class="choice choice--check"><input type="checkbox" id="f-refund" name="refundAck" required aria-describedby="help-refund err-refund"><span class="choice__box" aria-hidden="true">${icons.check}</span><span class="choice__text">${esc(r.pay.refundAck)} ${req}</span></label>
         ${err('refund')}
       </div>
+      <p class="notice notice--info pay__help" id="pay-help">${esc(r.pay.help)}</p>
       <div class="pay__grid">
         <figure class="pay__qr"><img src="/assets/payment/upi-qr.jpg" width="1152" height="1600" alt="${esc(r.pay.qrAlt)}" loading="lazy" decoding="async"></figure>
         <div class="pay__details">
@@ -352,7 +367,10 @@ function registration(lang, t) {
             <button type="button" class="btn btn--ghost btn--sm" id="upi-copy" data-tip="${esc(r.pay.copyTip)}"><span class="btn__icon" aria-hidden="true">${icons.copy}</span><span class="btn__label" data-copy-label>${esc(r.pay.copy)}</span></button></p>
           <p class="sr-only" id="copy-status" role="status" aria-live="polite"></p>
           <p class="pay__row"><span class="pay__k">${esc(r.pay.phone)}</span><span class="pay__v" lang="en">${esc(config.upi.phone)}</span></p>
-          <a class="btn btn--dark pay__open" id="upi-open" hidden href="upi://pay?pa=${encodeURIComponent(config.upi.id)}&amp;pn=${encodeURIComponent(config.upi.payeeName)}&amp;am=${config.fee.amount}&amp;cu=${config.fee.currency}&amp;tn=${encodeURIComponent(config.upi.note)}"><span class="btn__label">${esc(r.pay.open)}</span></a>
+          <p class="pay__row pay__row--code"><span class="pay__k">${esc(r.pay.code)}</span><strong class="pay__v pay__v--id" id="pay-code" lang="en"></strong></p>
+          <p class="field__help pay__code-help" id="pay-code-help">${esc(r.pay.codeHelp)}</p>
+          <p class="pay__warn" id="pay-warn" lang="en">${esc(r.pay.warn)}</p>
+          <a class="btn btn--dark pay__open" id="upi-open" data-note="${esc(config.upi.note)}" hidden href="upi://pay?pa=${encodeURIComponent(config.upi.id)}&amp;pn=${encodeURIComponent(config.upi.payeeName)}&amp;am=${config.fee.amount}&amp;cu=${config.fee.currency}&amp;tn=${encodeURIComponent(config.upi.note)}"><span class="btn__label">${esc(r.pay.open)}</span></a>
         </div>
       </div>
       <div class="field">
@@ -370,7 +388,8 @@ function registration(lang, t) {
       </div>
       <div class="field">
         <label class="field__label" for="f-ref">${esc(r.pay.ref)} ${opt}</label>
-        <input class="input" type="text" id="f-ref" name="paymentRef" maxlength="64" autocomplete="off" inputmode="text" aria-describedby="err-ref">
+        <p class="field__help" id="help-ref">${esc(r.pay.refHelp)}</p>
+        <input class="input" type="text" id="f-ref" name="paymentRef" maxlength="64" autocomplete="off" inputmode="numeric" aria-describedby="help-ref err-ref">
         ${err('ref')}
       </div>
       <p class="field__help" id="submit-hint">${esc(r.pay.submitNeedShot)}</p>
@@ -379,9 +398,10 @@ function registration(lang, t) {
 
   <div class="notice notice--error" id="send-error" role="alert" hidden></div>
   <p class="form__blocked" id="step-blocked" hidden>${esc(r.blocked)}</p>
+  <p class="form__gate" id="step-gate" hidden>${esc(r.consentGate)}</p>
   <div class="form__nav">
     <button type="button" class="btn btn--ghost" id="reg-back" hidden><span class="btn__label">${esc(r.back)}</span></button>
-    <button type="button" class="btn btn--red" id="reg-next"><span class="btn__label">${esc(r.next)}</span></button>
+    <button type="button" class="btn btn--red" id="reg-next" aria-describedby="step-gate"><span class="btn__label">${esc(r.next)}</span></button>
     <button type="submit" class="btn btn--red" id="reg-submit" hidden disabled aria-describedby="submit-hint"><span class="spinner" aria-hidden="true"></span><span class="btn__label">${esc(r.pay.submit)}</span></button>
   </div>
 </form>
@@ -404,6 +424,13 @@ function registration(lang, t) {
   <p class="done__note done__note--error" id="done-error" role="alert" hidden>${esc(r.done.pdfError)}</p>
   <p class="sr-only" id="done-status" role="status" aria-live="polite"></p>
   <button type="button" class="btn btn--ghost" data-close-register><span class="btn__label">${esc(r.done.close)}</span></button>
+</section>
+
+<section class="done done--last" id="reg-dup" hidden tabindex="-1" aria-labelledby="dup-title">
+  <h3 class="done__title" id="dup-title">${esc(r.dup.title)}</h3>
+  <p class="done__text">${esc(r.dup.text)}</p>
+  <p class="done__text done__text--strong">${esc(r.dup.call)}</p>
+  <a class="btn btn--red" href="${tel}"><span class="btn__icon" aria-hidden="true">${icons.phone}</span><span class="btn__label">${esc(fill(t.common.call, { phone }))}</span></a>
 </section>
 
 <section class="done done--last" id="reg-last" hidden tabindex="-1" aria-labelledby="last-title">
@@ -461,6 +488,7 @@ function siteHeader(lang, t, pathKey) {
   </nav>
   <div class="menu__foot">
     ${registerBtn('btn btn--red', t.common.registerNow)}
+    <p class="menu__seats" data-seat-line hidden></p>
     <button type="button" class="btn btn--outline sound menu__sound" data-sound-toggle aria-pressed="false"><span class="btn__icon" aria-hidden="true"><span class="sound__on">${icons.soundOn}</span><span class="sound__off">${icons.soundOff}</span></span><span class="btn__label">${esc(t.loader.soundLabel)}</span></button>
     <a class="link" href="${tel}">${phone}</a>
   </div>
@@ -481,7 +509,7 @@ function homePage(lang) {
   </article>
 </li>`;
   // Strings the scripts need at run time (no personal data).
-  const clientStrings = { lang, api: appsScriptUrl, common: t.common, gallery: t.gallery, reg: t.reg, phone, tel, cats: config.categories, count: t.hero.count, pay: { amount: config.fee.display, payee: config.upi.payeeName, upiId: config.upi.id } };
+  const clientStrings = { lang, api: appsScriptUrl, holdMinutes: config.holdMinutes, live: t.hero.live, common: t.common, gallery: t.gallery, reg: t.reg, phone, tel, cats: config.categories, count: t.hero.count, pay: { amount: config.fee.display, payee: config.upi.payeeName, upiId: config.upi.id } };
   const venueLine = `${config.venue.name}, ${config.venue.street}, ${config.venue.locality}, ${config.venue.region}, ${config.venue.country}, ${config.venue.postalCode}`;
 
   return `<!doctype html>
@@ -538,6 +566,7 @@ ${siteHeader(lang, t, 'home')}
       <button type="button" class="btn btn--red btn--lg" data-open-register data-magnetic data-cursor="${esc(t.common.register)}"><span class="btn__label">${esc(t.common.registerNow)}</span><span class="btn__icon" aria-hidden="true">${icons.arrow}</span></button>
       <a class="btn btn--outline btn--lg" href="#activities"><span class="btn__label">${esc(t.hero.secondary)}</span></a>
     </div>
+    <p class="hero__live" id="hero-live" data-hero-in hidden><span class="hero__live-text"></span> <a class="link hero__live-call" href="${tel}" hidden>${esc(fill(t.common.call, { phone }))}</a></p>
     <p class="hero__count" id="hero-count" data-hero-in hidden><span class="hero__count-vis" aria-hidden="true"><span class="hero__count-b"></span> <span class="hero__count-n"></span> <span class="hero__count-a"></span></span><span class="sr-only hero__count-sr"></span></p>
     <p class="hero__seats" data-hero-in>${esc(t.hero.seats)}</p>
     <noscript><p class="hero__seats">${esc(fill(t.common.noJs, { phone }))}</p></noscript>
@@ -700,7 +729,7 @@ function llmsTxt() {
 - Kids camp (age 11 and under): 11 to 13 January 2027, ${c.categories.kids.seats} seats
 - Venue: ${c.venue.name}, ${c.venue.street}, ${c.venue.locality}, ${c.venue.region}, ${c.venue.country}, ${c.venue.postalCode}
 - Fee: ${c.fee.display} per child, paid by UPI (UPI ID ${c.upi.id}, payee name ${c.upi.payeeName}). Non-refundable, except when someone else took the last seat while the family was paying: then the organisers refund it.
-- Seats: first come, first served. A seat is given only when the registration form is sent with a payment screenshot.
+- Seats: first come, first served. A seat is held for ${config.holdMinutes} minutes while a family pays, and given only when the registration form is sent with a payment screenshot.
 - Activities: games, craft, storytelling, music time, snacks and a hot lunch every day, and a picnic on day 3 with a treasure hunt, team challenges and prizes
 - Staff ratio: 1 staff member to 7 children
 - Contact: ${c.contact.phoneDisplay}

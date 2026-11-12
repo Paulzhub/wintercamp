@@ -2,9 +2,9 @@ import { T } from './i18n.js';
 
 const TIMEOUT_MS = 60000;
 
-async function call(url, options) {
+async function call(url, options, timeoutMs = TIMEOUT_MS) {
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
   try {
     const res = await fetch(url, { ...options, signal: ac.signal, redirect: 'follow', credentials: 'omit' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -14,7 +14,7 @@ async function call(url, options) {
   }
 }
 
-// { kids: { left, total }, youth: { left, total } }
+// { kids: { left, total, held }, youth: { left, total, held } }: "left" already counts held seats as taken.
 export async function fetchSeats() {
   if (!T.api) throw new Error('The Apps Script URL is not set in site.config.js');
   const sep = T.api.includes('?') ? '&' : '?';
@@ -36,3 +36,22 @@ export async function sendRegistration(payload) {
 
 // The registration PDF, sent after the registration is accepted (same simple request).
 export const sendPdf = (payload) => sendRegistration(payload);
+
+// Hold a seat while the family pays: { action: 'hold', submissionId, category, name, dob }.
+export async function sendHold(payload) {
+  if (!T.api) throw new Error('The Apps Script URL is not set in site.config.js');
+  return call(T.api, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) }, 20000);
+}
+
+// Give a held seat back. With keepalive it is still sent while the page closes.
+export function sendRelease(submissionId, { keepalive = false } = {}) {
+  if (!T.api || !submissionId) return Promise.resolve(null);
+  const body = JSON.stringify({ action: 'release', submissionId });
+  if (keepalive) {
+    try {
+      fetch(T.api, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body, keepalive: true, credentials: 'omit', mode: 'no-cors' });
+    } catch { /* the hold simply expires */ }
+    return Promise.resolve(null);
+  }
+  return call(T.api, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body }, 20000).catch(() => null);
+}
