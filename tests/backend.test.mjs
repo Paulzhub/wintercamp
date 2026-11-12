@@ -10,12 +10,14 @@ const valid = (over = {}) => ({
   action: 'register', submissionId: `test-${Date.now()}-${++n}`, category: 'kids', name: `Tenzin ${n}`, dob: '2019-03-15',
   parent: 'Dolma', address: 'Jogiwara Road, McLeodganj', phones: ['9876543210'], medical: '', dietary: 'None',
   consent: 'yes', agree: true, refundAck: true, signature: png, signDate: '2026-11-11', screenshot: { type: 'image/jpeg', data: jpeg },
-  paymentRef: 'UPI123', lang: 'en', website: '', elapsedMs: 60000, ...over,
+  paymentRef: '412345678901', lang: 'en', website: '', elapsedMs: 60000, ...over,
 });
 
 test('seats start at 30 each', () => {
   const g = createSandbox();
-  assert.deepEqual(g.doGet({ action: 'seats' }), { ok: true, seats: { kids: { left: 30, total: 30 }, youth: { left: 30, total: 30 } } });
+  const res = g.doGet({ action: 'seats' });
+  assert.deepEqual(res.seats, { kids: { left: 30, total: 30, held: 0 }, youth: { left: 30, total: 30, held: 0 } });
+  assert.equal(typeof res.now, 'number');
 });
 
 test('a valid registration gets a seat, a row and two private files per category', () => {
@@ -66,6 +68,9 @@ test('every field is validated again on the server', () => {
   assert.equal(got.dob, 'dobKids');
   assert.equal(got.phones, 'phone');
   assert.equal(got.consent, 'consent');
+  assert.equal(g.doPost(valid({ consent: 'no' })).fields[0].code, 'consentYes'); // medical emergency consent must be YES
+  assert.equal(g.doPost(valid({ paymentRef: 'UPI123' })).fields[0].code, 'refFormat'); // a UTR has 12 digits
+  assert.equal(g.doPost(valid({ paymentRef: '4123 4567 8901' })).status, 'registered');
   assert.equal(got.agree, 'agree');
   assert.equal(g.doPost(valid({ refundAck: false })).fields[0].field, 'refund'); // fee is non-refundable: must be agreed
   assert.equal(got.signDate, 'signDateFuture');
@@ -103,10 +108,22 @@ test('retrying the same submission does not take a second seat', () => {
   assert.equal(g.sheet('Kids registrations').rows.length, 2);
 });
 
-test('the same child cannot be registered twice in a category', () => {
+test('the same child cannot take two seats; a paid duplicate is saved as "Paid, duplicate"', () => {
   const g = createSandbox();
   g.doPost(valid({ name: 'Pema Lhamo' }));
-  assert.equal(g.doPost(valid({ name: '  pema   LHAMO ' })).error, 'duplicate');
+  const again = valid({ name: '  pema   LHAMO ' });
+  const res = g.doPost(again);
+  assert.equal(res.ok, true);
+  assert.equal(res.status, 'duplicate_paid');
+  assert.equal(g.sheet('Kids registrations').rows.length, 2, 'no second seat');
+  const row = g.sheet('Paid, no seat').rows[1];
+  assert.equal(row[g.context.COL.Status], 'Paid, duplicate');
+  assert.match(row[g.context.COL['Payment screenshot']], /^https:\/\/drive\.google\.com\//);
+  assert.equal(g.doPost(again).status, 'duplicate_paid', 'a retry gets the same answer');
+  assert.equal(g.sheet('Paid, no seat').rows.length, 2);
+  const pdf = 'data:application/pdf;base64,' + Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(100, 32)]).toString('base64');
+  assert.equal(g.doPost({ action: 'pdf', submissionId: again.submissionId, pdf }).status, 'saved');
+  assert.match(g.sheet('Paid, no seat').rows[1][g.context.COL['Registration PDF']], /^https:\/\/drive/);
 });
 
 test('bots: honeypot, too fast, and rate limit', () => {
@@ -116,8 +133,13 @@ test('bots: honeypot, too fast, and rate limit', () => {
   assert.equal(g.doPost('not json').error, 'bad_request');
   g.resetRate();
   let busy = 0;
-  for (let i = 0; i < 35; i++) if (g.doPost(valid()).error === 'busy') busy++;
-  assert.equal(busy, 5);
+  for (let i = 0; i < 125; i++) if (g.doPost(valid({ category: i % 2 ? 'kids' : 'youth', dob: i % 2 ? '2019-03-15' : '2010-03-15' })).error === 'busy') busy++;
+  assert.equal(busy, 5, 'across all visitors: 120 a minute');
+  g.resetRate();
+  const p = valid();
+  let mine = 0;
+  for (let i = 0; i < 12; i++) if (g.doPost(p).error === 'busy') mine++;
+  assert.equal(mine, 2, 'one submission: 10 a minute');
 });
 
 test('phone numbers have up to 10 digits (at least 6)', () => {
@@ -216,8 +238,144 @@ test('a "Paid, no seat" registration gets its PDF too', () => {
 test('tabs made by an earlier version get the newer headings added', () => {
   const g = createSandbox();
   const sh = g.context.SpreadsheetApp.getActiveSpreadsheet().insertSheet('Kids registrations');
-  sh.appendRow(g.context.HEADERS.slice(0, -2));
+  sh.appendRow(g.context.HEADERS.slice(0, -6));
   g.doGet({ action: 'seats' });
-  assert.deepEqual(sh.rows[0].slice(-2), ['Registration PDF', 'Fee non-refundable (agreed)']);
+  assert.deepEqual(sh.rows[0].slice(-6), ['Registration PDF', 'Fee non-refundable (agreed)', 'Registration code', 'Payment check', 'Possible duplicate payment', 'Screenshot fingerprint']);
   assert.equal(sh.rows[0].length, g.context.HEADERS.length);
+  assert.deepEqual([...sh.validations.at(-1).rule.values], ['Not checked', 'Received', 'Not received', 'Refund due', 'Refunded'], 'Payment check dropdown added');
+});
+
+// ---------- Round 7: seat holds, payment checks ----------
+
+const hold = (g, p, over = {}) => { g.resetRate(); return g.doPost({ action: 'hold', submissionId: p.submissionId, category: p.category, name: p.name, dob: p.dob, ...over }); };
+const MIN = 60000;
+
+test('a hold takes a seat for 5 minutes, is retry-safe, and is released when the form is sent', () => {
+  const g = createSandbox();
+  const p = valid();
+  const h = hold(g, p);
+  assert.equal(h.status, 'held');
+  assert.equal(h.expiresAt - h.now, 5 * MIN);
+  assert.deepEqual(h.seats.kids, { left: 29, total: 30, held: 1 });
+  g.advance(30000);
+  const again = hold(g, p);
+  assert.equal(again.expiresAt, h.expiresAt, 'the same submission keeps the same hold');
+  assert.equal(Object.keys(g.holds().kids).length, 1);
+  assert.equal(g.doPost(p).status, 'registered');
+  assert.deepEqual(g.holds().kids, {}, 'released on submit');
+  assert.deepEqual(g.doGet({ action: 'seats' }).seats.kids, { left: 29, total: 30, held: 0 });
+});
+
+test('a hold expires after 5 minutes; holding again is allowed up to 15 minutes in all', () => {
+  const g = createSandbox();
+  const p = valid();
+  hold(g, p);
+  g.advance(5 * MIN + 1000);
+  assert.deepEqual(g.doGet({ action: 'seats' }).seats.kids, { left: 30, total: 30, held: 0 });
+  const h2 = hold(g, p);
+  assert.equal(h2.status, 'held');
+  g.advance(5 * MIN + 1000);
+  const h3 = hold(g, p);
+  assert.equal(h3.status, 'held');
+  assert.ok(h3.expiresAt - h3.now < 5 * MIN, 'the last hold is cut at 15 minutes from the first');
+  g.advance(5 * MIN);
+  assert.equal(hold(g, p).status, 'limit');
+  assert.equal(g.doGet({ action: 'seats' }).seats.kids.held, 0);
+});
+
+test('while the last seat is held, a second family cannot hold it; it opens again when the hold expires', () => {
+  const g = createSandbox();
+  g.seed('kids', 29);
+  const a = valid();
+  const b = valid();
+  assert.equal(hold(g, a).status, 'held');
+  assert.deepEqual(g.doGet({ action: 'seats' }).seats.kids, { left: 0, total: 30, held: 1 });
+  const blocked = hold(g, b);
+  assert.equal(blocked.status, 'full');
+  assert.equal(blocked.reason, 'held');
+  assert.ok(blocked.until > blocked.now);
+  // B sends anyway (paid without a hold): no seat while A's hold lasts.
+  assert.equal(g.doPost(b).status, 'last_seat');
+  assert.equal(g.doPost(a).status, 'registered', 'A keeps the held seat');
+  const c = valid();
+  const full = hold(g, c);
+  assert.equal(full.status, 'full');
+  assert.equal(full.reason, 'taken');
+});
+
+test('paying after the hold expired and the seat was taken goes to "Paid, no seat"', () => {
+  const g = createSandbox();
+  g.seed('kids', 29);
+  const a = valid();
+  const b = valid();
+  hold(g, a);
+  g.advance(5 * MIN + 1000);
+  assert.equal(hold(g, b).status, 'held');
+  assert.equal(g.doPost(b).status, 'registered');
+  const late = g.doPost(a);
+  assert.equal(late.status, 'last_seat');
+  assert.equal(g.sheet('Paid, no seat').rows[1][g.context.COL.Status], 'Paid, no seat');
+});
+
+test('hold: a child already registered is told before paying; release frees the seat; bad input is refused', () => {
+  const g = createSandbox();
+  g.doPost(valid({ name: 'Pema Lhamo' }));
+  const p = valid({ name: 'pema lhamo' });
+  assert.equal(hold(g, p).error, 'duplicate');
+  assert.deepEqual(g.holds().kids, {});
+  const q = valid();
+  hold(g, q);
+  assert.equal(g.doGet({ action: 'seats' }).seats.kids.held, 1);
+  g.resetRate();
+  assert.equal(g.doPost({ action: 'release', submissionId: q.submissionId }).status, 'released');
+  assert.equal(g.doGet({ action: 'seats' }).seats.kids.held, 0);
+  assert.equal(hold(g, q, { category: 'adults' }).error, 'bad_request');
+  assert.equal(hold(g, q, { submissionId: 'x' }).error, 'bad_request');
+  // Changing group moves the hold.
+  hold(g, q);
+  hold(g, q, { category: 'youth', dob: '2010-01-01' });
+  assert.deepEqual(Object.keys(g.holds().kids), []);
+  assert.deepEqual(Object.keys(g.holds().youth), [q.submissionId]);
+});
+
+test('each row gets a registration code, a "Not checked" payment check and a screenshot fingerprint', () => {
+  const g = createSandbox();
+  const p = valid();
+  g.doPost(p);
+  const row = g.sheet('Kids registrations').rows[1];
+  const C = g.context.COL;
+  assert.equal(row[C['Registration code']], p.submissionId.replace(/-/g, '').slice(0, 8).toUpperCase());
+  assert.equal(row[C['Payment check']], 'Not checked');
+  assert.match(row[C['Screenshot fingerprint']], /^[0-9a-f]{64}$/);
+  assert.equal(row[C['Possible duplicate payment']], '');
+  assert.equal(row[C['UPI transaction reference']], '412345678901');
+});
+
+test('a reused screenshot or UPI reference is flagged, not refused', () => {
+  const g = createSandbox();
+  g.doPost(valid({ name: 'Tenzin A' }));
+  const second = g.doPost(valid({ name: 'Tenzin B', paymentRef: '999999999999' }));
+  assert.equal(second.status, 'registered');
+  const C = g.context.COL;
+  assert.equal(g.sheet('Kids registrations').rows[2][C['Possible duplicate payment']], 'Same screenshot as Kids row 2 (Tenzin A)');
+  const otherShot = 'data:image/jpeg;base64,' + Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(200, 9)]).toString('base64');
+  g.doPost(valid({ name: 'Tenzin C', screenshot: { data: otherShot }, paymentRef: '999999999999' }));
+  assert.equal(g.sheet('Kids registrations').rows[3][C['Possible duplicate payment']], 'Same UPI reference as Kids row 3 (Tenzin B)');
+});
+
+test('rows marked "Not received" or "Refunded" give their seat back; a Summary tab is made', () => {
+  const g = createSandbox();
+  g.seed('kids', 30);
+  assert.equal(g.doGet({ action: 'seats' }).seats.kids.left, 0);
+  const sh = g.sheet('Kids registrations');
+  sh.rows[5][g.context.COL['Payment check']] = 'Not received';
+  sh.rows[6][g.context.COL['Payment check']] = 'Refunded';
+  sh.rows[7][g.context.COL['Payment check']] = 'Received';
+  assert.equal(g.doGet({ action: 'seats' }).seats.kids.left, 2);
+  g.doPost(valid());
+  const sum = g.sheet('Summary');
+  assert.ok(sum, 'Summary tab');
+  assert.equal(sum.rows[0][0], 'Group');
+  assert.deepEqual(sum.rows.slice(1).map((r) => r[0]), ['Kids registrations', 'Youth registrations', 'Paid, no seat']);
+  assert.match(sum.rows[1][4], /^=COUNTIF\('Kids registrations'!X2:X,"Received"\)$/);
 });

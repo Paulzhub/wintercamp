@@ -130,14 +130,16 @@ Plain-text answers to the questions parents and answer engines ask: who is it fo
 ### Flow
 1. **Open:** "REGISTER NOW" or the menu button opens the registration view with a page transition.
 2. **Pick a category:** Kids (11 and under, 11 to 13 Jan) or Youth (11 and over, 4 to 6 Jan). Each card shows seats left (skeleton while loading). The form does not appear until one is chosen.
-3. **Seats full:** a full category shows "Seats are full. Kindly contact +91-8219012669." with a tap-to-call link, and cannot be selected.
+3. **Seats full:** a full category (seats taken plus seats held) shows "Seats are full. Kindly contact +91-8219012669." with a tap-to-call link, and cannot be selected. When it is full only because families are paying right now, the card adds "Some seats are held by families who are paying right now. If they don't finish, a seat may open within 5 minutes." with **Check again** (round 7). Above the cards: "When you reach payment, your seat is held for 5 minutes." A live seat line under the hero's Register button and in the phone menu shows seats left per group, "Seats are full" per group, and "Seats are full. Kindly contact +91-8219012669." with tap-to-call when both are full.
 4. **Expand and confirm:** the chosen card expands with a clear active state; "Change" goes back.
-5. **Form** (below), in four short steps with a progress indicator: child, parent and health, consent and signature, payment.
-6. **Payment step:** seats are checked again before this step is shown; if the category has filled in the meantime, the seats-full message appears and nobody is asked to pay. Otherwise it shows: ₹500 by UPI using the QR code, the UPI ID (with a copy button) or the phone number, plus a "Pay ₹500 with UPI" button on phones that opens the UPI app with the amount filled in. The payee name "Achui Sareo" is shown with the instruction to check that name in the UPI app before paying.
-7. **Payment screenshot (required):** JPG, PNG or WebP; resized in the browser; preview, replace and remove controls. Optional UPI transaction reference. The submit button stays disabled until a screenshot is attached.
-8. **Submit:** everything is sent in one go. Loading state on the button; the form locks; data and screenshot are kept if sending fails, with a retry button.
+5. **Form** (below), in four short steps with a progress indicator: child, parent and health, consent and signature, payment. On the consent step, **Next** stays disabled until medical emergency consent is YES and the agreement box is ticked (round 7, Paul's decision); NO shows "Medical emergency consent must be YES for your child to take part in Winter Camp 2027."
+   - **Draft (round 7, Paul's decision):** what the family types (never the payment screenshot) is kept in the tab's `sessionStorage`, so the form survives the tab reloading while they pay in their UPI app. Back on the page, the form reopens at the payment step with the same registration code. The draft is deleted when the registration is sent, and ends with the tab.
+6. **Payment step:** before this step is shown the server **holds a seat for 5 minutes** (round 7). If the group has filled, or its last seats are held, the seats-full message appears and nobody is asked to pay; if the same child is already registered in that group, the family is told there is no need to pay. Otherwise the step shows a countdown ("Your seat is held for 4:32"). When it runs out: "Hold my seat again" (a tap, so an idle tab cannot keep the last seat; at most 15 minutes in all). If the seats have gone by then, the family is told not to pay, or, if they already paid, to send the form anyway so the payment is recorded and refunded. The step then shows "If anything goes wrong after you pay, call +91-8219012669 with your payment screenshot.", a **registration code** to type in the UPI payment note (also put in the UPI link's note), the red warning **CHECK AND PAY ₹ 500/- ONLY** just before the UPI button (Paul's request), and: ₹500 by UPI using the QR code, the UPI ID (with a copy button) or the phone number, plus a "Pay ₹500 with UPI" button on phones that opens the UPI app with the amount filled in. The payee name "Achui Sareo" is shown with the instruction to check that name in the UPI app before paying.
+7. **Payment screenshot (required):** JPG, PNG or WebP; resized in the browser; preview, replace and remove controls. Optional UPI transaction ID (UTR): 12 digits when given. The submit button stays disabled until a screenshot is attached.
+8. **Submit:** everything is sent in one go. Loading state on the button; the form locks; data and screenshot are kept if sending fails, with a retry button. After a network failure it is sent again automatically when the connection returns; when the server is busy it retries by itself after 5, 10 and 20 seconds. Leaving the page with an unsent screenshot asks for confirmation.
 9. **Seat given:** burst of light, check mark, chime, and a confirmation with the child's name, category, dates and venue. **Download registration details** downloads a PDF of the whole registration (every field, signature, payment details and screenshot, time of submission), and **Share** shares that PDF where the phone allows it. The PDF is drawn in the browser (so Tibetan is shaped correctly with Jomolhari), and a copy is sent to the organisers' private Drive.
-10. **Last seat just taken:** if the category filled between paying and submitting, show exactly: "Oh No Someone booked the last seat just before you! Kindly contact +91-8219012669" with a tap-to-call link. The submission is saved in the "Paid, no seat" tab.
+10. **Already registered, found after paying:** the payment is saved in "Paid, no seat" with status "Paid, duplicate", and the family sees "This child is already registered for this group. We have saved this payment and your details for the organisers. Please call +91-8219012669 with your payment screenshot."
+11. **Last seat just taken:** if the category filled between paying and submitting, show exactly: "Oh No Someone booked the last seat just before you! Kindly contact +91-8219012669" with a tap-to-call link. The submission is saved in the "Paid, no seat" tab.
 
 ### Fields
 
@@ -151,12 +153,12 @@ Plain-text answers to the questions parents and answer engines ask: who is it fo
 | 5 | Contact Number(s) of Parent/Guardian/Caregiver to be used in case of emergency | Phone, with "add another number" | Yes | 10 digits each, numbers only; at least one |
 | 6 | Any medical conditions or concerns we need to be aware of? | Multi-line text | No | "None" accepted |
 | 7 | Any special dietary requirements or allergies we need to be aware of? | Multi-line text | No | "None" accepted |
-| 8 | Medical emergency consent | Radio: YES / NO | Yes | Shown with the full statement below |
+| 8 | Medical emergency consent | Radio: YES / NO | Yes, must be YES | Shown with the full statement below; NO blocks Next (round 7) |
 | 9 | "I have read and understood the above and am happy for my child to be involved in Winter Camp 2027." | Checkbox | Yes | |
 | 10 | Signed | Signature canvas with the prompt "Sign here" and a Clear button, or a typed full name | Yes | Works with finger, stylus or mouse |
 | 11 | Date of signing | Date | Yes | Filled with today's date, editable |
 | 12 | Payment screenshot | Image upload | Yes | Saved to Google Drive, not GitHub |
-| 13 | UPI transaction reference | Text | No | |
+| 13 | UPI transaction ID (UTR) | Text | No | 12 digits when given |
 
 Statement shown above field 8, word for word:
 
@@ -172,6 +174,8 @@ Statement shown above field 8, word for word:
 - Files are named with the category, child's name and timestamp.
 - Uploads are checked on the server: images only (verified by file content, not just the name), 5 MB maximum, and a registration without a valid screenshot is rejected.
 - The script returns seats left per category, and uses a lock so two people cannot take the last seat. Once a category has 30, further submissions get the "last seat" response and are written to the "Paid, no seat" tab with their screenshot instead of the main list.
+- **Seat holds (round 7):** `hold` and `release` actions. Holds live in Script Properties (one small JSON value, read and written under the lock); a hold counts as a taken seat for 5 minutes or until the form is sent. Chosen over CacheService (can drop entries early) and a hidden sheet (slower, editable by mistake).
+- **Payment records (round 7):** new columns **Registration code**, **Payment check** (dropdown: Not checked / Received / Not received / Refund due / Refunded; "Not received" and "Refunded" give the seat back), **Possible duplicate payment** (same screenshot or UPI reference as another row; flagged, never refused) and **Screenshot fingerprint**. A **Summary** tab totals rows, checks and money per tab.
 - The script source lives in the repo under `apps-script/`; Paul deploys it from his Google account and puts the web app URL in the site config. Setup steps go in the README.
 
 ## 7. Effects map

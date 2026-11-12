@@ -94,6 +94,15 @@ export function initSignature(canvas, wrap, { onChange } = {}) {
       redraw();
       changed();
     },
+    // The strokes as points (0..1), for the registration draft kept in sessionStorage.
+    strokes: () => strokes.map((st) => st.map((q) => [Math.round(q.x * 1000) / 1000, Math.round(q.y * 1000) / 1000])),
+    setStrokes(list) {
+      if (!Array.isArray(list)) return;
+      strokes = list.filter(Array.isArray).map((st) => st.filter((q) => Array.isArray(q) && q.length === 2).map(([x, y]) => ({ x: +x || 0, y: +y || 0 })));
+      current = null;
+      redraw();
+      changed();
+    },
     toDataURL() {
       const out = document.createElement('canvas');
       out.width = 900;

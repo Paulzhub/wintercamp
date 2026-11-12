@@ -362,7 +362,7 @@ async function main() {
       await page.click('#reg-next');
       await page.fill('#f-parent', 'Parent'); await page.fill('#f-address', 'Address'); await page.fill('#f-phone-1', '9876543210');
       await page.click('#reg-next');
-      await page.click('label.choice:has(input[name="consent"][value="no"])');
+      await page.click('label.choice:has(input[name="consent"][value="yes"])');
       await page.click('label.choice:has(#f-agree)');
       await drawSignature(page);
       await api('/__seed', { category: 'kids', count: 1 });
@@ -1146,6 +1146,215 @@ async function main() {
       await page.waitForTimeout(1500);
       const bottom = await page.evaluate(() => document.documentElement.wcAudio?.musicCutoff ?? null);
       check('G. Music opens up as the page scrolls (low-pass follows scroll)', top !== null && bottom !== null && top < 1200 && bottom > 8000, `${top} Hz -> ${bottom} Hz`);
+      await ctx.close();
+    }
+
+    // 19. Round 7: seat hold, consent gate, payment safeguards, draft, resend.
+    {
+      await api('/__reset', {});
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+      const page = await ctx.newPage();
+      await page.clock.install({ time: new Date() }); // time flows; fastForward() jumps to the hold's end
+      const done = watch(page, 'Round 7');
+      await page.goto(SITE);
+      await enter(page);
+      const line = await waitFor(() => page.evaluate(() => { const el = document.getElementById('hero-live'); return !el.hidden && el.querySelector('.hero__live-text').textContent.trim(); }));
+      check('Hero: a live seat line under the Register button', line === 'Youth: 30 of 30 seats left · Kids: 30 of 30 seats left', String(line));
+      await page.click('.hero__cta [data-open-register]');
+      await page.waitForSelector('#register[open]');
+      check('Registration start says the seat is held for 5 minutes at payment', (await page.textContent('#reg-hold-note')).trim() === 'When you reach payment, your seat is held for 5 minutes.');
+      // Consent gate.
+      await page.waitForSelector('.cat[data-cat="kids"] [data-choose]:not([disabled])');
+      await page.click('.cat[data-cat="kids"] [data-choose]');
+      await page.fill('#f-name', 'Sonam Wangmo');
+      await page.selectOption('#f-dob-d', '3'); await page.selectOption('#f-dob-m', '4'); await page.selectOption('#f-dob-y', '2018');
+      await page.click('#reg-next');
+      await page.fill('#f-parent', 'Lhamo Tsering'); await page.fill('#f-address', 'Bhagsu Road, McLeodganj'); await page.fill('#f-phone-1', '9876501234');
+      await page.click('#reg-next');
+      await page.waitForTimeout(300);
+      check('Consent step: Next is disabled until YES and the agreement are chosen', await page.isDisabled('#reg-next') && await page.isVisible('#step-gate'));
+      await page.click('label.choice:has(input[name="consent"][value="no"])');
+      await page.click('label.choice:has(#f-agree)');
+      check('Consent NO keeps Next disabled, with a clear message', await page.isDisabled('#reg-next') && (await page.textContent('#err-consent')).includes('must be YES'));
+      await page.screenshot({ path: path.join(out, 'r7-consent-no-390.png') });
+      await page.click('label.choice:has(input[name="consent"][value="yes"])');
+      check('YES and the ticked agreement enable Next', await page.isEnabled('#reg-next') && await page.isHidden('#step-gate') && await page.isHidden('#err-consent'));
+      await page.click('label.choice:has(#f-agree)'); // untick
+      check('Unticking the agreement disables Next again', await page.isDisabled('#reg-next'));
+      await page.click('label.choice:has(#f-agree)');
+      await drawSignature(page);
+      await page.click('#reg-next');
+      await page.waitForSelector('#pay-panel:not([hidden])', { timeout: 8000 });
+      // Hold and countdown.
+      await page.waitForSelector('#hold:not([hidden])');
+      const holdText = await page.textContent('#hold-text');
+      check('Payment step: countdown of the 5-minute hold', /^Your seat is held for [45]:\d\d$/.test(holdText.trim()), holdText);
+      let st = await api('/__state');
+      const myId = Object.keys(st.holds.kids)[0];
+      check('Backend: one hold for this submission', Object.keys(st.holds.kids).length === 1 && Boolean(myId));
+      const code = (await page.textContent('#pay-code')).trim();
+      check('Payment step: registration code shown and put in the UPI note', /^[0-9A-F]{8}$/.test(code) && code === myId.replace(/-/g, '').slice(0, 8).toUpperCase() && (await page.getAttribute('#upi-open', 'href')).includes(`tn=Winter%20Camp%202027%20${code}`), code);
+      const warn = await page.evaluate(() => { const w = document.getElementById('pay-warn'); const b = document.getElementById('upi-open'); return { t: w.textContent.trim(), c: getComputedStyle(w).color, before: Boolean(w.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING), vis: w.offsetParent !== null }; });
+      check('Red capital warning "CHECK AND PAY ₹ 500/- ONLY" right before the UPI button', warn.t === 'CHECK AND PAY ₹ 500/- ONLY' && warn.c === 'rgb(179, 0, 27)' && warn.before && warn.vis, JSON.stringify(warn));
+      const helpLine = await page.evaluate(() => { const h = document.getElementById('pay-help'); return { t: h.textContent.trim(), before: Boolean(h.compareDocumentPosition(document.querySelector('.pay__qr')) & Node.DOCUMENT_POSITION_FOLLOWING) }; });
+      check('"If anything goes wrong after you pay, call ..." shown before the QR code', helpLine.t === 'If anything goes wrong after you pay, call +91-8219012669 with your payment screenshot.' && helpLine.before, JSON.stringify(helpLine));
+      await page.fill('#f-ref', 'UPI123');
+      await page.locator('#f-ref').blur();
+      check('UPI transaction ID must have 12 digits when given', (await page.textContent('#err-ref')).includes('12 digits'));
+      await page.fill('#f-ref', '4123 4567 8901');
+      await page.locator('#f-ref').blur();
+      check('A 12-digit UTR with spaces is accepted', await page.isHidden('#err-ref'));
+      await page.locator('#hold').scrollIntoViewIfNeeded();
+      await page.screenshot({ path: path.join(out, 'r7-hold-390.png') });
+      await page.locator('#pay-warn').scrollIntoViewIfNeeded();
+      await page.screenshot({ path: path.join(out, 'r7-pay-warn-390.png') });
+      await axe(page, 'Round 7: payment step with hold', '#register');
+
+      // The tab reloads (as when the phone switches to the UPI app): the draft brings the form back.
+      await page.waitForTimeout(400);
+      await page.reload();
+      await enter(page);
+      await page.waitForSelector('#register[open] #pay-panel:not([hidden])', { timeout: 10000 });
+      const restored = await page.evaluate(() => ({ name: document.getElementById('f-name').value, phone: document.getElementById('f-phone-1').value, consent: document.querySelector('input[name="consent"]:checked')?.value, note: document.getElementById('draft-note').textContent, code: document.getElementById('pay-code').textContent }));
+      check('Draft: after a reload the form reopens at payment with the details kept', restored.name === 'Sonam Wangmo' && restored.phone === '9876501234' && restored.consent === 'yes' && restored.code === code && /attach your payment screenshot again/.test(restored.note), JSON.stringify(restored));
+      st = await api('/__state');
+      check('Draft: the same submission holds the seat again (one hold, same ID)', Object.keys(st.holds.kids).length === 1 && Object.keys(st.holds.kids)[0] === myId);
+      const storedDraft = await page.evaluate(() => sessionStorage.getItem('wc-reg-draft') || '');
+      check('Draft: kept in sessionStorage only, without the screenshot', storedDraft.includes('Sonam Wangmo') && !/data:image\/(jpeg|png|webp)/.test(storedDraft) && await page.evaluate(() => !JSON.stringify({ ...localStorage }).includes('Sonam')));
+
+      // A second family while this family holds the last seat.
+      await api('/__seed', { category: 'kids', count: 29 });
+      const ctx2 = await browser.newContext({ viewport: { width: 1280, height: 860 } });
+      const p2 = await ctx2.newPage();
+      await p2.goto(SITE);
+      await enter(p2);
+      const line2 = await waitFor(() => p2.evaluate(() => { const el = document.getElementById('hero-live'); return !el.hidden && el.querySelector('.hero__live-text').textContent.trim(); }));
+      check('Hero: a group whose last seat is held says so', String(line2).includes('Kids: all seats held, check again soon'), String(line2));
+      await p2.click('.hero__cta [data-open-register]');
+      await p2.waitForSelector('.cat[data-cat="kids"].is-full', { timeout: 8000 });
+      check('Second family: Kids card shows "Seats are full..." and that seats are held for now', (await p2.textContent('.cat[data-cat="kids"] [data-full] span')).trim() === 'Seats are full. Kindly contact +91-8219012669.' && await p2.isVisible('.cat[data-cat="kids"] [data-held]') && await p2.isDisabled('.cat[data-cat="kids"] [data-choose]'));
+      await p2.screenshot({ path: path.join(out, 'r7-held-full-1280.png') });
+
+      // The hold runs out (server clock and page clock both move 5 minutes on).
+      await api('/__clock', { advanceMs: 5 * 60000 + 2000 });
+      await page.clock.fastForward('05:02');
+      await page.waitForSelector('#hold-ended:not([hidden])', { timeout: 5000 });
+      check('Hold expiry: message and "Hold my seat again"', (await page.textContent('#hold-ended-text')).includes('Your 5 minutes are up') && (await page.textContent('#hold-again')).includes('Hold my seat again') && await page.isVisible('#pay-panel'));
+      await page.locator('#hold').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(600);
+      await page.screenshot({ path: path.join(out, 'r7-hold-ended-390.png') });
+      await p2.click('.cat[data-cat="kids"] [data-recheck]');
+      await p2.waitForSelector('.cat[data-cat="kids"] [data-choose]:not([disabled])', { timeout: 8000 });
+      check('After the hold expires the seat opens for the next family', true);
+      await fillToPayment(p2, { cat: 'kids', dob: '2017-05-05' });
+      check('Second family now holds the last seat', await p2.isVisible('#pay-panel') && await p2.isVisible('#hold'));
+      await page.click('#hold-again');
+      await page.waitForFunction(() => /Seats are now full/.test(document.getElementById('hold-ended-text').textContent), null, { timeout: 8000 });
+      check('First family: "Hold again" now says seats are full, do not pay; payment panel stays', await page.isVisible('#pay-panel') && (await page.textContent('#hold-ended-text')).includes('If you have already paid, send the form anyway'));
+      if (!(await page.isChecked('#f-refund'))) await page.click('label.choice:has(#f-refund)');
+      await page.setInputFiles('#f-shot', shotPng);
+      await page.waitForSelector('#shot-preview:not([hidden])');
+      check('First family can still send the form after paying', await page.isEnabled('#reg-submit'));
+      await page.click('#reg-submit');
+      await page.waitForSelector('#reg-last:not([hidden])', { timeout: 10000 });
+      check('Paid after the hold expired and the seat went: last-seat view with the refund message', (await page.textContent('#reg-last')).includes('Contact the organisers for a refund.'));
+      st = await api('/__state');
+      const H = (n) => st.headers.indexOf(n);
+      check('Backend: that payment is in "Paid, no seat" with its registration code', st.overflow.length === 1 && st.overflow[0][H('Registration code')] === code && st.overflow[0][H('UPI transaction reference')] === '412345678901');
+      check('Draft: deleted once the registration is sent', await page.evaluate(() => sessionStorage.getItem('wc-reg-draft') === null));
+      // The second family sends: the group is now truly full.
+      await p2.setInputFiles('#f-shot', shotPng);
+      await p2.waitForSelector('#shot-preview:not([hidden])');
+      await p2.waitForTimeout(5200);
+      await p2.click('#reg-submit');
+      await p2.waitForSelector('#reg-done:not([hidden])', { timeout: 10000 });
+      st = await api('/__state');
+      check('Backend: hold released on submit; Kids has 30 seats taken; the row says "Not checked"', Object.keys(st.holds.kids).length === 0 && st.kids.length === 30 && st.kids[29][H('Payment check')] === 'Not checked');
+      check('Backend: the same screenshot used by two families is flagged on the later row', /^Same screenshot as Paid, no seat row 2/.test(st.kids[29][H('Possible duplicate payment')] || ''), st.kids[29][H('Possible duplicate payment')]);
+      await p2.click('#reg-done [data-close-register]');
+      await p2.waitForTimeout(900);
+      const line3 = await waitFor(() => p2.evaluate(() => { const t = document.getElementById('hero-live').textContent; return t.includes('Kids: Seats are full') && t; }));
+      check('Hero: a full group says "Seats are full"', Boolean(line3), String(line3));
+      await api('/__seed', { category: 'youth', count: 30 });
+      await p2.click('.hero__cta [data-open-register]');
+      await p2.waitForSelector('.cat[data-cat="youth"].is-full', { timeout: 8000 });
+      check('Truly full: no "held" note on the card', await p2.isHidden('.cat[data-cat="youth"] [data-held]'));
+      await p2.click('.reg__bar [data-close-register]');
+      await p2.waitForTimeout(900);
+      const line4 = await waitFor(() => p2.evaluate(() => { const el = document.getElementById('hero-live'); return el.classList.contains('is-full') && el.textContent.trim(); }));
+      check('Hero: both groups full shows "Seats are full. Kindly contact +91-8219012669." with tap-to-call', String(line4).startsWith('Seats are full. Kindly contact +91-8219012669.') && await p2.isVisible('#hero-live a[href="tel:+918219012669"]'), String(line4));
+      await p2.locator('.hero__cta').screenshot({ path: path.join(out, 'r7-hero-full-1280.png') }).catch(() => {});
+      await p2.locator('#hero-live').screenshot({ path: path.join(out, 'r7-hero-line-1280.png') });
+      done();
+      await ctx2.close();
+      await ctx.close();
+    }
+    {
+      // Duplicates: before paying, and after paying.
+      await api('/__reset', {});
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      const page = await ctx.newPage();
+      await page.goto(SITE);
+      await enter(page);
+      const jpeg = 'data:image/jpeg;base64,' + Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(200, 7)]).toString('base64');
+      const direct = (name, dob) => api('/exec', { action: 'register', submissionId: `e2e-${Date.now()}-${Math.random().toString(36).slice(2)}`, category: 'kids', name, dob, parent: 'P', address: 'A', phones: ['9876543210'], consent: 'yes', agree: true, refundAck: true, signatureTyped: 'Parent Name', signDate: '2026-11-11', screenshot: { data: jpeg }, paymentRef: '', lang: 'en', website: '', elapsedMs: 60000 });
+      await direct('Tenzin Norbu', '2019-03-15');
+      await page.click('.hero__cta [data-open-register]');
+      await page.waitForSelector('.cat[data-cat="kids"] [data-choose]:not([disabled])');
+      await page.click('.cat[data-cat="kids"] [data-choose]');
+      await page.fill('#f-name', 'Tenzin Norbu');
+      await page.selectOption('#f-dob-d', '15'); await page.selectOption('#f-dob-m', '3'); await page.selectOption('#f-dob-y', '2019');
+      await page.click('#reg-next');
+      await page.fill('#f-parent', 'Dolma'); await page.fill('#f-address', 'McLeodganj'); await page.fill('#f-phone-1', '9876543210');
+      await page.click('#reg-next');
+      await page.click('label.choice:has(input[name="consent"][value="yes"])');
+      await page.click('label.choice:has(#f-agree)');
+      await drawSignature(page);
+      await page.click('#reg-next');
+      await page.waitForSelector('#pay-dup:not([hidden])', { timeout: 8000 });
+      check('Duplicate before paying: told there is no need to pay; no payment details shown', (await page.textContent('#pay-dup')).includes('no need to pay') && await page.isHidden('#pay-panel'));
+      await page.screenshot({ path: path.join(out, 'r7-dup-before-390.png') });
+      // After paying: the same child is registered by someone else while this family pays.
+      await page.click('#reg-back');
+      await page.click('#reg-back');
+      await page.click('#reg-back');
+      await page.fill('#f-name', 'Karma Yangchen');
+      await page.click('#reg-next'); await page.click('#reg-next'); await page.click('#reg-next');
+      await page.waitForSelector('#pay-panel:not([hidden])', { timeout: 8000 });
+      if (!(await page.isChecked('#f-refund'))) await page.click('label.choice:has(#f-refund)');
+      await page.setInputFiles('#f-shot', shotPng);
+      await page.waitForSelector('#shot-preview:not([hidden])');
+      await direct('Karma Yangchen', '2019-03-15');
+      await page.waitForTimeout(5200);
+      await page.click('#reg-submit');
+      await page.waitForSelector('#reg-dup:not([hidden])', { timeout: 10000 });
+      check('Duplicate after paying: clear message to call the organisers with the screenshot', (await page.textContent('#reg-dup')).includes('already registered') && (await page.textContent('#reg-dup')).includes('call +91-8219012669 with your payment screenshot'));
+      await page.screenshot({ path: path.join(out, 'r7-dup-after-390.png') });
+      const st = await waitFor(async () => { const x = await api('/__state'); return x.overflow[0]?.[x.headers.indexOf('Registration PDF')] && x; });
+      const H = (n) => st.headers.indexOf(n);
+      check('Backend: the paid duplicate is saved in "Paid, no seat" as "Paid, duplicate", with screenshot and PDF', Boolean(st) && st.overflow.length === 1 && st.overflow[0][H('Status')] === 'Paid, duplicate' && /drive\.google\.com/.test(st.overflow[0][H('Payment screenshot')]));
+      await ctx.close();
+    }
+    {
+      // Offline after paying: the form is sent again by itself when the connection returns.
+      await api('/__reset', {});
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      const page = await ctx.newPage();
+      await page.goto(SITE);
+      await enter(page);
+      await page.click('.hero__cta [data-open-register]');
+      await fillToPayment(page, { cat: 'youth', dob: '2011-02-02' });
+      await page.setInputFiles('#f-shot', shotPng);
+      await page.waitForSelector('#shot-preview:not([hidden])');
+      await page.route('**/exec', (route) => (route.request().method() === 'POST' ? route.abort('internetdisconnected') : route.continue()));
+      await page.waitForTimeout(5200);
+      await page.click('#reg-submit');
+      await page.waitForSelector('#send-error:not([hidden])');
+      check('Offline after paying: says it will be sent automatically when back online', (await page.textContent('#send-error')).includes('sent automatically when your connection returns'));
+      await page.unroute('**/exec');
+      await page.evaluate(() => window.dispatchEvent(new Event('online')));
+      await page.waitForSelector('#reg-done:not([hidden])', { timeout: 10000 });
+      check('Back online: the registration is sent without pressing anything', true);
       await ctx.close();
     }
   } finally {
