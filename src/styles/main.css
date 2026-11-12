@@ -681,7 +681,7 @@ select.input { appearance: none; padding-right: var(--s6); background-image: lin
 .hero__count { margin: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 var(--s1); color: var(--t-dark); font-size: 16px; letter-spacing: 0.04em; text-shadow: 0 1px 12px rgb(0 0 0 / 0.6); }
 .hero__count-vis { display: contents; }
 .hero__count-n { font-family: var(--font-display); font-size: 40px; line-height: 1; color: var(--c-red); font-variant-numeric: tabular-nums; text-shadow: 0 0 24px rgb(227 23 26 / 0.4); }
-.hero__count:lang(bo) .hero__count-n { font-family: var(--font-display); }
+.hero__count:lang(bo) { letter-spacing: 0; font-size: 17px; line-height: 1.8; }
 .hero__count-b:empty, .hero__count-a:empty { display: none; }
 
 /* D. Light sweep over a seat count when it appears or changes. */
