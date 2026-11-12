@@ -619,6 +619,7 @@ async function main() {
       await page.screenshot({ path: path.join(out, 'reg-typed-signature-1280.png') });
       await page.click('#reg-next');
       await page.waitForSelector('#pay-panel:not([hidden])');
+      if (!(await page.isChecked('#f-refund'))) await page.click('label.choice:has(#f-refund)');
       // A dismissed file picker fires a bubbling "cancel" in Chrome: it must not close the view.
       await page.evaluate(() => document.getElementById('f-shot').dispatchEvent(new Event('cancel', { bubbles: true })));
       await page.waitForTimeout(900);
@@ -950,7 +951,8 @@ async function main() {
         const box = d.getBoundingClientRect();
       return { r, g, b, tone: d.parentElement.dataset.tone, parent: d.parentElement.parentElement.id || d.parentElement.parentElement.tagName, at: [Math.round(box.x + box.width / 2), Math.round(box.y + box.height / 2)] };
       });
-      const red = (c) => c.r > 180 && c.g < 90 && c.b < 90;
+      // The accent is the poster's pink (round 6), so "red" here means that pink.
+      const red = (c) => c.r > 180 && c.g < 90 && c.b > 90 && c.b < 170;
       const white = (c) => c.r > 220 && c.g > 220 && c.b > 200;
       const pointIn = (sel) => page.evaluate((q) => {
         const r = document.querySelector(q).getBoundingClientRect();
@@ -962,7 +964,7 @@ async function main() {
       await page.mouse.move(pt.x + 4, pt.y + 4);
       await page.waitForTimeout(700);
       const onLight = await orb();
-      check('Cursor: red over a light section', red(onLight) && onLight.tone === 'light', JSON.stringify(onLight));
+      check('Cursor: pink over a light section', red(onLight) && onLight.tone === 'light', JSON.stringify(onLight));
       await page.locator('#gallery').scrollIntoViewIfNeeded();
       await page.waitForTimeout(1200);
       pt = await pointIn('#gallery');
@@ -1008,7 +1010,7 @@ async function main() {
       await page.mouse.move(310, 410);
       await page.waitForTimeout(700);
       const inReg = await orb();
-      check('Cursor: visible inside the registration view, under the mouse, and red', inReg.parent === 'register' && red(inReg) && Math.abs(inReg.at[0] - 310) < 6 && Math.abs(inReg.at[1] - 410) < 6, JSON.stringify(inReg));
+      check('Cursor: visible inside the registration view, under the mouse, and pink', inReg.parent === 'register' && red(inReg) && Math.abs(inReg.at[0] - 310) < 6 && Math.abs(inReg.at[1] - 410) < 6, JSON.stringify(inReg));
       await page.screenshot({ path: path.join(out, 'cursor-register-1440.png') });
       done();
       await ctx.close();
