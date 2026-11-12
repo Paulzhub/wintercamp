@@ -5,7 +5,7 @@
 // Videos: converted to H.264 MP4 (max 1280 px wide) with a poster frame, when ffmpeg
 // is installed. Without ffmpeg the original file is copied and no poster is made.
 // Optional gallery/captions.json:
-//   { "file name.jpg": { "caption": { "en": "", "bo": "" }, "alt": { "en": "", "bo": "" } } }
+//   { "file name.jpg": { "caption": { "en": "" }, "alt": { "en": "" } } }
 
 import { readdir, mkdir, readFile, writeFile, stat, copyFile, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -146,7 +146,7 @@ async function main() {
   }
   items.sort((a, b) => sortKey(a.file).localeCompare(sortKey(b.file), 'en', { numeric: true }));
 
-  const text = (v) => (v && typeof v === 'object' ? { en: String(v.en || ''), bo: String(v.bo || '') } : { en: '', bo: '' });
+  const text = (v) => (v && typeof v === 'object' ? { en: String(v.en || '') } : { en: '' });
   const manifest = items.map((item) => {
     const c = captions[item.file] || {};
     const { file, ...rest } = item;

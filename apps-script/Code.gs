@@ -20,7 +20,7 @@
 var CONFIG = {
   seats: { kids: 30, youth: 30 },
   campStart: { kids: '2027-01-11', youth: '2027-01-04' },
-  ages: { kids: [0, 9], youth: [10, 18] }, // inclusive, on the first day of that camp
+  ages: { kids: [0, 11], youth: [11, null] }, // inclusive, on the first day of that camp; Youth has no upper limit
   labels: { kids: 'Kids', youth: 'Youth' },
   rootFolder: 'Winter Camp 2027',
   sheets: { kids: 'Kids registrations', youth: 'Youth registrations', overflow: 'Paid, no seat', old: 'Registrations' },
@@ -39,7 +39,7 @@ var HEADERS = [
   "Parent/Guardian's Name(s)", 'Address', 'Emergency contact number(s)',
   'Medical conditions or concerns', 'Dietary requirements or allergies',
   'Medical emergency consent', 'Agreed to take part', 'Date of signing',
-  'Signature', 'Typed signature', 'Payment screenshot', 'UPI transaction reference', 'Language', 'Status', 'Registration PDF',
+  'Signature', 'Typed signature', 'Payment screenshot', 'UPI transaction reference', 'Language', 'Status', 'Registration PDF', 'Fee non-refundable (agreed)',
 ];
 var COL = {};
 HEADERS.forEach(function (h, i) { COL[h] = i; });
@@ -242,7 +242,6 @@ function validate_(d) {
     c.age = age;
     if (c.category === 'kids' && age > range[1]) add('dob', 'dobKids');
     else if (c.category === 'youth' && age < range[0]) add('dob', 'dobYouthYoung');
-    else if (c.category === 'youth' && age > range[1]) add('dob', 'dobYouth');
     else if (age < range[0]) add('dob', 'dobInvalid');
   }
 
@@ -265,6 +264,7 @@ function validate_(d) {
   c.consent = d.consent === 'yes' || d.consent === 'no' ? d.consent : null;
   if (!c.consent) add('consent', 'consent');
   if (d.agree !== true) add('agree', 'agree');
+  if (d.refundAck !== true) add('refund', 'refund');
 
   c.signDate = String(d.signDate || '');
   if (!parseIso_(c.signDate) || c.signDate < '2026-01-01') add('signDate', 'signDate');
@@ -434,9 +434,10 @@ function row_(c, files, status) {
   r[COL['Typed signature']] = files.signature ? '' : c.signatureTyped;
   r[COL['Payment screenshot']] = files.screenshot;
   r[COL['UPI transaction reference']] = c.paymentRef;
-  r[COL.Language] = c.lang === 'bo' ? 'Tibetan' : 'English';
+  r[COL.Language] = c.lang === 'bo' ? 'Tibetan' : 'English'; // kept for rows sent before round 6
   r[COL.Status] = status;
   r[COL['Registration PDF']] = '';
+  r[COL['Fee non-refundable (agreed)']] = 'Yes';
   return r.map(safe_);
 }
 

@@ -13,7 +13,7 @@ Status: v6, ready to build. The build prompt is in `BUILD_PROMPT.md`.
 | 5 | The signature is drawn on the canvas, with a "Type your name instead" option for anyone who can't draw one. A typed name is stored in its own sheet column | Paul's decision (November 2026; previously drawn only) |
 | 6 | A short "Camp facts and FAQ" block sits above the footer | Needed for answer engines and for parents; see section 9 |
 | 8 | The UPI QR image stays in the repo rather than on Google Drive, and the payee name "Achui Sareo" and UPI ID are shown as text beside it | Drive would not make it harder to replace; see section 11 |
-| 7 | Tibetan has its own address (`/bo/`) as well as the toggle | Search and AI engines can only index Tibetan if it has a URL |
+| 7 | ~~Tibetan has its own address (`/bo/`)~~ Round 6: the site is English only. Old `/bo/` links go to the English page | Paul's decision in round 6 |
 
 ## 2. Camp facts
 
@@ -22,15 +22,16 @@ Status: v6, ready to build. The build prompt is in `BUILD_PROMPT.md`.
 | Name | Winter Camp 2027 |
 | Theme | Illuminate: Light of the World |
 | Organiser | Kid's Happy Club |
-| Youth (10 to 18) | 4 to 6 January 2027, 30 seats |
-| Kids (under 10) | 11 to 13 January 2027, 30 seats |
+| Youth (11 and over, no upper limit) | 4 to 6 January 2027, 30 seats |
+| Kids (11 and under) | 11 to 13 January 2027, 30 seats |
+| Age 11 | may join either group (age counted on the first day of that group's camp) |
 | Venue | Snow View Residency, Jogiwara Road, McLeodganj, Dharamshala, Himachal Pradesh, India, 176219 |
-| Fee | ₹500, paid by UPI |
+| Fee | ₹500, paid by UPI, non-refundable. Exception: a family that paid but lost the last seat while paying is told to contact the organisers for a refund |
 | UPI | QR code (`assets/payment/upi-qr.jpg`), UPI ID `achuisr1985.27-1@okhdfcbank`, or phone number 8219012669. Payee name on the QR: Achui Sareo |
 | Contact | +91-8219012669 |
 | Seats | First come, first served. When full: "Seats are full. Kindly contact +91-8219012669." |
 | Staff ratio | 1 staff member to 7 children |
-| Languages | English (default), Tibetan (toggle), reviewed by native speakers |
+| Language | English only (round 6) |
 | Photo consent | Approved |
 | Hosting | GitHub Pages, repo `Paulzhub/wintercamp` |
 
@@ -42,21 +43,21 @@ Status: v6, ready to build. The build prompt is in `BUILD_PROMPT.md`.
 
 | Role | Hex | Share | Use |
 |------|-----|-------|-----|
-| Dominant | `#1C1C1C` | 60% | Loader, hero, gallery, footer |
-| Secondary | `#E9ECEF` | 30% | Activities, registration view, FAQ, cards |
-| Accent | `#E3171A` | 10% | Register buttons, active states, highlights, cursor |
-| Text on dark | `#F5F5F5` | | |
-| Text on light | `#111111` | | |
+| Dominant | `#180E55` deep indigo | 60% | Loader, hero, gallery, footer, menu bar |
+| Secondary | `#F4F1FB` pale lavender | 30% | Activities, registration view, FAQ |
+| Accent | `#D1146C` pink | 10% | Register buttons, active states, highlights, cursor on light |
+| Glow | `#E61E7B` (the poster's pink) | | Glows, large decoration |
+| Text on dark | `#F5F5F5` | | Small pink text on indigo uses `#FF6FB0` (6.6:1) |
+| Text on light | `#180E55` | | |
+| Spectrum (decoration only) | `#0CAAE4` `#FCF128` `#91EA43` `#F89C38` `#EF3D2C` `#8319D1` | | Particles, hero light rays and a few snowflakes, success burst, loader bar, section markers |
 
-Red is used only for large text, icons and button fills (about 3.6:1 on dark, 4:1 on light). Button labels are `#F5F5F5` on red (about 4.8:1).
+Taken from the official camp poster (round 6). White labels on the pink accent are 5.2:1; pink text on lavender is 4.7:1. Pink on indigo (3.3:1) is used only for large text and icons.
 
 ### Type
 
 - **English headings:** Anton (uppercase display).
 - **English body and UI:** Poppins 400, 500, 600.
-- **Tibetan (headings and body):** Jomolhari. It has one weight, so Tibetan emphasis comes from size and colour; never apply synthetic bold or italic.
-- Tibetan rules: line height about 1.8, no uppercase transform, no letter-spacing, animate by line or word (split at the tsheg), never by letter. `lang="bo"` on Tibetan text.
-- Fonts are self-hosted WOFF2 (no third-party requests), `font-display: swap`, Jomolhari loaded only for Tibetan.
+- Fonts are self-hosted WOFF2 (no third-party requests), `font-display: swap`.
 
 ### Spacing, radii, shadows, motion
 
@@ -128,7 +129,7 @@ Plain-text answers to the questions parents and answer engines ask: who is it fo
 
 ### Flow
 1. **Open:** "REGISTER NOW" or the menu button opens the registration view with a page transition.
-2. **Pick a category:** Kids (under 10, 11 to 13 Jan) or Youth (10 to 18, 4 to 6 Jan). Each card shows seats left (skeleton while loading). The form does not appear until one is chosen.
+2. **Pick a category:** Kids (11 and under, 11 to 13 Jan) or Youth (11 and over, 4 to 6 Jan). Each card shows seats left (skeleton while loading). The form does not appear until one is chosen.
 3. **Seats full:** a full category shows "Seats are full. Kindly contact +91-8219012669." with a tap-to-call link, and cannot be selected.
 4. **Expand and confirm:** the chosen card expands with a clear active state; "Change" goes back.
 5. **Form** (below), in four short steps with a progress indicator: child, parent and health, consent and signature, payment.
@@ -225,7 +226,7 @@ So that search engines, answer engines and AI assistants can read and quote the 
 - FAQ written as direct question and answer pairs, each answer complete in one or two sentences.
 - `robots.txt` that allows search and AI crawlers, `sitemap.xml`, `llms.txt` with a plain summary of the camp.
 - Title, meta description, canonical URL, Open Graph and Twitter card image.
-- English at `/` and Tibetan at `/bo/`, linked with `hreflang`.
+- English at `/`. Old `/bo/` links redirect to it (keeping `#section`), marked `noindex`.
 - Descriptive alt text on every image; captions on videos.
 - Fast loading (see section 12), since speed affects ranking.
 
@@ -239,7 +240,7 @@ So that search engines, answer engines and AI assistants can read and quote the 
 - Motion: honours reduced-motion; nothing flashes more than three times a second; the custom cursor never replaces the system cursor for keyboard or assistive users.
 - Audio: off by default, with a visible toggle.
 - Touch targets at least 48px; layout works at 200% zoom and 320px width.
-- `lang` attributes for English and Tibetan; decorative 3D canvas hidden from screen readers.
+- `lang="en"`; decorative 3D canvas hidden from screen readers.
 
 ## 11. Security and privacy
 
@@ -262,7 +263,7 @@ The form collects children's personal and medical details, so this matters.
 - **Repo layout:** `src/` site code, `gallery/photos/` and `gallery/videos/` for Paul's media, `assets/payment/upi-qr.jpg`, `apps-script/` backend, `docs/` plan and prompt.
 - **Deploy:** GitHub Actions builds and publishes to GitHub Pages on push to `main`.
 - **Config:** one file with dates, venue, fee, seat limits, UPI details, phone, Apps Script URL.
-- **Languages:** strings in `en.json` and `bo.json`; pages pre-rendered for `/` and `/bo/`; toggle remembers the choice.
+- **Language:** strings in `en.json`; pages pre-rendered for `/` and `/privacy/`.
 - **Media limits:** photos are resized and converted at build time. Keep each video under 25 MB (GitHub's browser upload limit) and short; the whole site must stay under 1 GB.
 - **Performance budget:** first load under about 1.5 MB on mobile, hero interactive within 3 seconds on 4G; pixel ratio capped at 2; 3D paused off screen; gallery and audio lazy loaded.
 - **Fallbacks:** no WebGL gives a static layered image; no `backdrop-filter` gives solid translucent panels; no JavaScript still shows all content and the contact number.
@@ -283,4 +284,3 @@ The form collects children's personal and medical details, so this matters.
 
 - Photos and videos in `gallery/`.
 - Deploying the Apps Script from his Google account (steps will be in the README).
-- Tibetan review by native speakers once draft text is in place.

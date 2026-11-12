@@ -1,5 +1,4 @@
 // Sub-pages (privacy notice): the same menu bar, phone menu, language and sound toggles.
-import { initLangMemory } from './prefs.js';
 import { initAudio } from './audio.js';
 import { initNav } from './nav.js';
 import { initPointer } from './pointer.js';
@@ -9,7 +8,6 @@ import { initParticles } from './particles.js';
 
 export function bootPlain() {
   document.documentElement.classList.add('js-ok');
-  initLangMemory();
   const audio = initAudio();
   const motion = initMotion();
   setModalMotion(motion);

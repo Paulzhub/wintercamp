@@ -14,7 +14,7 @@ const STEP_OF = {
   name: 0, dob: 0,
   parent: 1, address: 1, phones: 1, medical: 1, dietary: 1,
   consent: 2, agree: 2, signature: 2, signDate: 2,
-  shot: 3, ref: 3,
+  refund: 3, shot: 3, ref: 3,
 };
 const MAX_PHONES = 4;
 
@@ -62,7 +62,7 @@ export function initRegistration({ audio }) {
   const f = {
     name: $('#f-name'), dobD: $('#f-dob-d'), dobM: $('#f-dob-m'), dobY: $('#f-dob-y'),
     parent: $('#f-parent'), address: $('#f-address'), medical: $('#f-medical'), dietary: $('#f-dietary'),
-    agree: $('#f-agree'), signDate: $('#f-signdate'), shot: $('#f-shot'), ref: $('#f-ref'), website: $('#f-website'),
+    agree: $('#f-agree'), refund: $('#f-refund'), signDate: $('#f-signdate'), shot: $('#f-shot'), ref: $('#f-ref'), website: $('#f-website'),
   };
   const consentInputs = $$('input[name="consent"]', form);
   const phoneList = $('#phones-list');
@@ -174,7 +174,7 @@ export function initRegistration({ audio }) {
     name: () => f.name, dob: () => f.dobD, parent: () => f.parent, address: () => f.address,
     phones: () => $('.phone input', phoneList), medical: () => f.medical, dietary: () => f.dietary,
     consent: () => consentInputs[0], agree: () => f.agree, signature: () => (typedMode ? typedInput : $('#f-sign')),
-    signDate: () => f.signDate, shot: () => f.shot, ref: () => f.ref,
+    signDate: () => f.signDate, refund: () => f.refund, shot: () => f.shot, ref: () => f.ref,
   };
   const inputsFor = (key) => ({
     dob: [f.dobD, f.dobM, f.dobY],
@@ -234,10 +234,11 @@ export function initRegistration({ audio }) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return E.signDate;
       return v > todayIso() ? E.signDateFuture : '';
     },
+    refund: () => (f.refund.checked ? '' : E.refund),
     shot: () => (state.shot ? '' : E.shot),
     ref: () => (text(f.ref).length > MAX.ref ? E.tooLong : ''),
   };
-  const STEP_FIELDS = [['name', 'dob'], ['parent', 'address', 'phones', 'medical', 'dietary'], ['consent', 'agree', 'signature', 'signDate'], ['shot', 'ref']];
+  const STEP_FIELDS = [['name', 'dob'], ['parent', 'address', 'phones', 'medical', 'dietary'], ['consent', 'agree', 'signature', 'signDate'], ['refund', 'shot', 'ref']];
 
   function check(key) {
     const msg = rules[key]();
@@ -308,6 +309,7 @@ export function initRegistration({ audio }) {
   }));
   consentInputs.forEach((i) => i.addEventListener('change', () => { check('consent'); audio.play('tick'); }));
   f.agree.addEventListener('change', () => { if (state.touched.has('agree') || f.agree.checked) check('agree'); });
+  f.refund.addEventListener('change', () => { if (state.touched.has('refund') || f.refund.checked) check('refund'); });
 
   // ---------- Seats and category ----------
   function renderSeats() {
@@ -554,6 +556,7 @@ export function initRegistration({ audio }) {
       dietary: text(f.dietary),
       consent: consentInputs.find((i) => i.checked)?.value || '',
       agree: f.agree.checked,
+      refundAck: f.refund.checked,
       signature: typedMode ? '' : signature.toDataURL(),
       signatureTyped: typedMode ? typedInput.value.trim() : '',
       signDate: f.signDate.value,
@@ -663,7 +666,7 @@ export function initRegistration({ audio }) {
   const fmtDate = (iso) => {
     const [y, m, d] = String(iso).split('-').map(Number);
     if (!y) return iso;
-    return T.lang === 'bo' ? iso : new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+    return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
   };
   function record(submittedAt) {
     const p = payload();
@@ -693,7 +696,7 @@ export function initRegistration({ audio }) {
       ],
       payment: {
         title: P.payment,
-        rows: [[P.amount, T.pay.amount], [P.payee, T.pay.payee], [P.upiId, T.pay.upiId], [P.ref, none(p.paymentRef)], [P.submitted, `${at} IST`]],
+        rows: [[P.amount, `${T.pay.amount} (${R.pay.nonRefundableShort})`], [P.payee, T.pay.payee], [P.upiId, T.pay.upiId], [P.ref, none(p.paymentRef)], [P.submitted, `${at} IST`]],
         screenshot: p.screenshot.data,
       },
     };

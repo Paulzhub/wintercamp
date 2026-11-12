@@ -224,7 +224,7 @@ export function initLightbox({ items, onIndex, audio }) {
     animating = true;
     const el = currentMedia();
     const tl = gsap.timeline({ defaults: { duration: DUR, ease: 'std' }, onComplete: () => { animating = false; } });
-    tl.fromTo(box, { backgroundColor: 'rgba(12,12,12,0)' }, { backgroundColor: 'rgba(12,12,12,0.96)', clearProps: 'backgroundColor' }, 0);
+    tl.fromTo(box, { backgroundColor: 'rgba(12,7,45,0)' }, { backgroundColor: 'rgba(12,7,45,0.96)', clearProps: 'backgroundColor' }, 0);
     tl.fromTo([cap, ...box.querySelectorAll('button')], { opacity: 0 }, { opacity: 1, clearProps: 'opacity' }, 0);
     if (el) tl.fromTo(el, fromThumb(el, thumb), { x: 0, y: 0, scale: 1, opacity: 1, clearProps: 'transform,opacity' }, 0);
   }
@@ -270,7 +270,7 @@ export function initLightbox({ items, onIndex, audio }) {
     animating = true;
     const el = currentMedia();
     const tl = gsap.timeline({ defaults: { duration: DUR, ease: 'std' }, onComplete: () => { gsap.set([box, cap, ...box.querySelectorAll('button')], { clearProps: 'backgroundColor,opacity' }); finishClose(); } });
-    tl.to(box, { backgroundColor: 'rgba(12,12,12,0)' }, 0);
+    tl.to(box, { backgroundColor: 'rgba(12,7,45,0)' }, 0);
     tl.to([cap, ...box.querySelectorAll('button')], { opacity: 0 }, 0);
     if (el) tl.to(el, fromThumb(el, thumb), 0);
   }

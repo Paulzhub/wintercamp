@@ -16,9 +16,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(import.meta.dirname, 'index.html'),
-        bo: resolve(import.meta.dirname, 'bo/index.html'),
         privacy: resolve(import.meta.dirname, 'privacy/index.html'),
-        boPrivacy: resolve(import.meta.dirname, 'bo/privacy/index.html'),
       },
     },
   },

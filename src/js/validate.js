@@ -36,7 +36,6 @@ export function dobProblem(dob, category, cats, today = todayIso()) {
   const age = ageOn(dob, c.start);
   if (category === 'kids' && age > c.maxAge) return 'dobKids';
   if (category === 'youth' && age < c.minAge) return 'dobYouthYoung';
-  if (category === 'youth' && age > c.maxAge) return 'dobYouth';
   if (age < c.minAge) return 'dobInvalid';
   return null;
 }

@@ -12,17 +12,21 @@ varying vec2 vUv;
 uniform float uAspect; uniform float uTime; uniform float uRise; uniform vec2 uLight; uniform float uBoost;
 float hash(float n){ return fract(sin(n) * 43758.5453); }
 float noise(float x){ float i = floor(x); float f = fract(x); return mix(hash(i), hash(i + 1.0), f * f * (3.0 - 2.0 * f)); }
+// The poster's paint strokes: a smooth spectrum around the light.
+vec3 spectrum(float t){ return 0.5 + 0.5 * cos(6.28318 * (t + vec3(0.0, 0.33, 0.67))); }
 void main(){
   vec2 p = vec2((vUv.x * 2.0 - 1.0) * uAspect, vUv.y * 2.0 - 1.0);
-  vec3 col = mix(vec3(0.098), vec3(0.06), smoothstep(-1.0, 1.0, p.y));
+  // Deep indigo (#180E55), a little lighter low down where the light rises.
+  vec3 col = mix(vec3(0.115, 0.07, 0.40), vec3(0.06, 0.035, 0.24), smoothstep(-1.0, 1.0, p.y));
   vec2 d = p - uLight; float r = length(d);
   float k = uRise * (1.0 + uBoost * 1.3);
-  col += vec3(1.0, 0.93, 0.84) * exp(-r * (2.4 - uBoost * 0.9)) * 0.42 * k;
-  col += vec3(0.89, 0.09, 0.10) * exp(-r * 1.3) * 0.08 * k;
+  col += vec3(1.0, 0.96, 1.0) * exp(-r * (2.4 - uBoost * 0.9)) * 0.42 * k;
+  col += vec3(0.90, 0.12, 0.48) * exp(-r * 1.3) * 0.16 * k;
+  col += vec3(0.05, 0.67, 0.89) * exp(-r * 0.8) * 0.04 * k;
   float a = atan(d.y, d.x);
   float rays = noise(a * 10.0 + uTime * 0.12) * noise(a * 23.0 - uTime * 0.08);
   rays = pow(rays, 1.6) * smoothstep(1.9, 0.05, r) * smoothstep(-0.2, 0.5, d.y / max(r, 0.001));
-  col += vec3(1.0, 0.95, 0.88) * rays * 0.26 * k;
+  col += mix(vec3(1.0), spectrum(a * 0.48 + 0.1), 0.7) * rays * 0.34 * k;
   col *= 1.0 - 0.32 * smoothstep(0.6, 1.7, length(p * vec2(0.7, 1.0)));
   col += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 255.0;
   gl_FragColor = vec4(col, 1.0);
@@ -30,6 +34,7 @@ void main(){
 
 const SNOW_VERT = /* glsl */ `
 attribute vec3 aSeed;
+varying vec3 vTint;
 uniform float uTime; uniform float uAspect; uniform float uPx; uniform vec2 uWind; uniform vec2 uLight; uniform float uRise; uniform float uBoost;
 varying float vAlpha;
 void main(){
@@ -39,12 +44,16 @@ void main(){
   gl_Position = projectionMatrix * modelViewMatrix * vec4(x, y, 0.0, 1.0);
   gl_PointSize = (1.6 + aSeed.z * 3.6) * uPx;
   float near = exp(-length(vec2(x, y) - uLight) * 1.5);
+  // Most flakes are white; about one in eight takes a colour from the poster.
+  vec3 tint = 0.5 + 0.5 * cos(6.28318 * (fract(aSeed.x * 7.13) + vec3(0.0, 0.33, 0.67)));
+  vTint = mix(vec3(1.0, 0.98, 1.0), tint, step(0.875, fract(aSeed.y * 13.7)) * 0.9);
   vAlpha = (0.22 + aSeed.z * 0.48) * (0.55 + near * 1.6 * uRise * (1.0 + uBoost));
 }`;
 const SNOW_FRAG = /* glsl */ `
 precision mediump float;
 varying float vAlpha;
-void main(){ float d = length(gl_PointCoord - 0.5); gl_FragColor = vec4(vec3(1.0, 0.97, 0.92), smoothstep(0.5, 0.0, d) * vAlpha); }`;
+varying vec3 vTint;
+void main(){ float d = length(gl_PointCoord - 0.5); gl_FragColor = vec4(vTint, smoothstep(0.5, 0.0, d) * vAlpha); }`;
 
 // Snow settling on the ridge lines: a strip that hugs each ridge and thickens with uSettle.
 const CAP_VERT = /* glsl */ `
@@ -66,7 +75,7 @@ void main(){
   // Brightest along the ridge line, fading softly towards the top of the drift.
   float t = (vSide + 1.0) * 0.5;
   float a = (1.0 - smoothstep(0.35, 1.0, t)) * uOpacity * min(1.0, uSettle * 3.0);
-  gl_FragColor = vec4(vec3(0.914, 0.925, 0.937) * (0.75 + 0.25 * uRise), a);
+  gl_FragColor = vec4(vec3(0.957, 0.945, 0.984) * (0.75 + 0.25 * uRise), a);
 }`;
 
 // Seeded ridge profile: a few layered sines read as a mountain line.
@@ -83,9 +92,9 @@ function ridgeY(x, k) {
 }
 
 const RIDGE = [
-  { base: new Color('#262626'), top: new Color('#4c4744'), depth: 0.03 },
-  { base: new Color('#1f1f1f'), top: new Color('#36322f'), depth: 0.06 },
-  { base: new Color('#1C1C1C'), top: new Color('#262321'), depth: 0.1 },
+  { base: new Color('#2A1A78'), top: new Color('#5A3A9E'), depth: 0.03 },
+  { base: new Color('#1F1268'), top: new Color('#3B2486'), depth: 0.06 },
+  { base: new Color('#180E55'), top: new Color('#25166C'), depth: 0.1 },
 ];
 
 export function createScene(canvas, { reduced = false } = {}) {
@@ -93,7 +102,7 @@ export function createScene(canvas, { reduced = false } = {}) {
   // Pixel ratio capped at 2 (1.5 on phones, where the scene sits behind text).
   const dpr = Math.min(window.devicePixelRatio || 1, window.innerWidth < 768 ? 1.5 : 2);
   renderer.setPixelRatio(dpr);
-  renderer.setClearColor('#1C1C1C', 1);
+  renderer.setClearColor('#180E55', 1);
 
   const scene = new Scene();
   const camera = new OrthographicCamera(-1, 1, 1, -1, -10, 10);
