@@ -10,7 +10,7 @@ const M = 96; // page margin
 const FOOT = 120; // space kept for the footer
 const PT = 72 / DPI; // canvas px -> PDF points
 
-const C = { dark: '#1C1C1C', light: '#E9ECEF', red: '#E3171A', text: '#111111', muted: '#4A4A4A', line: '#D4D8DC', onDark: '#F5F5F5' };
+const C = { dark: '#180E55', light: '#F4F1FB', red: '#D1146C', text: '#180E55', muted: '#4A4270', line: '#D9D3EC', onDark: '#F5F5F5' };
 const hasBo = (s) => /[ༀ-࿿]/.test(s);
 
 // Tibetan has no spaces between words: break after the tsheg (་) or shad (།).

@@ -32,8 +32,8 @@ export function initSignature(canvas, wrap, { onChange } = {}) {
     c.clearRect(0, 0, w, h);
     c.lineCap = 'round';
     c.lineJoin = 'round';
-    c.strokeStyle = '#111111';
-    c.fillStyle = '#111111';
+    c.strokeStyle = '#180E55';
+    c.fillStyle = '#180E55';
     c.lineWidth = width;
     strokes.forEach((s) => drawStroke(c, s, w, h, width));
   }

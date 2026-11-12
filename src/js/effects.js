@@ -89,7 +89,8 @@ export function burst(host, { x, y } = {}) {
   (host.closest('dialog') || document.body).append(canvas);
   const ctx = canvas.getContext('2d');
   const light = host.closest('[data-tone="light"], .light');
-  const colors = light ? ['227,23,26', '28,28,28', '227,23,26'] : ['227,23,26', '233,236,239', '245,245,245'];
+  // The poster's strokes; on light surfaces only the colours that stay visible there.
+  const colors = light ? ['230,30,123', '12,170,228', '131,25,209', '248,156,56', '209,20,108'] : ['230,30,123', '248,156,56', '252,241,40', '145,234,67', '12,170,228', '205,16,221', '244,241,251'];
   const parts = Array.from({ length: window.innerWidth < 768 ? 48 : 72 }, (_, i) => {
     const a = Math.random() * Math.PI * 2;
     const d = 80 + Math.random() * Math.min(360, Math.max(window.innerWidth, window.innerHeight) * 0.42);

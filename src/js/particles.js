@@ -1,18 +1,22 @@
 // Falling particles behind section content, like the snow in the hero:
-//   light sections  -> accent red  (#E3171A)
-//   dark sections   -> secondary   (#E9ECEF)
+//   light sections  -> accent: the poster's pink and cyan
+//   dark sections   -> secondary: the poster's bright strokes (pink, orange,
+//                      yellow, lime, cyan, purple) among soft white
 // Any element with data-particles="accent" or "secondary" gets a canvas. One
 // shared animation loop draws only the canvases that are on screen. Reduced
 // motion: particles are drawn once, standing still.
 // Touch (and the mouse) pushes nearby particles aside, and a tap scatters them;
 // each one eases back to its own path afterwards.
 
-const COLORS = { accent: [227, 23, 26], secondary: [233, 236, 239] };
+const COLORS = {
+  accent: [[230, 30, 123], [230, 30, 123], [12, 170, 228], [131, 25, 209]],
+  secondary: [[244, 241, 251], [244, 241, 251], [230, 30, 123], [248, 156, 56], [252, 241, 40], [145, 234, 67], [12, 170, 228], [205, 16, 221]],
+};
 const reduce = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function makeField(host) {
   const kind = host.dataset.particles in COLORS ? host.dataset.particles : 'secondary';
-  const [r, g, b] = COLORS[kind];
+  const palette = COLORS[kind].map((c) => c.join(','));
   const canvas = document.createElement('canvas');
   canvas.className = 'particles';
   canvas.setAttribute('aria-hidden', 'true');
@@ -50,10 +54,10 @@ function makeField(host) {
       a: (light ? 0.14 : 0.18) + z * (light ? 0.28 : 0.42),
       dx: 0, dy: 0, ux: 0, uy: 0, // push from a finger or pointer, and its velocity
       z,
+      rgb: palette[Math.floor(Math.random() * palette.length)],
     };
   }
   field.spawn = spawn;
-  field.rgb = `${r},${g},${b}`;
   return field;
 }
 
@@ -98,9 +102,9 @@ function draw(f, dt, t = performance.now() / 1000) {
     const x = p.x + Math.sin(t * 0.6 + p.phase) * p.sway + p.dx;
     const py = p.y + p.dy;
     const glow = ctx.createRadialGradient(x, py, 0, x, py, p.r * 3);
-    glow.addColorStop(0, `rgba(${f.rgb},${p.a})`);
-    glow.addColorStop(0.35, `rgba(${f.rgb},${p.a * 0.6})`);
-    glow.addColorStop(1, `rgba(${f.rgb},0)`);
+    glow.addColorStop(0, `rgba(${p.rgb},${p.a})`);
+    glow.addColorStop(0.35, `rgba(${p.rgb},${p.a * 0.6})`);
+    glow.addColorStop(1, `rgba(${p.rgb},0)`);
     ctx.fillStyle = glow;
     ctx.beginPath();
     ctx.arc(x, py, p.r * 3, 0, Math.PI * 2);

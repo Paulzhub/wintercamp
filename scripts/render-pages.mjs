@@ -125,7 +125,7 @@ ${csp()}
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(description)}">
 <meta name="referrer" content="strict-origin-when-cross-origin">
-<meta name="theme-color" content="#1C1C1C">
+<meta name="theme-color" content="#180E55">
 <meta name="color-scheme" content="dark light">
 <link rel="canonical" href="${abs(self)}">
 <link rel="icon" href="${base}favicon.svg" type="image/svg+xml">
