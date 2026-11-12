@@ -209,7 +209,7 @@ test('a "Paid, no seat" registration gets its PDF too', () => {
   assert.equal(g.doPost(reg).status, 'last_seat');
   assert.equal(g.doPost({ action: 'pdf', submissionId: reg.submissionId, pdf }).status, 'saved');
   assert.ok(g.files.some((f) => f.folder === 'Winter Camp 2027/Kids/Registration PDFs'));
-  assert.match(g.sheet('Paid, no seat').rows[1][g.context.COL['Registration PDF']], /drive\.google\.com/);
+  assert.match(g.sheet('Paid, no seat').rows[1][g.context.COL['Registration PDF']], /^https:\/\/drive\.google\.com\//);
 });
 
 test('tabs made by an earlier version get the "Registration PDF" heading added', () => {
