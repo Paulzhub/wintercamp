@@ -1,4 +1,3 @@
-import { initLangMemory } from './prefs.js';
 import { initMotion } from './motion.js';
 import { setModalMotion } from './modal.js';
 import { initAudio } from './audio.js';
@@ -15,7 +14,6 @@ import { initEffects } from './effects.js';
 export function boot() {
   const html = document.documentElement;
   html.classList.add('js-ok');
-  if (initLangMemory()) return; // redirecting to the remembered language
   try {
     const audio = initAudio();
     html.wcAudio = audio; // read by the end-to-end checks

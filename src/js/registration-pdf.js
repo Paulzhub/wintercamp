@@ -2,7 +2,6 @@
 // shaped by the browser with the site's own fonts. Each page is drawn on a canvas
 // and stored in the PDF as a JPEG image (no PDF library needed). The same file is
 // downloaded or shared by the family and sent to the organisers' private Drive.
-import '@fontsource/jomolhari/tibetan-400.css';
 
 const DPI = 150;
 const W = 1240; // A4 at 150 dpi
@@ -48,23 +47,19 @@ async function loadImage(src) {
 }
 
 /**
- * data: { lang, ref, submittedAt, sections: [{ title, rows: [[label, value]], signature?, typed? }],
+ * data: { ref, submittedAt, sections: [{ title, rows: [[label, value]], signature?, typed? }],
  *         payment: { rows: [[label, value]], screenshot: dataUrl }, labels: { title, page, contact, screenshot, signature } }
  * Returns a Blob of type application/pdf.
  */
 export async function buildRegistrationPdf(data) {
-  const bo = data.lang === 'bo';
-  const body = bo ? "'Jomolhari', 'Poppins', sans-serif" : "'Poppins', 'Jomolhari', sans-serif";
-  const lh = bo ? 1.8 : 1.5;
-  // Jomolhari looks much smaller than Poppins at the same size, so Tibetan pages use larger text.
-  const k = bo ? 1.2 : 1;
-  const px = (n) => Math.round(n * k);
+  const body = "'Poppins', sans-serif";
+  const lh = 1.5;
+  const px = (n) => Math.round(n);
   if (document.fonts) {
     await Promise.all([
       document.fonts.load("400 40px 'Anton'"),
       document.fonts.load("400 28px 'Poppins'"),
       document.fonts.load("600 28px 'Poppins'"),
-      document.fonts.load("400 28px 'Jomolhari'", 'ཀ'),
     ]).catch(() => {});
   }
   const [sig, shot] = await Promise.all([loadImage(data.signature), loadImage(data.payment.screenshot)]);
@@ -123,7 +118,7 @@ export async function buildRegistrationPdf(data) {
     y += 16;
     ctx.fillStyle = C.red;
     ctx.fillRect(M, y - 26, 8, 32);
-    ctx.font = `${bo ? 400 : 600} ${px(30)}px ${body}`;
+    ctx.font = `600 ${px(30)}px ${body}`;
     ctx.fillStyle = C.text;
     ctx.fillText(text, M + 24, y);
     y += 24;

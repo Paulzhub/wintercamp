@@ -1,6 +1,7 @@
 // Pre-renders the pages so every word of content is in the delivered HTML:
-//   index.html, bo/index.html, privacy/index.html, bo/privacy/index.html
-// plus public/robots.txt, public/sitemap.xml and public/llms.txt.
+//   index.html and privacy/index.html
+// plus public/robots.txt, public/sitemap.xml, public/llms.txt, and small
+// public/bo/ pages that send old Tibetan links to the English page.
 // These outputs are generated files (git-ignored). Edit this script, site.config.js
 // or src/i18n/*.json instead.
 
@@ -17,7 +18,7 @@ const origin = config.site.origin;
 const appsScriptUrl = process.env.WC_APPS_SCRIPT_URL || config.appsScriptUrl;
 
 const readJson = async (p) => JSON.parse(await readFile(path.join(root, p), 'utf8'));
-const strings = { en: await readJson('src/i18n/en.json'), bo: await readJson('src/i18n/bo.json') };
+const strings = { en: await readJson('src/i18n/en.json') };
 const gallery = await readJson('src/generated/gallery.json');
 
 const esc = (s) =>
@@ -28,7 +29,6 @@ const tel = config.contact.phoneHref;
 
 const urls = {
   en: { home: base, privacy: `${base}privacy/` },
-  bo: { home: `${base}bo/`, privacy: `${base}bo/privacy/` },
 };
 const abs = (p) => origin + p;
 
@@ -74,7 +74,7 @@ function jsonLd(lang, t) {
     name: config.camp.organiser,
     url: abs(base),
     telephone: phone,
-    contactPoint: { '@type': 'ContactPoint', telephone: phone, contactType: 'registration', availableLanguage: ['en', 'bo'] },
+    contactPoint: { '@type': 'ContactPoint', telephone: phone, contactType: 'registration', availableLanguage: ['en'] },
   };
   const event = (key, label, minAge, maxAge) => ({
     '@type': 'Event',
@@ -88,10 +88,10 @@ function jsonLd(lang, t) {
     location: place,
     organizer: { '@id': org['@id'] },
     image: abs(base) + 'og-image.jpg',
-    inLanguage: ['en', 'bo'],
+    inLanguage: 'en',
     isAccessibleForFree: false,
     maximumAttendeeCapacity: config.categories[key].seats,
-    audience: { '@type': 'PeopleAudience', suggestedMinAge: minAge, suggestedMaxAge: maxAge },
+    audience: { '@type': 'PeopleAudience', suggestedMinAge: minAge, ...(maxAge === null ? {} : { suggestedMaxAge: maxAge }) },
     offers: {
       '@type': 'Offer',
       price: String(config.fee.amount),
@@ -103,9 +103,9 @@ function jsonLd(lang, t) {
   });
   const graph = [
     org,
-    { '@type': 'WebSite', '@id': abs(base) + '#website', name: config.camp.name, url: abs(base), inLanguage: ['en', 'bo'], publisher: { '@id': org['@id'] } },
-    event('youth', 'Youth (10 to 18)', 10, 18),
-    event('kids', 'Kids (under 10)', 0, 9),
+    { '@type': 'WebSite', '@id': abs(base) + '#website', name: config.camp.name, url: abs(base), inLanguage: 'en', publisher: { '@id': org['@id'] } },
+    event('youth', 'Youth (11 and over)', 11, null),
+    event('kids', 'Kids (11 and under)', 0, 11),
     {
       '@type': 'FAQPage',
       '@id': abs(urls[lang].home) + '#faq',
@@ -128,16 +128,13 @@ ${csp()}
 <meta name="theme-color" content="#1C1C1C">
 <meta name="color-scheme" content="dark light">
 <link rel="canonical" href="${abs(self)}">
-<link rel="alternate" hreflang="en" href="${abs(urls.en[pathKey])}">
-<link rel="alternate" hreflang="bo" href="${abs(urls.bo[pathKey])}">
-<link rel="alternate" hreflang="x-default" href="${abs(urls.en[pathKey])}">
 <link rel="icon" href="${base}favicon.svg" type="image/svg+xml">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="${esc(config.camp.name)}">
 <meta property="og:title" content="${esc(title)}">
 <meta property="og:description" content="${esc(description)}">
 <meta property="og:url" content="${abs(self)}">
-<meta property="og:locale" content="${lang === 'bo' ? 'bo_IN' : 'en_IN'}">
+<meta property="og:locale" content="en_IN">
 <meta property="og:image" content="${abs(base)}og-image.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -152,14 +149,6 @@ ${withLd ? `<script type="application/ld+json">${jsonLd(lang, t)}</script>` : ''
 
 const en = (s) => `<span lang="en">${s}</span>`;
 const brandWord = 'ILLUMINATE';
-
-function langToggle(lang, t, pathKey, extra = '') {
-  const other = lang === 'en' ? 'bo' : 'en';
-  return `<div class="lang ${extra}" role="group" aria-label="Language / སྐད་ཡིག">
-  <span class="lang__opt is-active" lang="${lang}" aria-current="true"><span class="sr-only">${esc(t.common.langCurrentLabel)}</span><span aria-hidden="true">${esc(t.common.langCurrent)}</span></span>
-  <a class="lang__opt" href="${urls[other][pathKey]}" hreflang="${other}" lang="${other}" data-lang="${other}" aria-label="${esc(t.common.langSwitchLabel)}">${esc(t.common.langSwitch)}</a>
-</div>`;
-}
 
 function galleryItems(lang, t) {
   const total = gallery.length;
@@ -203,7 +192,7 @@ function registration(lang, t) {
   const opt = `<span class="opt">(${esc(r.optional)})</span>`;
   const err = (id) => `<p class="field__error" id="err-${id}" hidden></p>`;
   const years = [];
-  for (let y = 2027; y >= 2007; y--) years.push(y);
+  for (let y = 2027; y >= 1950; y--) years.push(y); // Youth has no upper age limit
   const options = (list) => list.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('');
   const cat = (key) => `<article class="cat" data-cat="${key}">
   <div class="cat__head">
@@ -448,7 +437,6 @@ function siteHeader(lang, t, pathKey) {
     </ul>
   </nav>
   <div class="nav__actions">
-    ${langToggle(lang, t, pathKey)}
     <button type="button" class="icon-btn sound" data-sound-toggle aria-pressed="false" aria-label="${esc(t.common.soundTip)}" data-tip="${esc(t.common.soundTip)}"><span class="sound__on" aria-hidden="true">${icons.soundOn}</span><span class="sound__off" aria-hidden="true">${icons.soundOff}</span></button>
     ${registerBtn('btn btn--red btn--sm nav__register', t.common.register, `data-magnetic data-cursor="${esc(t.common.register)}"`)}
     <button type="button" class="icon-btn nav__burger" id="menu-open" aria-haspopup="dialog" aria-controls="menu" aria-label="${esc(t.common.menuOpen)}"><span class="burger" aria-hidden="true"><span></span><span></span></span></button>
@@ -468,7 +456,6 @@ function siteHeader(lang, t, pathKey) {
   <div class="menu__foot">
     ${registerBtn('btn btn--red', t.common.registerNow)}
     <button type="button" class="btn btn--outline sound menu__sound" data-sound-toggle aria-pressed="false"><span class="btn__icon" aria-hidden="true"><span class="sound__on">${icons.soundOn}</span><span class="sound__off">${icons.soundOff}</span></span><span class="btn__label">${esc(t.loader.soundLabel)}</span></button>
-    ${langToggle(lang, t, pathKey)}
     <a class="link" href="${tel}">${phone}</a>
   </div>
 </dialog>`;
@@ -506,13 +493,6 @@ ${head({ lang, t, title: t.meta.title, description: t.meta.description, pathKey:
     <p class="loader__sub">${esc(t.hero.sub)}</p>
     <div class="loader__bar" role="progressbar" aria-label="${esc(t.loader.label)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div>
     <div class="loader__choice">
-      <div class="loader__step" id="loader-lang" role="group" aria-labelledby="lang-ask" hidden>
-        <p class="loader__ask" id="lang-ask"><span lang="en">Choose your language</span> <span aria-hidden="true">·</span> <span lang="bo">སྐད་ཡིག་འདེམས།</span></p>
-        <div class="loader__actions">
-          <button type="button" class="btn btn--outline loader__lang" data-pick-lang="en" lang="en" data-href="${urls.en.home}">English</button>
-          <button type="button" class="btn btn--outline loader__lang" data-pick-lang="bo" lang="bo" data-href="${urls.bo.home}">བོད་ཡིག</button>
-        </div>
-      </div>
       <div class="loader__step" id="loader-sound" role="group" aria-label="${esc(t.loader.soundLabel)}" hidden>
         <div class="loader__actions" id="loader-actions">
           <button type="button" class="btn btn--red" id="enter-sound"><span class="btn__icon" aria-hidden="true">${icons.soundOn}</span><span class="btn__label">${esc(t.loader.withSound)}</span></button>
@@ -636,7 +616,6 @@ ${galleryItems(lang, t)}
         <p><a class="link" href="${urls[lang].privacy}">${esc(t.footer.privacy)}</a></p>
       </div>
       <div class="footer__tools" data-reveal>
-        ${langToggle(lang, t, 'home')}
         <a class="icon-btn footer__top" href="#home" aria-label="${esc(t.common.backToTop)}" data-tip="${esc(t.common.backToTop)}" data-magnetic>${icons.up}</a>
       </div>
     </div>
@@ -711,20 +690,19 @@ function llmsTxt() {
 
 - Organiser: ${c.camp.organiser}
 - Theme: ${c.camp.theme}: ${c.camp.themeLine}
-- Youth camp (ages 10 to 18): 4 to 6 January 2027, ${c.categories.youth.seats} seats
-- Kids camp (under 10): 11 to 13 January 2027, ${c.categories.kids.seats} seats
+- Youth camp (age 11 and over): 4 to 6 January 2027, ${c.categories.youth.seats} seats
+- Kids camp (age 11 and under): 11 to 13 January 2027, ${c.categories.kids.seats} seats
 - Venue: ${c.venue.name}, ${c.venue.street}, ${c.venue.locality}, ${c.venue.region}, ${c.venue.country}, ${c.venue.postalCode}
 - Fee: ${c.fee.display} per child, paid by UPI (UPI ID ${c.upi.id}, payee name ${c.upi.payeeName})
 - Seats: first come, first served. A seat is given only when the registration form is sent with a payment screenshot.
 - Activities: games, craft, storytelling, music time, snacks and a hot lunch every day, and a picnic on day 3 with a treasure hunt, team challenges and prizes
 - Staff ratio: 1 staff member to 7 children
 - Contact: ${c.contact.phoneDisplay}
-- Languages: English and Tibetan
+- Language: English
 
 ## Pages
 
 - [${c.camp.name} (English)](${abs(urls.en.home)}): camp details, activities, gallery, questions and answers, registration
-- [${c.camp.name} (Tibetan)](${abs(urls.bo.home)}): the same page in Tibetan
 - [Privacy notice](${abs(urls.en.privacy)}): what is collected at registration and how it is used
 
 ## Questions and answers
@@ -773,19 +751,12 @@ Sitemap: ${abs(base)}sitemap.xml
 function sitemap() {
   const today = new Date().toISOString().slice(0, 10);
   const entry = (key) =>
-    ['en', 'bo']
-      .map(
-        (lang) => `  <url>
-    <loc>${abs(urls[lang][key])}</loc>
+`  <url>
+    <loc>${abs(urls.en[key])}</loc>
     <lastmod>${today}</lastmod>
-    <xhtml:link rel="alternate" hreflang="en" href="${abs(urls.en[key])}"/>
-    <xhtml:link rel="alternate" hreflang="bo" href="${abs(urls.bo[key])}"/>
-    <xhtml:link rel="alternate" hreflang="x-default" href="${abs(urls.en[key])}"/>
-  </url>`,
-      )
-      .join('\n');
+  </url>`;
   return `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${entry('home')}
 ${entry('privacy')}
 </urlset>
@@ -799,10 +770,28 @@ async function out(rel, content) {
 }
 
 await out('index.html', homePage('en'));
-await out('bo/index.html', homePage('bo'));
 await out('privacy/index.html', privacyPage('en'));
-await out('bo/privacy/index.html', privacyPage('bo'));
+// The Tibetan pages were removed in round 6. Old /bo/ links (shared before then)
+// land on these and go straight to the English page, keeping any #section.
+const goEnglish = (to) => `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="robots" content="noindex">
+<meta http-equiv="refresh" content="1; url=${to}">
+<link rel="canonical" href="${abs(to)}">
+<title>${esc(config.camp.name)}</title>
+<script src="${base}bo/go.js" data-to="${to}"></script>
+</head>
+<body><p><a href="${to}">${esc(config.camp.name)}</a></p></body>
+</html>
+`;
+await out('public/bo/index.html', goEnglish(urls.en.home));
+await out('public/bo/privacy/index.html', goEnglish(urls.en.privacy));
+await out('public/bo/go.js', "const s = document.currentScript;\nlocation.replace(s.dataset.to + location.hash);\n");
 await out('public/robots.txt', robots);
 await out('public/sitemap.xml', sitemap());
 await out('public/llms.txt', llmsTxt());
-console.log(`pages: rendered en + bo (${dev ? 'dev, no CSP' : 'production'}), base ${base}`);
+console.log(`pages: rendered (${dev ? 'dev, no CSP' : 'production'}), base ${base}`);

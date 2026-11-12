@@ -663,7 +663,7 @@ export function initRegistration({ audio }) {
   const fmtDate = (iso) => {
     const [y, m, d] = String(iso).split('-').map(Number);
     if (!y) return iso;
-    return T.lang === 'bo' ? iso : new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+    return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
   };
   function record(submittedAt) {
     const p = payload();

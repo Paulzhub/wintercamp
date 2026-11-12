@@ -68,11 +68,11 @@ test('every field is validated again on the server', () => {
   assert.equal(got.consent, 'consent');
   assert.equal(got.agree, 'agree');
   assert.equal(got.signDate, 'signDateFuture');
-  assert.equal(g.doPost(valid({ category: 'youth', dob: '2018-01-01' })).fields[0].code, 'dobYouthYoung');
-  assert.equal(g.doPost(valid({ category: 'youth', dob: '2008-01-03' })).fields[0].code, 'dobYouth');
-  assert.equal(g.doPost(valid({ category: 'youth', dob: '2008-01-05' })).status, 'registered'); // 18 on 4 Jan 2027
-  assert.equal(g.doPost(valid({ category: 'kids', dob: '2017-01-12' })).status, 'registered'); // 9 on 11 Jan 2027
-  assert.equal(g.doPost(valid({ category: 'kids', dob: '2017-01-11' })).fields[0].code, 'dobKids'); // turns 10 that day
+  assert.equal(g.doPost(valid({ category: 'youth', dob: '2016-01-05' })).fields[0].code, 'dobYouthYoung'); // 10 on 4 Jan 2027
+  assert.equal(g.doPost(valid({ category: 'youth', dob: '2016-01-04' })).status, 'registered'); // 11 on 4 Jan 2027
+  assert.equal(g.doPost(valid({ category: 'youth', dob: '1995-06-01' })).status, 'registered'); // no upper limit
+  assert.equal(g.doPost(valid({ category: 'kids', dob: '2015-01-12' })).status, 'registered'); // 11 on 11 Jan 2027
+  assert.equal(g.doPost(valid({ category: 'kids', dob: '2015-01-11' })).fields[0].code, 'dobKids'); // turns 12 that day
   assert.equal(g.doPost(valid({ name: 'x'.repeat(101) })).fields[0].code, 'tooLong');
   assert.equal(g.doPost(valid({ signature: png.replace('image/png', 'image/jpeg') })).fields[0].field, 'signature');
 });

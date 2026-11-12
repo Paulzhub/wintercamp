@@ -19,21 +19,21 @@ export default {
     organiser: "Kid's Happy Club",
   },
 
-  // Age is checked on the first day of that category's camp.
+  // Age is checked on the first day of that category's camp. 11-year-olds may join either group.
   categories: {
     youth: {
       seats: 30,
       start: '2027-01-04',
       end: '2027-01-06',
-      minAge: 10, // inclusive
-      maxAge: 18, // inclusive
+      minAge: 11, // inclusive
+      maxAge: null, // no upper limit
     },
     kids: {
       seats: 30,
       start: '2027-01-11',
       end: '2027-01-13',
       minAge: 0, // inclusive
-      maxAge: 9, // inclusive ("under 10")
+      maxAge: 11, // inclusive ("11 and under")
     },
   },
 

@@ -20,7 +20,7 @@
 var CONFIG = {
   seats: { kids: 30, youth: 30 },
   campStart: { kids: '2027-01-11', youth: '2027-01-04' },
-  ages: { kids: [0, 9], youth: [10, 18] }, // inclusive, on the first day of that camp
+  ages: { kids: [0, 11], youth: [11, null] }, // inclusive, on the first day of that camp; Youth has no upper limit
   labels: { kids: 'Kids', youth: 'Youth' },
   rootFolder: 'Winter Camp 2027',
   sheets: { kids: 'Kids registrations', youth: 'Youth registrations', overflow: 'Paid, no seat', old: 'Registrations' },
@@ -242,7 +242,6 @@ function validate_(d) {
     c.age = age;
     if (c.category === 'kids' && age > range[1]) add('dob', 'dobKids');
     else if (c.category === 'youth' && age < range[0]) add('dob', 'dobYouthYoung');
-    else if (c.category === 'youth' && age > range[1]) add('dob', 'dobYouth');
     else if (age < range[0]) add('dob', 'dobInvalid');
   }
 

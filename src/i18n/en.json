@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Winter Camp 2027 · Illuminate: Light of the World · Kid's Happy Club",
-    "description": "Winter Camp 2027 by Kid's Happy Club at Snow View Residency, McLeodganj, Dharamshala. Youth (10 to 18): 4 to 6 January 2027. Kids (under 10): 11 to 13 January 2027. Fee ₹500. 30 seats per group, first come first served.",
+    "description": "Winter Camp 2027 by Kid's Happy Club at Snow View Residency, McLeodganj, Dharamshala. Youth (11 and over): 4 to 6 January 2027. Kids (11 and under): 11 to 13 January 2027. Fee ₹500. 30 seats per group, first come first served.",
     "ogAlt": "Illuminate: Light of the World. Winter Camp 2027, Kid's Happy Club, McLeodganj."
   },
   "common": {
@@ -13,10 +13,6 @@
     "soundOn": "Sound is on. Turn sound off",
     "soundOff": "Sound is off. Turn sound on",
     "soundTip": "Sound on or off",
-    "langSwitch": "བོད",
-    "langSwitchLabel": "བོད་ཡིག (read this page in Tibetan)",
-    "langCurrent": "EN",
-    "langCurrentLabel": "English (current language)",
     "menu": "Menu",
     "menuOpen": "Open menu",
     "menuClose": "Close menu",
@@ -40,9 +36,9 @@
   "hero": {
     "label": "Winter Camp 2027",
     "sub": "Light of the World",
-    "youth": "Youth (10 to 18)",
+    "youth": "Youth (11 and over)",
     "youthDates": "4 to 6 January 2027",
-    "kids": "Kids (under 10)",
+    "kids": "Kids (11 and under)",
     "kidsDates": "11 to 13 January 2027",
     "venue": "Snow View Residency, Jogiwara Road, McLeodganj, Dharamshala",
     "seats": "Limited seats, first come first served",
@@ -120,11 +116,11 @@
     "items": [
       {
         "q": "Who is Winter Camp 2027 for?",
-        "a": "Winter Camp 2027 is run by Kid's Happy Club for two groups: Kids, who are under 10 years old, and Youth, who are 10 to 18 years old. Age is counted on the first day of each group's camp."
+        "a": "Winter Camp 2027 is run by Kid's Happy Club for two groups: Kids, aged 11 and under, and Youth, aged 11 and over. Children who are 11 can join either group. Age is counted on the first day of each group's camp."
       },
       {
         "q": "When is the camp?",
-        "a": "The Youth camp (10 to 18) is from 4 to 6 January 2027. The Kids camp (under 10) is from 11 to 13 January 2027."
+        "a": "The Youth camp (11 and over) is from 4 to 6 January 2027. The Kids camp (11 and under) is from 11 to 13 January 2027."
       },
       {
         "q": "Where is the camp held?",
@@ -168,10 +164,10 @@
     "pick": "Who are you registering?",
     "pickHelp": "Choose a group to open the form.",
     "kids": "Kids",
-    "kidsAge": "Under 10 years old",
+    "kidsAge": "11 years old and under",
     "kidsDates": "11 to 13 January 2027",
     "youth": "Youth",
-    "youthAge": "10 to 18 years old",
+    "youthAge": "11 years old and over",
     "youthDates": "4 to 6 January 2027",
     "seatsLeft": "{n} of {total} seats left",
     "seatsLoading": "Checking seats",
@@ -270,9 +266,8 @@
       "dob": "Choose the day, month and year of birth.",
       "dobInvalid": "This is not a real date. Check the day and month.",
       "dobFuture": "The date of birth cannot be in the future.",
-      "dobKids": "Kids must be under 10 on 11 January 2027. For this date of birth, please choose Youth.",
-      "dobYouth": "Youth must be 10 to 18 years old on 4 January 2027.",
-      "dobYouthYoung": "Youth must be 10 to 18 on 4 January 2027. For this date of birth, please choose Kids.",
+      "dobKids": "Kids must be 11 or under on 11 January 2027. For this date of birth, please choose Youth.",
+      "dobYouthYoung": "Youth must be 11 or over on 4 January 2027. For this date of birth, please choose Kids.",
       "parent": "Enter the parent's or guardian's name.",
       "address": "Enter the address.",
       "phone": "Enter a phone number of up to 10 digits, numbers only (for example 9876543210).",

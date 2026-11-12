@@ -21,8 +21,7 @@ function splitWords(el) {
   if (el.dataset.split) return [...el.querySelectorAll('.w > span')];
   el.dataset.split = '1';
   const text = el.textContent;
-  const bo = el.closest('[lang]')?.getAttribute('lang') === 'bo';
-  const parts = bo ? text.match(/[^\s་།]+[་།]*|\s+/g) || [text] : text.split(/(\s+)/);
+  const parts = text.split(/(\s+)/);
   el.textContent = '';
   const inner = [];
   parts.forEach((p) => {
