@@ -13,7 +13,7 @@ Status: v6, ready to build. The build prompt is in `BUILD_PROMPT.md`.
 | 5 | The signature is drawn on the canvas, with a "Type your name instead" option for anyone who can't draw one. A typed name is stored in its own sheet column | Paul's decision (November 2026; previously drawn only) |
 | 6 | A short "Camp facts and FAQ" block sits above the footer | Needed for answer engines and for parents; see section 9 |
 | 8 | The UPI QR image stays in the repo rather than on Google Drive, and the payee name "Achui Sareo" and UPI ID are shown as text beside it | Drive would not make it harder to replace; see section 11 |
-| 7 | ~~Tibetan has its own address (`/bo/`)~~ Round 6: the site is English only. Old `/bo/` links go to the English page | Simpler to keep accurate; most families read the English |
+| 7 | ~~Tibetan has its own address (`/bo/`)~~ Round 6: the site is English only. Old `/bo/` links go to the English page | Paul's decision in round 6 |
 
 ## 2. Camp facts
 
