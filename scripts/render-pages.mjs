@@ -403,9 +403,11 @@ function registration(lang, t) {
     <div><dt>${esc(r.done.venue)}</dt><dd>${esc(r.done.venueValue)}</dd></div>
   </dl>
   <div class="done__share">
-    <button type="button" class="btn btn--red" id="done-save"><span class="btn__icon" aria-hidden="true">${icons.download}</span><span class="btn__label">${esc(r.done.save)}</span></button>
+    <button type="button" class="btn btn--red" id="done-save"><span class="spinner" aria-hidden="true"></span><span class="btn__icon" aria-hidden="true">${icons.download}</span><span class="btn__label">${esc(r.done.download)}</span></button>
     <button type="button" class="btn btn--dark" id="done-share" hidden><span class="btn__icon" aria-hidden="true">${icons.share}</span><span class="btn__label">${esc(r.done.share)}</span></button>
   </div>
+  <p class="done__note">${esc(r.done.private)}</p>
+  <p class="done__note done__note--error" id="done-error" role="alert" hidden>${esc(r.done.pdfError)}</p>
   <p class="sr-only" id="done-status" role="status" aria-live="polite"></p>
   <button type="button" class="btn btn--ghost" data-close-register><span class="btn__label">${esc(r.done.close)}</span></button>
 </section>
@@ -465,6 +467,7 @@ function siteHeader(lang, t, pathKey) {
   </nav>
   <div class="menu__foot">
     ${registerBtn('btn btn--red', t.common.registerNow)}
+    <button type="button" class="btn btn--outline sound menu__sound" data-sound-toggle aria-pressed="false"><span class="btn__icon" aria-hidden="true"><span class="sound__on">${icons.soundOn}</span><span class="sound__off">${icons.soundOff}</span></span><span class="btn__label">${esc(t.loader.soundLabel)}</span></button>
     ${langToggle(lang, t, pathKey)}
     <a class="link" href="${tel}">${phone}</a>
   </div>
@@ -485,7 +488,7 @@ function homePage(lang) {
   </article>
 </li>`;
   // Strings the scripts need at run time (no personal data).
-  const clientStrings = { lang, api: appsScriptUrl, common: t.common, gallery: t.gallery, reg: t.reg, phone, tel, cats: config.categories };
+  const clientStrings = { lang, api: appsScriptUrl, common: t.common, gallery: t.gallery, reg: t.reg, phone, tel, cats: config.categories, pay: { amount: config.fee.display, payee: config.upi.payeeName, upiId: config.upi.id } };
   const venueLine = `${config.venue.name}, ${config.venue.street}, ${config.venue.locality}, ${config.venue.region}, ${config.venue.country}, ${config.venue.postalCode}`;
 
   return `<!doctype html>
@@ -502,9 +505,20 @@ ${head({ lang, t, title: t.meta.title, description: t.meta.description, pathKey:
     <p class="loader__word" lang="en" aria-hidden="true">${[...brandWord].map((c) => `<span class="loader__ltr">${c}</span>`).join('')}</p>
     <p class="loader__sub">${esc(t.hero.sub)}</p>
     <div class="loader__bar" role="progressbar" aria-label="${esc(t.loader.label)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div>
-    <div class="loader__actions" id="loader-actions">
-      <button type="button" class="btn btn--red" id="enter-sound"><span class="btn__icon" aria-hidden="true">${icons.soundOn}</span><span class="btn__label">${esc(t.loader.withSound)}</span></button>
-      <button type="button" class="btn btn--outline" id="enter-silent"><span class="btn__label">${esc(t.loader.silent)}</span></button>
+    <div class="loader__choice">
+      <div class="loader__step" id="loader-lang" role="group" aria-labelledby="lang-ask" hidden>
+        <p class="loader__ask" id="lang-ask"><span lang="en">Choose your language</span> <span aria-hidden="true">·</span> <span lang="bo">སྐད་ཡིག་འདེམས།</span></p>
+        <div class="loader__actions">
+          <button type="button" class="btn btn--outline loader__lang" data-pick-lang="en" lang="en" data-href="${urls.en.home}">English</button>
+          <button type="button" class="btn btn--outline loader__lang" data-pick-lang="bo" lang="bo" data-href="${urls.bo.home}">བོད་ཡིག</button>
+        </div>
+      </div>
+      <div class="loader__step" id="loader-sound" role="group" aria-label="${esc(t.loader.soundLabel)}" hidden>
+        <div class="loader__actions" id="loader-actions">
+          <button type="button" class="btn btn--red" id="enter-sound"><span class="btn__icon" aria-hidden="true">${icons.soundOn}</span><span class="btn__label">${esc(t.loader.withSound)}</span></button>
+          <button type="button" class="btn btn--outline" id="enter-silent"><span class="btn__label">${esc(t.loader.silent)}</span></button>
+        </div>
+      </div>
     </div>
   </div>
 </div>

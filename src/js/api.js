@@ -33,3 +33,6 @@ export async function sendRegistration(payload) {
     body: JSON.stringify(payload),
   });
 }
+
+// The registration PDF, sent after the registration is accepted (same simple request).
+export const sendPdf = (payload) => sendRegistration(payload);

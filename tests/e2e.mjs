@@ -45,6 +45,24 @@ function staticServer() {
   });
 }
 
+// Reads a PDF made by the site: page count, and the JPEG of each page (to look at).
+function readPdf(buf) {
+  const text = buf.toString('latin1');
+  const pages = (text.match(/\/Type \/Page /g) || []).length;
+  const jpegs = [];
+  let i = 0;
+  while ((i = text.indexOf('/Filter /DCTDecode', i)) >= 0) {
+    const start = text.indexOf('stream\n', i) + 7;
+    const end = text.indexOf('\nendstream', start);
+    jpegs.push(buf.subarray(start, end));
+    i = end;
+  }
+  return { ok: text.startsWith('%PDF-1.4') && text.trimEnd().endsWith('%%EOF') && /startxref\n\d+/.test(text), pages, jpegs };
+}
+// Waits until no view transition is running (they take 0.7 s, longer on a busy machine).
+const settled = (page) => page.waitForFunction(() => !document.getAnimations().some((a) => /view-transition/.test(a.effect?.pseudoElement || '')), null, { timeout: 5000 });
+const waitFor = async (fn, ms = 15000) => { const t = Date.now(); for (;;) { const v = await fn(); if (v || Date.now() - t > ms) return v; await new Promise((r) => setTimeout(r, 250)); } };
+
 const api = async (p, body) => (await fetch(API + p, { method: body ? 'POST' : 'GET', body: body ? JSON.stringify(body) : undefined })).json();
 
 function watch(page, label) {
@@ -58,9 +76,21 @@ function watch(page, label) {
   return () => { check(`${label}: no script errors, CSP violations or third-party requests`, problems.length === 0, problems.slice(0, 4).join(' | ')); };
 }
 
+// Through the loading screen: language first (the page's own), then sound.
+// Remembered choices skip those steps, so each is only answered when shown.
 async function enter(page, button = '#enter-silent', tap = false) {
   await page.waitForSelector('.loader.is-ready', { timeout: 8000 });
-  if (tap) await page.tap(button); else await page.click(button);
+  const press = (sel) => (tap ? page.tap(sel) : page.click(sel));
+  await page.waitForTimeout(100);
+  if (await page.isVisible('#loader-lang')) {
+    const lang = await page.evaluate(() => document.documentElement.lang);
+    await press(`[data-pick-lang="${lang}"]`);
+  }
+  const which = await Promise.race([
+    page.waitForSelector('#loader', { state: 'detached', timeout: 6000 }).then(() => 'gone'),
+    page.waitForSelector(`${button}:visible`, { timeout: 6000 }).then(() => 'button'),
+  ]);
+  if (which === 'button') await press(button);
   await page.waitForSelector('#loader', { state: 'detached', timeout: 5000 });
 }
 
@@ -260,14 +290,22 @@ async function main() {
       await page.waitForTimeout(1200);
       await page.screenshot({ path: path.join(out, 'reg-done-390.png') });
       check('Confirmation shows name, category, dates', (await page.textContent('#reg-done')).includes('Tenzin Norbu') && (await page.textContent('#done-dates')).includes('11 to 13 January 2027'));
+      check('Success screen: "Download registration details" button and a privacy note', (await page.textContent('#done-save')).includes('Download registration details') && (await page.textContent('#reg-done')).includes('health details'));
       const [download] = await Promise.all([page.waitForEvent('download'), page.click('#done-save')]);
-      const imgPath = path.join(out, 'confirmation-image.png');
-      await download.saveAs(imgPath);
-      const meta = await sharp(imgPath).metadata();
-      check('"Save as image" downloads a 1080x1350 PNG of the confirmation', meta.format === 'png' && meta.width === 1080 && meta.height === 1350 && download.suggestedFilename().includes('Tenzin-Norbu'), `${meta.format} ${meta.width}x${meta.height} ${download.suggestedFilename()}`);
-      let st = await api('/__state');
+      const pdfPath = path.join(out, 'registration.pdf');
+      await download.saveAs(pdfPath);
+      const pdfBuf = await readFile(pdfPath);
+      const pdfInfo = readPdf(pdfBuf);
+      check('"Download registration details" downloads a valid PDF with at least 2 pages', pdfInfo.ok && pdfInfo.pages >= 2 && pdfInfo.jpegs.length === pdfInfo.pages && download.suggestedFilename() === 'Winter-Camp-2027-Tenzin-Norbu-registration.pdf', `${pdfInfo.pages} pages, ${download.suggestedFilename()}`);
+      for (const [n, jpg] of pdfInfo.jpegs.entries()) await sharp(jpg).resize(620).toFile(path.join(out, `registration-pdf-en-p${n + 1}.png`));
+      const pageMeta = await sharp(pdfInfo.jpegs[0]).metadata();
+      check('PDF pages are A4 at 150 dpi (1240 x 1754)', pageMeta.width === 1240 && pageMeta.height === 1754, `${pageMeta.width}x${pageMeta.height}`);
+      let st = await waitFor(async () => { const x = await api('/__state'); return x.files.some((f) => f.mime === 'application/pdf') && x; });
       check('Backend: row stored in the Kids tab, not the Youth tab', st.kids.length === 1 && st.youth.length === 0);
-      check('Backend: one row, signature and screenshot saved in Kids folders', st.main.length === 1 && st.files.length === 2 && st.files.every((f) => f.folder.startsWith('Winter Camp 2027/Kids/')), JSON.stringify(st.files.map((f) => [f.folder, f.mime, f.size])));
+      check('Backend: signature, screenshot and registration PDF saved in Kids folders', st.main.length === 1 && st.files.length === 3 && st.files.every((f) => f.folder.startsWith('Winter Camp 2027/Kids/')), JSON.stringify(st.files.map((f) => [f.folder, f.mime, f.size])));
+      const drivePdf = st.files.find((f) => f.mime === 'application/pdf');
+      check('Backend: the Drive PDF is the same file that was downloaded, in "Registration PDFs"', drivePdf?.folder === 'Winter Camp 2027/Kids/Registration PDFs' && drivePdf.size === pdfBuf.length, `${drivePdf?.size} vs ${pdfBuf.length}`);
+      check('Backend: the row links the PDF in the "Registration PDF" column', /^https?:\/\/drive\.google\.com(?:[/?#]|$)/.test(st.kids[0][st.headers.indexOf('Registration PDF')] || ''));
       const stored = await page.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }));
       check('Nothing personal left in browser storage', !/Tenzin|Dolma|98765/.test(stored), stored);
 
@@ -297,6 +335,8 @@ async function main() {
       check('Last-seat message shown exactly, with tap-to-call', lastText === 'Oh No Someone booked the last seat just before you! Kindly contact +91-8219012669' && await page.isVisible('#reg-last a[href="tel:+918219012669"]'), lastText);
       st = await api('/__state');
       check('Backend: late submission saved in "Paid, no seat" with its screenshot', st.overflow.length === 1 && /https?:\/\/(?:[^/\s"]+\.)?drive\.google\.com(?:[/:?"#]|$)/.test(JSON.stringify(st.overflow[0])));
+      st = await waitFor(async () => { const x = await api('/__state'); return x.overflow[0]?.[x.headers.indexOf('Registration PDF')] && x; });
+      check('Backend: the "Paid, no seat" row gets its registration PDF too', Boolean(st) && st.files.some((f) => f.folder === 'Winter Camp 2027/Youth/Registration PDFs'));
       await page.screenshot({ path: path.join(out, 'reg-last-390.png') });
 
       // Payment step when the category fills before paying.
@@ -353,7 +393,13 @@ async function main() {
       await page.goto(SITE);
       await page.waitForSelector('.loader.is-ready');
       await page.waitForTimeout(400);
-      check('Keyboard: focus starts on "Enter with sound"', await page.evaluate(() => document.activeElement?.id === 'enter-sound'));
+      check('Keyboard: focus starts on the page\'s language (English)', await page.evaluate(() => document.activeElement?.dataset.pickLang === 'en'));
+      await page.keyboard.press('Tab');
+      check('Keyboard: Tab goes from English to བོད་ཡིག', await page.evaluate(() => document.activeElement?.dataset.pickLang === 'bo'));
+      await page.keyboard.press('Shift+Tab');
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(600);
+      check('Keyboard: after the language, focus moves to "Enter with sound"', await page.evaluate(() => document.activeElement?.id === 'enter-sound' && document.getElementById('loader-lang').hidden));
       await page.keyboard.press('Tab');
       await page.keyboard.press('Enter');
       await page.waitForSelector('#loader', { state: 'detached' });
@@ -497,6 +543,7 @@ async function main() {
       await page.click('.car__item.is-active .car__btn');
       await page.waitForSelector('#lightbox[open]');
       await page.waitForTimeout(900);
+      await settled(page);
       const sb = await page.locator('#lightbox-stage').boundingBox();
       const cap0 = await page.textContent('#lightbox-cap');
       await swipe(sb.x + sb.width / 2 + 40, sb.x + sb.width / 2 - 40, sb.y + sb.height / 2);
@@ -601,11 +648,20 @@ async function main() {
       const lay = await page.evaluate(() => { const r = document.getElementById('register').getBoundingClientRect(); return { w: r.width, h: r.height, vw: innerWidth, vh: innerHeight }; });
       check('After uploading the screenshot the view still fills the screen', lay.w === lay.vw && lay.h === lay.vh, JSON.stringify(lay));
       await page.waitForTimeout(5200);
+      // Pretend this phone can share files, and catch what is shared.
+      await page.evaluate(() => {
+        navigator.canShare = (d) => Boolean(d?.files?.length);
+        navigator.share = async (d) => { window.__shared = d.files.map((f) => ({ name: f.name, type: f.type, size: f.size })); };
+      });
       await page.click('#reg-submit');
       await page.waitForSelector('#reg-done:not([hidden])', { timeout: 10000 });
-      const st = await api('/__state');
+      check('Share button shown where the phone can share files', await page.isVisible('#done-share'));
+      await page.click('#done-share');
+      const shared = await waitFor(() => page.evaluate(() => window.__shared), 8000);
+      check('"Share" shares the registration PDF', shared?.length === 1 && shared[0].type === 'application/pdf' && shared[0].name.endsWith('-registration.pdf') && shared[0].size > 20000, JSON.stringify(shared));
+      const st = await waitFor(async () => { const x = await api('/__state'); return x.files.some((f) => f.mime === 'application/pdf') && x; });
       const row = st.youth[0] || [];
-      check('Typed signature stored in the Youth tab, with no signature image', row[st.headers.indexOf('Typed signature')] === 'Dolma Tsering' && row[st.headers.indexOf('Signature')] === '' && st.files.length === 1, JSON.stringify(row.slice(0, 4)));
+      check('Typed signature stored in the Youth tab, with no signature image', row[st.headers.indexOf('Typed signature')] === 'Dolma Tsering' && row[st.headers.indexOf('Signature')] === '' && st.files.filter((f) => f.mime !== 'application/pdf').length === 1, JSON.stringify(row.slice(0, 4)));
       check('Phones stored as 10 digits', row[st.headers.indexOf('Emergency contact number(s)')] === '9876543210');
 
       // Music: renders, and loops without a seam (the end flows into the start).
@@ -621,6 +677,259 @@ async function main() {
         return { seconds: buf.duration, seam: Math.abs(d[0] - d[d.length - 1]), maxStep: step, rms: Math.sqrt(rms / (d.length / 64)) };
       }, `${SITE}assets/${musicFile}`);
       check('Background music renders (32 s) and the loop point is seamless', musicFile && music.seconds > 30 && music.rms > 0.02 && music.seam <= music.maxStep * 1.01, JSON.stringify(music));
+      done();
+      await ctx.close();
+    }
+
+    // 12. Round 4: language first, then sound.
+    {
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+      const page = await ctx.newPage();
+      const done = watch(page, 'Loader: language first');
+      await page.goto(`${SITE}#faq`);
+      await page.waitForSelector('.loader.is-ready');
+      await page.waitForTimeout(500);
+      const first = await page.evaluate(() => ({ lang: !document.getElementById('loader-lang').hidden, sound: !document.getElementById('loader-sound').hidden, focus: document.activeElement?.dataset.pickLang }));
+      check('First visit: the language is asked first, sound is not shown yet, English focused', first.lang && !first.sound && first.focus === 'en', JSON.stringify(first));
+      await page.screenshot({ path: path.join(out, 'loader-language-390.png') });
+      await page.click('[data-pick-lang="bo"]');
+      await page.waitForURL(/\/bo\/#faq$/);
+      await page.waitForSelector('.loader.is-ready');
+      const t0 = await page.evaluate(() => performance.now());
+      await page.waitForTimeout(300);
+      const arrive = await page.evaluate(() => ({ lang: !document.getElementById('loader-lang').hidden, sound: !document.getElementById('loader-sound').hidden, lit: document.querySelectorAll('.loader__ltr.is-lit').length, stored: localStorage.getItem('wc-lang'), focus: document.activeElement?.id }));
+      check('Choosing བོད་ཡིག opens /bo/ (keeping #faq) straight at the sound choice', !arrive.lang && arrive.sound && arrive.lit === 10 && arrive.stored === 'bo' && arrive.focus === 'enter-sound', `${JSON.stringify(arrive)} ready at ${Math.round(t0)} ms`);
+      await page.screenshot({ path: path.join(out, 'loader-sound-bo-390.png') });
+      await page.click('#enter-silent');
+      await page.waitForSelector('#loader', { state: 'detached' });
+      await page.waitForTimeout(1200);
+      const faqTop = await page.evaluate(() => Math.round(document.getElementById('faq').getBoundingClientRect().top));
+      check('The deep link still lands on its section after switching language', faqTop >= 0 && faqTop <= 112, `faq top ${faqTop}`);
+      await page.goto(`${SITE}bo/`);
+      let asked = false;
+      for (let k = 0; k < 40 && await page.locator('#loader').count(); k++) {
+        asked ||= await page.evaluate(() => Boolean(document.querySelector('.loader__step:not([hidden])')));
+        await page.waitForTimeout(150);
+      }
+      check('Return visit with both choices remembered: no questions, straight in', !asked && await page.locator('#loader').count() === 0);
+      done();
+      await ctx.close();
+    }
+    {
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
+      const page = await ctx.newPage();
+      await page.goto(`${SITE}bo/`);
+      await page.waitForSelector('.loader.is-ready');
+      await page.waitForTimeout(400);
+      check('/bo/ with nothing remembered asks the language, with བོད་ཡིག focused', await page.evaluate(() => !document.getElementById('loader-lang').hidden && document.activeElement?.dataset.pickLang === 'bo'));
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(120);
+      check('Reduced motion: the sound choice replaces the language choice at once', await page.evaluate(() => document.getElementById('loader-lang').hidden && !document.getElementById('loader-sound').hidden));
+      await ctx.close();
+    }
+
+    // 13. Round 4: the menu bar on small screens (wordmark, sound, Register, menu).
+    for (const lang of ['', 'bo/']) {
+      for (const width of [320, 340, 360, 375, 390, 414]) {
+        const ctx = await browser.newContext({ viewport: { width, height: 740 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+        const page = await ctx.newPage();
+        await page.goto(`${SITE}${lang}privacy/`);
+        await page.waitForTimeout(500);
+        const m = await page.evaluate(() => {
+          const r = (el) => { const b = el.getBoundingClientRect(); return { l: b.left, r: b.right, w: b.width, h: b.height }; };
+          const word = r(document.querySelector('#nav .nav__wordmark'));
+          const btns = [...document.querySelectorAll('#nav .nav__actions > *')].filter((el) => el.offsetParent && getComputedStyle(el).display !== 'none').map((el) => ({ c: el.className, ...r(el) }));
+          return { word, btns, sound: btns.some((b) => b.c.includes('sound')) };
+        });
+        const overlap = m.btns.filter((b) => b.l < m.word.r);
+        const small = m.btns.filter((b) => b.w < 48 || b.h < 48);
+        check(`Menu bar ${lang || 'en/'} ${width}px: wordmark clear of the buttons, buttons at least 48 px`, overlap.length === 0 && small.length === 0, `word ends ${Math.round(m.word.r)}, first button ${Math.round(m.btns[0]?.l)}${small.length ? `, small: ${small.map((b) => b.c).join()}` : ''}`);
+        if (width < 360) {
+          await page.click('#menu-open');
+          await page.waitForSelector('#menu[open]');
+          await page.waitForTimeout(500);
+          const vis = await page.isVisible('#menu .menu__sound');
+          const before = await page.getAttribute('#menu .menu__sound', 'aria-pressed');
+          await page.click('#menu .menu__sound');
+          const after = await page.getAttribute('#menu .menu__sound', 'aria-pressed');
+          check(`Menu bar ${lang || 'en/'} ${width}px: sound moves into the phone menu and still toggles`, !m.sound && vis && before !== after, `${before} -> ${after}`);
+          if (width === 320) await page.screenshot({ path: path.join(out, `menu-sound-${lang ? 'bo' : 'en'}-320.png`) });
+        } else {
+          check(`Menu bar ${lang || 'en/'} ${width}px: sound button stays in the menu bar`, m.sound);
+        }
+        if (width === 320 || width === 360) await page.screenshot({ path: path.join(out, `nav-${lang ? 'bo' : 'en'}-${width}.png`), clip: { x: 0, y: 0, width, height: 88 } });
+        await ctx.close();
+      }
+    }
+
+    // 14. Round 4: the gallery full-screen view on a phone.
+    {
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+      const page = await ctx.newPage();
+      const done = watch(page, 'Full-screen view');
+      await page.goto(`${SITE}#gallery`);
+      await enter(page, '#enter-silent', true);
+      await page.waitForTimeout(1200);
+      await page.locator('#carousel').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(600);
+      const vtDur = async () => page.evaluate(() => document.getAnimations().filter((a) => /view-transition-group\(wc-media\)/.test(a.effect?.pseudoElement || '')).map((a) => a.effect.getTiming().duration));
+      // Open and close with the view transition (Chrome supports it).
+      await page.tap('.car__item.is-active .car__btn');
+      let d = [];
+      for (let k = 0; k < 20 && !d.length; k++) { d = await vtDur(); if (!d.length) await page.waitForTimeout(25); }
+      check('Open: view transition of 0.7 s', d.length > 0 && d.every((x) => x === 700), JSON.stringify(d));
+      await page.waitForTimeout(900);
+      await settled(page);
+      await page.screenshot({ path: path.join(out, 'lightbox-390.png') });
+      await page.keyboard.press('Escape');
+      d = [];
+      for (let k = 0; k < 20 && !d.length; k++) { d = await vtDur(); if (!d.length) await page.waitForTimeout(25); }
+      check('Close: view transition of 0.7 s back to the carousel', d.length > 0 && d.every((x) => x === 700), JSON.stringify(d));
+      await page.waitForTimeout(900);
+      await settled(page);
+      check('Closed after the transition', await page.evaluate(() => !document.getElementById('lightbox').open));
+
+      // Browsers without view transitions: the same 0.7 s motion with GSAP.
+      await page.evaluate(() => { document.startViewTransition = undefined; });
+      await page.tap('.car__item.is-active .car__btn');
+      await page.waitForTimeout(330);
+      const mid = await page.evaluate(() => { const m = document.querySelector('#lightbox-stage .lightbox__item > *'); return { t: getComputedStyle(m).transform, bg: getComputedStyle(document.getElementById('lightbox')).backgroundColor }; });
+      await page.waitForTimeout(600);
+      const end = await page.evaluate(() => getComputedStyle(document.querySelector('#lightbox-stage .lightbox__item > *')).transform);
+      check('Open without view transitions: animates from the thumbnail (mid-way moving, done by 0.7 s)', mid.t !== 'none' && end === 'none', `${mid.t} ${mid.bg} -> ${end}`);
+      await page.tap('#lightbox-close');
+      await page.waitForTimeout(330);
+      const stillOpen = await page.evaluate(() => document.getElementById('lightbox').open);
+      await page.waitForTimeout(600);
+      check('Close without view transitions: animates for 0.7 s, then closes', stillOpen && await page.evaluate(() => !document.getElementById('lightbox').open));
+
+      // Moving between items: both move together, out and in the same direction, fading.
+      await page.tap('.car__item.is-active .car__btn');
+      await page.waitForTimeout(900);
+      const cap0 = await page.textContent('#lightbox-cap');
+      await page.tap('#lightbox-next');
+      await page.waitForTimeout(300);
+      const both = await page.evaluate(() => [...document.querySelectorAll('#lightbox-stage .lightbox__item')].map((el) => ({ leaving: el.classList.contains('is-leaving'), x: Math.round(new DOMMatrix(getComputedStyle(el).transform).m41), o: Number(getComputedStyle(el).opacity) })));
+      const out1 = both.find((b) => b.leaving);
+      const in1 = both.find((b) => !b.leaving);
+      check('Next: the current item slides left and fades out while the next slides in from the right and fades in, together', both.length === 2 && out1.x < 0 && in1.x > 0 && out1.o > 0.05 && out1.o < 0.95 && in1.o > 0.05 && in1.o < 0.95, JSON.stringify(both));
+      await page.waitForTimeout(600);
+      const cap1 = await page.textContent('#lightbox-cap');
+      check('The move takes 0.7 s and leaves one item', await page.locator('#lightbox-stage .lightbox__item').count() === 1 && cap0 !== cap1, `${cap0} -> ${cap1}`);
+
+      // Swipe anywhere: on the caption and on the empty dark area.
+      const cdp = await ctx.newCDPSession(page);
+      const touchSwipe = async (x1, x2, y) => {
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x1, y, id: 1 }] });
+        for (let k = 1; k <= 6; k++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x1 + ((x2 - x1) * k) / 6, y, id: 1 }] });
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      };
+      const capBox = await page.locator('#lightbox-cap').boundingBox();
+      await touchSwipe(300, 120, capBox.y + capBox.height / 2);
+      await page.waitForTimeout(900);
+      const cap2 = await page.textContent('#lightbox-cap');
+      check('Swipe on the caption moves to the next item', cap2 !== cap1, `${cap1} -> ${cap2}`);
+      await touchSwipe(100, 300, 90);
+      await page.waitForTimeout(900);
+      const cap3 = await page.textContent('#lightbox-cap');
+      check('Swipe on the empty dark area moves back, and does not close the view', cap3 === cap1 && await page.evaluate(() => document.getElementById('lightbox').open), `${cap2} -> ${cap3}`);
+
+      // Pinch to zoom, then ease back on release; no move while pinching.
+      const mb = await page.locator('#lightbox-stage .lightbox__item > *').boundingBox();
+      const cx = mb.x + mb.width / 2;
+      const cy = mb.y + mb.height / 2;
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: cx - 30, y: cy, id: 1 }, { x: cx + 30, y: cy, id: 2 }] });
+      for (let k = 1; k <= 8; k++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: cx - 30 - k * 10, y: cy, id: 1 }, { x: cx + 30 + k * 10, y: cy, id: 2 }] });
+      const zoomedScale = await page.evaluate(() => new DOMMatrix(getComputedStyle(document.querySelector('#lightbox-stage .lightbox__item > *')).transform).a);
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await page.waitForTimeout(330);
+      const easing = await page.evaluate(() => new DOMMatrix(getComputedStyle(document.querySelector('#lightbox-stage .lightbox__item > *')).transform).a);
+      await page.waitForTimeout(600);
+      const after = await page.evaluate(() => getComputedStyle(document.querySelector('#lightbox-stage .lightbox__item > *')).transform);
+      check('Pinch zooms in (about 2.3x), eases back over 0.7 s on release', zoomedScale > 2 && easing > 1.02 && easing < zoomedScale && after === 'none', `${zoomedScale.toFixed(2)} -> ${easing.toFixed(2)} -> ${after}`);
+      check('Pinching does not change the item', (await page.textContent('#lightbox-cap')) === cap3);
+
+      // Videos: the controls area is left to the video; swiping there does not move.
+      const hasVideo = await page.evaluate(() => document.querySelectorAll('.car__item[data-type="video"]').length);
+      if (hasVideo) {
+        const vi = await page.evaluate(() => [...document.querySelectorAll('.car__item')].findIndex((x) => x.dataset.type === 'video'));
+        for (let k = 0; k < 40; k++) {
+          const n = Number((await page.textContent('#lightbox-cap')).match(/(\d+) of/)?.[1]) - 1;
+          if (n === vi) break;
+          await page.keyboard.press('ArrowRight');
+          await page.waitForTimeout(760);
+        }
+        const vb = await page.locator('#lightbox-stage video').boundingBox();
+        const capV = await page.textContent('#lightbox-cap');
+        const top = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.tagName, [vb.x + vb.width / 2, vb.y + vb.height - 20]);
+        await touchSwipe(vb.x + vb.width - 20, vb.x + 20, vb.y + vb.height - 20);
+        await page.waitForTimeout(900);
+        check('Video: controls are reachable and a swipe on the seek bar does not move', top === 'VIDEO' && (await page.textContent('#lightbox-cap')) === capV && await page.evaluate(() => document.querySelector('#lightbox-stage video').controls), `${top}`);
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: vb.x + vb.width / 2 - 20, y: vb.y + vb.height / 2, id: 1 }, { x: vb.x + vb.width / 2 + 20, y: vb.y + vb.height / 2, id: 2 }] });
+        for (let k = 1; k <= 6; k++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: vb.x + vb.width / 2 - 20 - k * 10, y: vb.y + vb.height / 2, id: 1 }, { x: vb.x + vb.width / 2 + 20 + k * 10, y: vb.y + vb.height / 2, id: 2 }] });
+        const vScale = await page.evaluate(() => new DOMMatrix(getComputedStyle(document.querySelector('#lightbox-stage video')).transform).a);
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        check('Video: pinch zooms the video too', vScale > 1.5, vScale.toFixed(2));
+      } else {
+        check('Video checks skipped: no video in the gallery', true);
+      }
+      await page.waitForTimeout(900);
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(900);
+
+      // Particles answer touch: a tap pushes nearby particles away.
+      await page.evaluate(() => { const el = document.getElementById('activities'); window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY + 40); });
+      await page.waitForTimeout(1200);
+      // Touch 30 px beside a particle that is on screen.
+      const ab = await page.evaluate(() => {
+        const f = document.getElementById('activities').wcParticles;
+        const r = f.host.getBoundingClientRect();
+        const p = f.parts.map((q) => ({ x: r.left + q.x, y: r.top + q.y })).find((q) => q.y > 120 && q.y < innerHeight - 120 && q.x > 60 && q.x < innerWidth - 60);
+        return p ? { x: p.x - 30, y: p.y } : { x: innerWidth / 2, y: innerHeight / 2 };
+      });
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: ab.x, y: ab.y, id: 1 }] });
+      for (let k = 1; k <= 5; k++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: ab.x + k * 8, y: ab.y, id: 1 }] }); await page.waitForTimeout(40); }
+      await page.waitForTimeout(120);
+      const pushed = await page.evaluate(() => (document.getElementById('activities').wcParticles?.parts || []).filter((p) => Math.hypot(p.dx, p.dy) > 3).length);
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await page.waitForTimeout(2500);
+      const rest = await page.evaluate(() => Math.max(...(document.getElementById('activities').wcParticles?.parts || [{ dx: 99, dy: 99 }]).map((p) => Math.hypot(p.dx, p.dy))));
+      check('Particles: touching a section pushes nearby particles aside, and they settle back', pushed > 0 && rest < 1, `${pushed} pushed, max offset after ${rest.toFixed(2)} px`);
+      done();
+      await ctx.close();
+    }
+
+    // 15. Round 4: a Tibetan registration makes a PDF with Tibetan text drawn by the browser.
+    {
+      await api('/__reset', {});
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+      const page = await ctx.newPage();
+      const done = watch(page, 'Tibetan registration PDF');
+      await page.goto(`${SITE}bo/`);
+      await enter(page);
+      await page.click('.hero__cta [data-open-register]');
+      await fillToPayment(page, { cat: 'kids', dob: '2018-05-20' });
+      await page.click('#reg-back');
+      await page.click('#reg-back');
+      await page.fill('#f-address', 'ཇོ་གི་ཝ་ར་ལམ། མེག་ལོཌ་གྷན་ཇི།');
+      await page.fill('#f-medical', 'ཕོ་བའི་ན་ཚ་ཡོད།');
+      await page.click('#reg-next');
+      await page.click('#reg-next');
+      await page.waitForSelector('#pay-panel:not([hidden])');
+      await page.setInputFiles('#f-shot', shotPng);
+      await page.waitForSelector('#shot-preview:not([hidden])');
+      await page.waitForTimeout(5200);
+      await page.click('#reg-submit');
+      await page.waitForSelector('#reg-done:not([hidden])', { timeout: 10000 });
+      const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#done-save')]);
+      const p = path.join(out, 'registration-bo.pdf');
+      await dl.saveAs(p);
+      const info = readPdf(await readFile(p));
+      for (const [n, jpg] of info.jpegs.entries()) await sharp(jpg).resize(620).toFile(path.join(out, `registration-pdf-bo-p${n + 1}.png`));
+      check('Tibetan: the registration PDF downloads (valid, 2+ pages)', info.ok && info.pages >= 2, `${info.pages} pages`);
+      const st = await waitFor(async () => { const x = await api('/__state'); return x.files.some((f) => f.mime === 'application/pdf') && x; });
+      check('Tibetan: the PDF copy reaches Drive', Boolean(st));
+      await page.screenshot({ path: path.join(out, 'reg-done-bo-390.png') });
       done();
       await ctx.close();
     }

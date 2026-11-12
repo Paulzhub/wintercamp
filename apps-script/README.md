@@ -19,8 +19,8 @@ It takes about 10 minutes, once, from the Google account that should own the reg
 
 ```
 Winter Camp 2027/
-  Kids/  Signatures/  Payment screenshots/
-  Youth/ Signatures/  Payment screenshots/
+  Kids/  Signatures/  Payment screenshots/  Registration PDFs/
+  Youth/ Signatures/  Payment screenshots/  Registration PDFs/
 ```
 
 ## 3. Deploy it as a web app
@@ -54,6 +54,7 @@ Then delete the test row, and the test files in Drive, so the seat is freed. The
 
 - **Check payments.** The site cannot verify a UPI payment. Open each **Payment screenshot** link and compare it with your UPI app.
 - **Signatures.** Most parents draw a signature, which is saved as an image and linked in the **Signature** column. Anyone who can't draw one types their full name instead; it appears in the **Typed signature** column.
+- **Registration PDFs.** After each registration the parent's phone draws the whole registration (every field, the signature, the payment details and the screenshot) as a PDF. They can download or share it, and a copy is saved to that group's **Registration PDFs** folder and linked in the **Registration PDF** column (the last column). If the column is empty for a row, the phone could not send the copy (for example it went offline straight after registering); everything is still in the row and its other links. The script only accepts a real PDF, once per registration, within 30 minutes of it.
 - **Paid, no seat.** These people paid just after the last seat went. Call them to refund, or move their row into **Registrations** if you add seats.
 - **Free a seat.** Delete the row from that group's tab. The seat appears on the website straight away.
 - **Change the number of seats or the dates.** Edit `CONFIG` at the top of `Code.gs`, and `site.config.js` in the repo. Keep the two the same. Then redeploy the script as below.

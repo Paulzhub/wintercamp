@@ -9,6 +9,8 @@
  *  - uses a lock so the 30-seat limit can never be exceeded
  *  - keeps Kids and Youth registrations in separate tabs
  *  - writes paid submissions that arrive after the last seat to "Paid, no seat"
+ *  - stores the registration PDF made by the family's browser (action "pdf") in a
+ *    private "Registration PDFs" folder and links it from the row
  *  - neutralises text that could run as a spreadsheet formula
  * Uploads are never stored in GitHub. Deployment steps: apps-script/README.md.
  *
@@ -23,6 +25,8 @@ var CONFIG = {
   rootFolder: 'Winter Camp 2027',
   sheets: { kids: 'Kids registrations', youth: 'Youth registrations', overflow: 'Paid, no seat', old: 'Registrations' },
   maxImageBytes: 5 * 1024 * 1024,
+  maxPdfBytes: 8 * 1024 * 1024,
+  pdfWindowMinutes: 30, // the PDF must arrive within this time of its registration
   maxBodyChars: 16 * 1024 * 1024,
   minFillMs: 5000, // four steps in under 5 seconds is a bot
   maxPerMinute: 30, // simple rate limit across all visitors
@@ -35,7 +39,7 @@ var HEADERS = [
   "Parent/Guardian's Name(s)", 'Address', 'Emergency contact number(s)',
   'Medical conditions or concerns', 'Dietary requirements or allergies',
   'Medical emergency consent', 'Agreed to take part', 'Date of signing',
-  'Signature', 'Typed signature', 'Payment screenshot', 'UPI transaction reference', 'Language', 'Status',
+  'Signature', 'Typed signature', 'Payment screenshot', 'UPI transaction reference', 'Language', 'Status', 'Registration PDF',
 ];
 var COL = {};
 HEADERS.forEach(function (h, i) { COL[h] = i; });
@@ -61,6 +65,7 @@ function doPost(e) {
     return json_({ ok: false, error: 'bad_request' });
   }
   try {
+    if (data && data.action === 'pdf') return json_(savePdf_(data));
     return json_(register_(data));
   } catch (err) {
     console.error(err && err.stack ? err.stack : err);
@@ -77,6 +82,7 @@ function setup() {
   ['kids', 'youth'].forEach(function (cat) {
     folder_([CONFIG.rootFolder, CONFIG.labels[cat], 'Signatures']);
     folder_([CONFIG.rootFolder, CONFIG.labels[cat], 'Payment screenshots']);
+    folder_([CONFIG.rootFolder, CONFIG.labels[cat], 'Registration PDFs']);
   });
   console.log(JSON.stringify(seats_()));
 }
@@ -159,8 +165,9 @@ function register_(d) {
     var row = row_(c, files, full ? 'Paid, no seat' : 'Seat given');
     sheet_(full ? CONFIG.sheets.overflow : CONFIG.sheets[c.category]).appendRow(row);
     SpreadsheetApp.flush();
-    if (full) return { ok: true, status: 'last_seat' };
-    return { ok: true, status: 'registered', seatsLeft: CONFIG.seats[c.category] - taken - 1 };
+    var at = row[COL.Timestamp];
+    if (full) return { ok: true, status: 'last_seat', submittedAt: at };
+    return { ok: true, status: 'registered', seatsLeft: CONFIG.seats[c.category] - taken - 1, submittedAt: at };
   } finally {
     lock.releaseLock();
   }
@@ -331,9 +338,17 @@ function sheet_(name) {
     sh.getRange(1, 1, sh.getMaxRows(), HEADERS.length).setNumberFormat('@');
     sh.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]).setFontWeight('bold');
     sh.setFrozenRows(1);
+  } else if (!headerChecked_[name]) {
+    // Tabs made by an earlier version lack the newest columns (e.g. "Registration PDF"): add their headings.
+    var have = sh.getRange(1, 1, 1, HEADERS.length).getValues()[0].map(String);
+    HEADERS.forEach(function (h, i) {
+      if (!have[i]) sh.getRange(1, i + 1).setValue(h).setNumberFormat('@').setFontWeight('bold');
+    });
   }
+  headerChecked_[name] = true;
   return sh;
 }
+var headerChecked_ = {};
 
 function rows_(name) {
   var sh = sheet_(name);
@@ -362,12 +377,24 @@ function seats_() {
 }
 
 function findSubmission_(id) {
+  var found = locate_(id);
+  if (!found) return null;
+  var at = String(found.row[COL.Timestamp] instanceof Date
+    ? Utilities.formatDate(found.row[COL.Timestamp], CONFIG.timeZone, 'yyyy-MM-dd HH:mm:ss')
+    : text_(found.row[COL.Timestamp]));
+  return { ok: true, status: found.tab === 'overflow' ? 'last_seat' : 'registered', submittedAt: at };
+}
+
+/** Finds a submission's row: { tab: 'kids' | 'youth' | 'overflow', index (1-based sheet row), row }. */
+function locate_(id) {
   var col = COL['Submission ID'];
-  var registered = ['kids', 'youth'].some(function (cat) {
-    return rows_(CONFIG.sheets[cat]).some(function (r) { return text_(r[col]) === id; });
-  });
-  if (registered) return { ok: true, status: 'registered' };
-  if (rows_(CONFIG.sheets.overflow).some(function (r) { return text_(r[col]) === id; })) return { ok: true, status: 'last_seat' };
+  var tabs = ['kids', 'youth', 'overflow'];
+  for (var t = 0; t < tabs.length; t++) {
+    var rows = rows_(CONFIG.sheets[tabs[t]]);
+    for (var i = 0; i < rows.length; i++) {
+      if (text_(rows[i][col]) === id) return { tab: tabs[t], index: i + 2, row: rows[i] };
+    }
+  }
   return null;
 }
 
@@ -409,7 +436,64 @@ function row_(c, files, status) {
   r[COL['UPI transaction reference']] = c.paymentRef;
   r[COL.Language] = c.lang === 'bo' ? 'Tibetan' : 'English';
   r[COL.Status] = status;
+  r[COL['Registration PDF']] = '';
   return r.map(safe_);
+}
+
+// ---------- Registration PDF ----------
+
+/**
+ * The family's browser draws the registration as a PDF after the registration is
+ * accepted, then sends it here. It is accepted once per submission, only as a real
+ * PDF, only within CONFIG.pdfWindowMinutes, and saved privately next to the others.
+ */
+function savePdf_(d) {
+  var id = /^[A-Za-z0-9-]{8,64}$/.test(String(d.submissionId || '')) ? String(d.submissionId) : null;
+  if (!id) return { ok: false, error: 'bad_request' };
+  if (!rateOk_()) return { ok: false, error: 'busy' };
+  var pdf = decodePdf_(d.pdf);
+  if (!pdf) return { ok: false, error: 'pdf' };
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) return { ok: false, error: 'busy' };
+  try {
+    var found = locate_(id);
+    if (!found) return { ok: false, error: 'not_found' };
+    if (text_(found.row[COL['Registration PDF']])) return { ok: true, status: 'saved' }; // already stored: retry-safe
+    var at = text_(found.row[COL.Timestamp]);
+    var limit = Utilities.formatDate(new Date(Date.now() - CONFIG.pdfWindowMinutes * 60000), CONFIG.timeZone, 'yyyy-MM-dd HH:mm:ss');
+    if (!at || at < limit) return { ok: false, error: 'too_late' };
+
+    var cat = text_(found.row[COL.Category]) === CONFIG.labels.youth ? 'youth' : 'kids';
+    var label = CONFIG.labels[cat];
+    var who = text_(found.row[COL.Name]).replace(/[^\p{L}\p{M}\p{N} ._-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 60) || 'child';
+    var stamp = at.replace(/:/g, '');
+    var file = folder_([CONFIG.rootFolder, label, 'Registration PDFs'])
+      .createFile(Utilities.newBlob(pdf, 'application/pdf', label + ' - ' + who + ' - ' + stamp + ' - registration.pdf'));
+    // Private to the owner (Drive's default); never shared by link.
+    sheet_(CONFIG.sheets[found.tab]).getRange(found.index, COL['Registration PDF'] + 1).setValue(file.getUrl());
+    SpreadsheetApp.flush();
+    return { ok: true, status: 'saved' };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Accepts a data URL; returns the bytes only if they really are a PDF of an allowed size. */
+function decodePdf_(dataUrl) {
+  if (typeof dataUrl !== 'string') return null;
+  var m = /^data:application\/pdf;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+  if (!m || m[1].length > Math.ceil((CONFIG.maxPdfBytes * 4) / 3) + 4) return null;
+  var bytes;
+  try {
+    bytes = Utilities.base64Decode(m[1]);
+  } catch (err) {
+    return null;
+  }
+  if (!bytes || bytes.length < 64 || bytes.length > CONFIG.maxPdfBytes) return null;
+  var head = '';
+  for (var i = 0; i < 5; i++) head += String.fromCharCode(bytes[i] & 0xff);
+  return head === '%PDF-' ? bytes : null;
 }
 
 // ---------- Utilities ----------

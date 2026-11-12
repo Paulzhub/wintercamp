@@ -181,8 +181,19 @@ html.is-modal { overflow: hidden; }
 .loader.is-ready .loader__sub { opacity: 1; transform: none; transition: opacity 800ms var(--ease), transform 800ms var(--ease); }
 .loader__bar { width: min(240px, 60vw); height: 2px; background: rgb(245 245 245 / 0.16); border-radius: 2px; overflow: hidden; }
 .loader__bar span { display: block; height: 100%; width: 100%; background: var(--t-dark); transform-origin: left; transform: scaleX(var(--p, 0)); transition: transform 320ms var(--ease); }
-.loader__actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s2); visibility: hidden; opacity: 0; transform: translateY(16px); }
-.loader.is-ready .loader__actions { visibility: visible; opacity: 1; transform: none; transition: opacity 640ms var(--ease) 240ms, transform 640ms var(--ease) 240ms; }
+.loader__choice { display: grid; justify-items: center; min-height: 112px; }
+.loader__step { grid-area: 1 / 1; display: grid; justify-items: center; gap: var(--s2); }
+.loader__step[hidden] { display: none; }
+.loader__ask { font-size: 16px; color: rgb(245 245 245 / 0.8); }
+.loader__ask [lang="bo"] { font-family: var(--font-bo); font-size: 1.15em; line-height: 1.8; }
+.loader__actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s2); }
+.loader__lang { min-width: 160px; }
+.loader__lang:lang(bo) { font-family: var(--font-bo); font-weight: 400; text-transform: none; font-size: 20px; }
+/* Steps come in with one cross-fade (no stagger). */
+.loader__step.is-in { animation: loader-step-in 480ms var(--ease) both; }
+.loader__step.is-out { animation: loader-step-out 480ms var(--ease) both; }
+@keyframes loader-step-in { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+@keyframes loader-step-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-16px); } }
 .loader__light { position: absolute; left: 50%; top: 50%; width: 32px; height: 32px; margin: -16px; border-radius: 50%; background: radial-gradient(circle, #fffaf2 0%, rgb(255 244 228 / 0.9) 40%, rgb(255 244 228 / 0) 70%); transform: scale(0); pointer-events: none; z-index: 2; }
 
 /* ---------- Navigation ---------- */
@@ -217,11 +228,20 @@ html.is-modal { overflow: hidden; }
 .nav__actions { display: flex; align-items: center; gap: var(--s1); }
 .nav__actions .lang { display: none; }
 @media (min-width: 768px) { .nav__actions .lang { display: inline-flex; } }
-/* The sound button shows on every screen size. */
+/* The sound button shows on every screen size. Under 360 px the menu bar has no
+   room for it next to the wordmark, so it moves into the phone menu (still one tap away). */
 .nav__actions .sound { display: inline-grid; }
+.menu__sound { display: none; }
+@media (max-width: 399px) { .nav__wordmark { font-size: 24px; } }
+@media (max-width: 359px) {
+  .nav__actions .sound { display: none; }
+  .menu__sound { display: inline-flex; }
+}
 @media (min-width: 1024px) { .nav__nav { display: block; } .nav__burger { display: none; } }
 .sound .sound__on, .sound[aria-pressed='true'] .sound__off { display: none; }
 .sound[aria-pressed='true'] .sound__on { display: inline; }
+.menu__sound .sound__on, .menu__sound .sound__off { display: inline-flex; }
+.menu__sound .sound__on, .menu__sound[aria-pressed='true'] .sound__off { display: none; }
 .sound[aria-pressed='true'] { border-color: var(--c-red); }
 .sound .wave { animation: wave 1.6s var(--ease) infinite alternate; }
 .sound .wave--2 { animation-delay: 400ms; }
@@ -371,7 +391,10 @@ html.is-modal { overflow: hidden; }
 .lightbox[open] { display: grid; }
 .lightbox::backdrop { background: rgb(0 0 0 / 0.7); }
 .lightbox__fig { display: grid; gap: var(--s2); justify-items: center; max-width: 100%; }
-.lightbox__stage { display: grid; place-items: center; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+.lightbox { touch-action: none; user-select: none; -webkit-user-select: none; }
+.lightbox__stage { display: grid; place-items: center; }
+.lightbox__item { grid-area: 1 / 1; display: grid; place-items: center; }
+.lightbox__item.is-leaving { pointer-events: none; }
 .lightbox__stage img { -webkit-user-drag: none; pointer-events: auto; }
 .lightbox__stage img, .lightbox__stage video { max-width: calc(100vw - 2 * var(--s2)); max-height: calc(100vh - 176px); max-height: calc(100svh - 176px); width: auto; height: auto; border-radius: var(--r-md); box-shadow: var(--sh3); view-transition-name: wc-media; }
 .lightbox__cap { min-height: 1.6em; text-align: center; color: rgb(245 245 245 / 0.86); }
@@ -379,7 +402,9 @@ html.is-modal { overflow: hidden; }
 .lightbox__nav { position: absolute; top: 50%; margin-top: -24px; z-index: 2; background: rgb(28 28 28 / 0.7); }
 .lightbox__nav--prev { left: var(--s2); } .lightbox__nav--next { right: var(--s2); }
 @media (max-width: 767px) { .lightbox__nav { top: auto; bottom: var(--s2); margin: 0; } }
-::view-transition-group(wc-media) { animation-duration: 640ms; animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1); }
+/* Opening and closing the full-screen view: 0.7 s, easing in and out. */
+::view-transition-group(wc-media), ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 700ms; animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1); }
+::view-transition-old(wc-media), ::view-transition-new(wc-media) { animation-duration: 700ms; animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1); }
 
 /* ---------- FAQ ---------- */
 .faq__list { display: grid; gap: var(--s2); margin-top: var(--s4); }
@@ -581,6 +606,9 @@ select.input { appearance: none; padding-right: var(--s6); background-image: lin
 .done__facts dt { color: var(--muted); }
 .done__facts dd { font-weight: 600; }
 .done__share { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s2); }
+.done__note { max-width: 48ch; font-size: 14px; color: var(--muted); }
+.done__note--error { color: var(--text); font-weight: 500; border-left: 4px solid var(--c-red); padding-left: var(--s2); text-align: left; }
+.btn.is-loading .btn__icon { display: none; }
 
 /* ---------- Plain pages (privacy) ---------- */
 .page-plain body { background: var(--c-light); }

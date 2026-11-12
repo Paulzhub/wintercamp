@@ -1,8 +1,22 @@
 // Loading screen: ILLUMINATE lights up letter by letter with real loading progress
 // (fonts, 3D scene), capped at about 2.5 seconds; then "Enter with sound" or
 // "Enter silently", and light expands from the word into the hero.
+// First visit: the language is chosen first (English or Tibetan), then sound.
+// Remembered choices (wc-lang, wc-sound) skip those steps.
 import { gsap, ScrollTrigger, reduced } from './motion.js';
 import { $, $$ } from './i18n.js';
+import { prefs } from './prefs.js';
+
+// Set just before moving to the other language's page, so that page goes
+// straight to the sound choice without lighting the letters one by one again.
+const SWITCH_KEY = 'wc-lang-switched';
+const takeSwitchFlag = () => {
+  try {
+    const v = sessionStorage.getItem(SWITCH_KEY);
+    sessionStorage.removeItem(SWITCH_KEY);
+    return v === '1';
+  } catch { return false; }
+};
 
 const CAP_MS = 2500;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -49,6 +63,7 @@ export function initLoader({ audio, motion, hero }) {
   motion.stop();
   window.scrollTo(0, 0);
 
+  const switched = takeSwitchFlag();
   const letters = $$('.loader__ltr', loader);
   const bar = $('.loader__bar', loader);
   let shown = 0; // letters lit so far
@@ -58,7 +73,10 @@ export function initLoader({ audio, motion, hero }) {
   const paint = (now) => {
     const want = Math.round(target * letters.length);
     // At most one letter per 96ms, so they light one by one even on a fast connection.
-    if (shown < want && now - lastLit > (reduced() ? 0 : 96)) {
+    if (switched) {
+      letters.slice(shown).forEach((l) => l.classList.add('is-lit'));
+      shown = letters.length;
+    } else if (shown < want && now - lastLit > (reduced() ? 0 : 96)) {
       letters[shown].classList.add('is-lit');
       audio.play('letter', shown);
       shown += 1;
@@ -82,7 +100,7 @@ export function initLoader({ audio, motion, hero }) {
     target = Math.max(target, done / tasks.length);
   }));
   // Real progress, but never longer than the cap.
-  wait(CAP_MS - letters.length * 96).then(() => { target = 1; });
+  wait(switched ? 0 : CAP_MS - letters.length * 96).then(() => { target = 1; });
   target = 0.1;
   requestAnimationFrame(paint);
 
@@ -91,14 +109,55 @@ export function initLoader({ audio, motion, hero }) {
     if (isReady) return;
     isReady = true;
     loader.classList.add('is-ready');
+    const lang = document.documentElement.lang === 'bo' ? 'bo' : 'en';
+    if (!prefs.get('wc-lang') && !switched) {
+      showStep(langStep);
+      setTimeout(() => $(`[data-pick-lang="${lang}"]`, loader)?.focus({ preventScroll: true }), 300);
+      return;
+    }
+    soundChoice();
+  }
+
+  const langStep = $('#loader-lang', loader);
+  const soundStep = $('#loader-sound', loader);
+  let current = null;
+  // One step at a time, cross-fading (0.48 s, eased in and out; instant with reduced motion).
+  function showStep(step) {
+    if (current === step) return;
+    const prev = current;
+    current = step;
+    if (prev) {
+      prev.classList.remove('is-in');
+      prev.classList.add('is-out');
+      const done = () => { prev.hidden = true; prev.classList.remove('is-out'); };
+      if (reduced()) done(); else setTimeout(done, 480);
+    }
+    step.hidden = false;
+    step.classList.add('is-in');
+  }
+
+  function soundChoice() {
     // Returning visitors who already chose skip the choice.
     const stored = audio.stored();
     if (stored) {
       setTimeout(() => exit(stored === 'on'), reduced() ? 200 : 640);
       return;
     }
+    showStep(soundStep);
     setTimeout(() => $('#enter-sound')?.focus({ preventScroll: true }), 300);
   }
+
+  $$('[data-pick-lang]', loader).forEach((b) => b.addEventListener('click', () => {
+    const pick = b.dataset.pickLang;
+    prefs.set('wc-lang', pick);
+    audio.play('tick');
+    if (pick === (document.documentElement.lang === 'bo' ? 'bo' : 'en')) { soundChoice(); return; }
+    // The other language: go to its page, keeping any #section.
+    try { sessionStorage.setItem(SWITCH_KEY, '1'); } catch { /* storage blocked */ }
+    $$('button', loader).forEach((x) => { x.disabled = true; });
+    const go = () => location.assign(b.dataset.href + location.hash);
+    if (reduced()) go(); else gsap.to($('.loader__in', loader), { opacity: 0, duration: 0.32, onComplete: go });
+  }));
 
   let leaving = false;
   function exit(withSound) {

@@ -21,8 +21,22 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # ffmpeg converts gallery videos to H.264 and makes poster frames. Ubuntu's
+      # package mirrors sometimes fail to resolve on the runner, so retry a few
+      # times; if it still fails, the build continues and copies videos unconverted.
       - name: Install ffmpeg (gallery videos)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+        continue-on-error: true
+        timeout-minutes: 8
+        run: |
+          for i in 1 2 3; do
+            if sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 update -qq \
+              && sudo apt-get install -y -qq --no-install-recommends ffmpeg; then
+              exit 0
+            fi
+            echo "ffmpeg install attempt $i failed; retrying in 20 s"
+            sleep 20
+          done
+          exit 1
       - run: npm ci
       - name: Backend tests
         run: npm test
