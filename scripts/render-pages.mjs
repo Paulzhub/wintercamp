@@ -177,7 +177,7 @@ function galleryItems(lang, t) {
         const small = item.widths[0];
         const ratio = item.height / item.width;
         img = `<img src="${src(small)}" srcset="${srcset}" sizes="(min-width: 1024px) 480px, 72vw" width="${small}" height="${Math.round(small * ratio)}" alt="${esc(alt)}" loading="lazy" decoding="async" draggable="false">`;
-        data += ` data-full="${src(item.widths[item.widths.length - 1])}"`;
+        data += ` data-full="${src(item.widths[item.widths.length - 1])}" data-fw="${item.widths[item.widths.length - 1]}"`;
       } else {
         const poster = item.poster ? `${base}gallery/${item.id}-poster.webp` : '';
         img = poster

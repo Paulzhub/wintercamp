@@ -933,6 +933,82 @@ async function main() {
       done();
       await ctx.close();
     }
+    // 16. Round 5: opening the full-screen view moves the media on desktop widths too,
+    // with the large file slow to arrive, with and without view transitions.
+    for (const width of [1280, 1440, 1920]) {
+      const ctx = await browser.newContext({ viewport: { width, height: width >= 1920 ? 1080 : 860 } });
+      await ctx.route(/gallery\/.*(-\d{3,4}\.webp|\.mp4)$/, async (rt) => {
+        if (/-480\.webp$/.test(rt.request().url()) || /poster/.test(rt.request().url())) return rt.continue();
+        await new Promise((r) => setTimeout(r, 400));
+        return rt.continue();
+      });
+      const page = await ctx.newPage();
+      const done = watch(page, `Open transition ${width}`);
+      await page.goto(`${SITE}#gallery`);
+      await enter(page);
+      await page.waitForTimeout(900);
+      for (const kind of ['photo', 'video']) {
+        const idx = await page.evaluate((k) => [...document.querySelectorAll('.car__item')].findIndex((i) => i.dataset.type === k), kind);
+        if (idx < 0) { check(`${width}: gallery has a ${kind}`, false); continue; }
+        await page.evaluate(() => { document.getElementById('car-range').value = '0'; });
+        await page.focus('#carousel');
+        await page.keyboard.press('Home');
+        for (let k = 0; k < idx; k++) await page.keyboard.press('ArrowRight');
+        await page.waitForTimeout(900);
+        await page.locator('.car__item.is-active .car__btn').scrollIntoViewIfNeeded();
+        await page.waitForTimeout(700);
+        // With view transitions: sample the shared element's box during the 0.7 s.
+        await page.click('.car__item.is-active .car__btn');
+        const samples = [];
+        const t0 = Date.now();
+        while (Date.now() - t0 < 900) {
+          const v = await page.evaluate(() => {
+            const a = document.getAnimations().find((x) => /view-transition-group\(wc-media\)/.test(x.effect?.pseudoElement || ''));
+            if (!a) return null;
+            const cs = getComputedStyle(document.documentElement, '::view-transition-group(wc-media)');
+            const k = a.effect.getKeyframes();
+            return { w: parseFloat(cs.width), m: cs.transform, endW: parseFloat(k.at(-1).width), endH: parseFloat(k.at(-1).height) };
+          });
+          if (v) samples.push(v);
+          await page.waitForTimeout(60);
+        }
+        await settled(page);
+        const box = await page.locator('#lightbox-stage .lightbox__item > *').boundingBox();
+        const end = samples[0];
+        check(`${width} ${kind}, open with view transition: moves into a real box (not 0×0)`, Boolean(end) && end.endW > 200 && end.endH > 200 && Math.abs(end.endW - box.width) < 4, end ? `${end.endW}×${end.endH} vs ${Math.round(box.width)}×${Math.round(box.height)}` : 'no wc-media animation');
+        const ws = samples.map((x) => Math.round(x.w));
+        const ms = new Set(samples.map((x) => x.m));
+        check(`${width} ${kind}, open with view transition: size and position change over the 0.7 s`, samples.length >= 4 && new Set(ws).size >= 3 && ms.size >= 3, ws.join(','));
+        if (kind === 'photo') {
+          const swapped = await waitFor(() => page.evaluate(() => { const m = document.querySelector('#lightbox-stage img'); return m && m.currentSrc.endsWith(m.dataset.fullSrc.split('/').pop()) && m.naturalWidth > 480; }), 4000);
+          check(`${width}: the large photo replaces the thumbnail once it has loaded`, Boolean(swapped));
+        }
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(900);
+        await settled(page);
+        // Without view transitions: the GSAP fallback flies from the thumbnail.
+        await page.evaluate(() => { window.__vt = document.startViewTransition; document.startViewTransition = undefined; });
+        const thumb = await page.locator('.car__item.is-active .car__media img').boundingBox();
+        await page.click('.car__item.is-active .car__btn');
+        const rects = [];
+        for (let k = 0; k < 12; k++) {
+          rects.push(await page.evaluate(() => { const r = document.querySelector('#lightbox-stage .lightbox__item > *')?.getBoundingClientRect(); return r && { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width }; }));
+          await page.waitForTimeout(60);
+        }
+        await page.waitForTimeout(500);
+        const fin = await page.evaluate(() => { const r = document.querySelector('#lightbox-stage .lightbox__item > *').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width }; });
+        const first = rects.find(Boolean);
+        const near = first && Math.hypot(first.x - (thumb.x + thumb.width / 2), first.y - (thumb.y + thumb.height / 2)) < 80 && Math.abs(first.w - thumb.width) < 0.25 * fin.w + 40;
+        const widths = new Set(rects.filter(Boolean).map((r) => Math.round(r.w)));
+        check(`${width} ${kind}, open without view transitions: starts over the thumbnail and grows into place`, Boolean(near) && widths.size >= 3 && Math.abs(fin.x - width / 2) < 40, first ? `start ${Math.round(first.w)}px at ${Math.round(first.x)},${Math.round(first.y)}; thumb ${Math.round(thumb.width)}px; end ${Math.round(fin.w)}px` : 'no media');
+        if (width === 1440) await page.screenshot({ path: path.join(out, `lightbox-open-${kind}-1440.png`) });
+        await page.click('#lightbox-close');
+        await page.waitForTimeout(900);
+        await page.evaluate(() => { document.startViewTransition = window.__vt; });
+      }
+      done();
+      await ctx.close();
+    }
   } finally {
     await browser.close();
     site.close();
