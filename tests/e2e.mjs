@@ -1009,6 +1009,100 @@ async function main() {
       done();
       await ctx.close();
     }
+    // 17. Round 5: the cursor orb is red over light surfaces and white over dark ones.
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      const page = await ctx.newPage();
+      const done = watch(page, 'Cursor tone');
+      await page.goto(`${SITE}#activities`);
+      await enter(page);
+      await page.waitForTimeout(1200);
+      const orb = () => page.evaluate(() => {
+        const d = document.querySelector('.cursor__dot');
+        const [r, g, b] = getComputedStyle(d).backgroundColor.match(/[\d.]+/g).map(Number);
+        const box = d.getBoundingClientRect();
+      return { r, g, b, tone: d.parentElement.dataset.tone, parent: d.parentElement.parentElement.id || d.parentElement.parentElement.tagName, at: [Math.round(box.x + box.width / 2), Math.round(box.y + box.height / 2)] };
+      });
+      const red = (c) => c.r > 180 && c.g < 90 && c.b < 90;
+      const white = (c) => c.r > 220 && c.g > 220 && c.b > 200;
+      const pointIn = (sel) => page.evaluate((q) => {
+        const r = document.querySelector(q).getBoundingClientRect();
+        const y = Math.min(window.innerHeight - 40, Math.max(120, r.top + 60));
+        return { x: 60, y };
+      }, sel);
+      let pt = await pointIn('#activities');
+      await page.mouse.move(pt.x, pt.y);
+      await page.mouse.move(pt.x + 4, pt.y + 4);
+      await page.waitForTimeout(700);
+      const onLight = await orb();
+      check('Cursor: red over a light section', red(onLight) && onLight.tone === 'light', JSON.stringify(onLight));
+      await page.locator('#gallery').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(1200);
+      pt = await pointIn('#gallery');
+      await page.mouse.move(pt.x, pt.y);
+      await page.waitForTimeout(700);
+      const onDark = await orb();
+      check('Cursor: white over a dark section', white(onDark) && onDark.tone === 'dark', JSON.stringify(onDark));
+      // Still mouse, page scrolls from the gallery (dark) into the FAQ (light).
+      await page.mouse.move(60, 450);
+      await page.waitForTimeout(500);
+      const before = (await orb()).tone;
+      const faqTop = await page.evaluate(() => document.getElementById('faq').getBoundingClientRect().top);
+      for (let k = 0; k < 10 && (await page.evaluate(() => document.getElementById('faq').getBoundingClientRect().top)) > 300; k++) { await page.mouse.wheel(0, 300); await page.waitForTimeout(250); }
+      await page.waitForTimeout(900);
+      const afterScroll = await orb();
+      check('Cursor: changes while the page scrolls under a still mouse', before === 'dark' && afterScroll.tone === 'light' && red(afterScroll), `${before} -> ${afterScroll.tone} (faq top was ${Math.round(faqTop)})`);
+      // Menu bar is dark; the change from red eases over 0.4 s.
+      await page.mouse.move(700, 30);
+      await page.waitForTimeout(200);
+      const mid = await orb();
+      await page.waitForTimeout(700);
+      check('Cursor: the colour eases (in between part-way)', mid.g > 35 && mid.g < 220, JSON.stringify(mid));
+      check('Cursor: white over the frosted menu bar', (await orb()).tone === 'dark');
+      // Full-screen gallery view: inside the dialog, white.
+      await page.locator('#gallery').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(1000);
+      await page.click('.car__item.is-active .car__btn');
+      await page.waitForSelector('#lightbox[open]');
+      await page.waitForTimeout(900);
+      await page.mouse.move(80, 300);
+      await page.waitForTimeout(700);
+      const inLb = await orb();
+      check('Cursor: visible inside the full-screen view, under the mouse, and white', inLb.parent === 'lightbox' && white(inLb) && Math.abs(inLb.at[0] - 80) < 6 && Math.abs(inLb.at[1] - 300) < 6, JSON.stringify(inLb));
+      await page.screenshot({ path: path.join(out, 'cursor-lightbox-1440.png') });
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(1000);
+      check('Cursor: back on the page after closing', (await orb()).parent === 'BODY');
+      // Registration view: inside the dialog, red.
+      await page.evaluate(() => document.querySelector('[data-open-register]').click());
+      await page.waitForSelector('#register[open]');
+      await page.waitForTimeout(1200);
+      await page.mouse.move(300, 400);
+      await page.mouse.move(310, 410);
+      await page.waitForTimeout(700);
+      const inReg = await orb();
+      check('Cursor: visible inside the registration view, under the mouse, and red', inReg.parent === 'register' && red(inReg) && Math.abs(inReg.at[0] - 310) < 6 && Math.abs(inReg.at[1] - 410) < 6, JSON.stringify(inReg));
+      await page.screenshot({ path: path.join(out, 'cursor-register-1440.png') });
+      done();
+      await ctx.close();
+    }
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1024, height: 800 }, reducedMotion: 'reduce' });
+      const page = await ctx.newPage();
+      await page.goto(SITE);
+      await enter(page);
+      const d = await page.evaluate(() => getComputedStyle(document.querySelector('.cursor__dot')).transitionDuration);
+      check('Cursor, reduced motion: the colour switches at once', d.split(',').every((x) => parseFloat(x) === 0), d);
+      await ctx.close();
+    }
+    {
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+      const page = await ctx.newPage();
+      await page.goto(SITE);
+      await enter(page, '#enter-silent', true);
+      check('Cursor: none on touch devices', await page.evaluate(() => !document.querySelector('.cursor')));
+      await ctx.close();
+    }
   } finally {
     await browser.close();
     site.close();

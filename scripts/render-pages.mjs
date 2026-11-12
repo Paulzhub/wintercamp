@@ -218,8 +218,8 @@ function registration(lang, t) {
   <p class="cat__chosen" data-chosen hidden><span class="cat__check" aria-hidden="true">${icons.check}</span> ${esc(fill(r.chosen, { category: r[key] }))} <button type="button" class="link cat__change" data-change>${esc(r.change)}</button></p>
 </article>`;
 
-  return `<dialog class="reg" id="register" data-particles="accent" data-particles-density="0.6" aria-labelledby="reg-title">
-<div class="reg__bar">
+  return `<dialog class="reg" id="register" data-tone="light" data-particles="accent" data-particles-density="0.6" aria-labelledby="reg-title">
+<div class="reg__bar" data-tone="dark">
   <h2 class="reg__title" id="reg-title">${esc(r.title)}</h2>
   <button type="button" class="icon-btn" data-close-register aria-label="${esc(t.common.close)}">${icons.close}</button>
 </div>
@@ -440,7 +440,7 @@ function siteHeader(lang, t, pathKey) {
   const registerBtn = (cls, label, extra = '') => onHome
     ? `<button type="button" class="${cls}" data-open-register ${extra}><span class="btn__label">${esc(label)}</span></button>`
     : `<a class="${cls}" href="${pre}#register" ${extra}><span class="btn__label">${esc(label)}</span></a>`;
-  return `<header class="nav${onHome ? '' : ' is-stuck nav--sub'}" id="nav">
+  return `<header class="nav${onHome ? '' : ' is-stuck nav--sub'}" id="nav" data-tone="dark">
   <a class="nav__brand" href="${pre}#home" aria-label="Illuminate, ${esc(config.camp.name)}: ${esc(t.nav.home)}"><span class="nav__wordmark${onHome ? '' : ' is-shown'}" lang="en" aria-hidden="true">${brandWord}</span></a>
   <nav class="nav__nav" aria-label="${esc(t.nav.label)}">
     <ul class="nav__links">
@@ -455,7 +455,7 @@ function siteHeader(lang, t, pathKey) {
   </div>
 </header>
 
-<dialog class="menu" id="menu" aria-label="${esc(t.common.menu)}">
+<dialog class="menu" id="menu" data-tone="dark" aria-label="${esc(t.common.menu)}">
   <div class="menu__bar">
     <span class="nav__wordmark is-shown" lang="en" aria-hidden="true">${brandWord}</span>
     <button type="button" class="icon-btn" id="menu-close" aria-label="${esc(t.common.menuClose)}">${icons.close}</button>
@@ -647,7 +647,7 @@ ${galleryItems(lang, t)}
 
 ${registration(lang, t)}
 
-<dialog class="lightbox" id="lightbox" aria-label="${esc(t.gallery.lightbox)}">
+<dialog class="lightbox" id="lightbox" data-tone="dark" aria-label="${esc(t.gallery.lightbox)}">
   <button type="button" class="icon-btn lightbox__close" id="lightbox-close" aria-label="${esc(t.common.close)}">${icons.close}</button>
   <button type="button" class="icon-btn lightbox__nav lightbox__nav--prev" id="lightbox-prev" aria-label="${esc(t.gallery.prev)}">${icons.left}</button>
   <figure class="lightbox__fig" id="lightbox-fig"><div class="lightbox__stage" id="lightbox-stage"></div><figcaption class="lightbox__cap" id="lightbox-cap" aria-live="polite"></figcaption></figure>

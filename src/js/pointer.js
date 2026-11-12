@@ -35,14 +35,51 @@ function initCursor() {
     gsap.quickTo(t, 'y', { duration: 0.32 + i * 0.08, ease: 'std' }),
   ]);
 
+  // Tone: red over light surfaces, white over dark ones. Read from the nearest
+  // [data-tone] or .light/.dark ancestor (a class lookup, no layout), only when
+  // the element under the mouse changes or the page scrolls under a still mouse.
+  let tone = '';
+  const toneOf = (el) => {
+    const host = el?.closest?.('[data-tone], .light, .dark');
+    if (!host) return 'dark';
+    return host.dataset.tone || (host.classList.contains('light') ? 'light' : 'dark');
+  };
+  const setTone = (el) => {
+    const t = toneOf(el);
+    if (t === tone) return;
+    tone = t;
+    cursor.dataset.tone = t;
+  };
+  let last = null;
+  let pending = 0;
+  const probe = () => {
+    pending = 0;
+    if (!last) return;
+    setTone(document.elementFromPoint(last.x, last.y));
+  };
+  document.addEventListener('scroll', () => { if (last && !pending) pending = requestAnimationFrame(probe); }, { passive: true, capture: true });
+
+  // Open dialogs sit in the top layer, above the page: the cursor moves into the
+  // top-most open dialog so it stays visible there (as the tooltip does).
+  const home = () => {
+    const open = [...document.querySelectorAll('dialog[open]')].filter((d) => d.matches(':modal'));
+    const parent = open.at(-1) || document.body;
+    if (cursor.parentElement !== parent) parent.append(cursor);
+    if (last) setTone(document.elementFromPoint(last.x, last.y));
+  };
+  const mo = new MutationObserver(home);
+  document.querySelectorAll('dialog').forEach((d) => mo.observe(d, { attributes: true, attributeFilter: ['open'] }));
+
   window.addEventListener('pointermove', (e) => {
     if (e.pointerType !== 'mouse') return;
+    last = { x: e.clientX, y: e.clientY };
     cursor.classList.remove('is-hidden');
     dx(e.clientX); dy(e.clientY);
     tq.forEach(([x, y]) => { x(e.clientX); y(e.clientY); });
   }, { passive: true });
   document.documentElement.addEventListener('pointerleave', () => cursor.classList.add('is-hidden'));
   document.addEventListener('pointerover', (e) => {
+    setTone(e.target);
     const host = e.target.closest?.('[data-cursor]');
     const text = host?.dataset.cursor || '';
     label.textContent = text;
@@ -50,6 +87,8 @@ function initCursor() {
     const field = e.target.closest?.('input, textarea, select');
     cursor.classList.toggle('is-hidden', Boolean(field));
   });
+  cursor.dataset.tone = 'dark';
+  tone = 'dark';
 }
 
 function initMagnetic() {
