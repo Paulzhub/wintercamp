@@ -305,7 +305,7 @@ async function main() {
       check('Backend: signature, screenshot and registration PDF saved in Kids folders', st.main.length === 1 && st.files.length === 3 && st.files.every((f) => f.folder.startsWith('Winter Camp 2027/Kids/')), JSON.stringify(st.files.map((f) => [f.folder, f.mime, f.size])));
       const drivePdf = st.files.find((f) => f.mime === 'application/pdf');
       check('Backend: the Drive PDF is the same file that was downloaded, in "Registration PDFs"', drivePdf?.folder === 'Winter Camp 2027/Kids/Registration PDFs' && drivePdf.size === pdfBuf.length, `${drivePdf?.size} vs ${pdfBuf.length}`);
-      check('Backend: the row links the PDF in the "Registration PDF" column', /drive\.google\.com/.test(st.kids[0][st.headers.indexOf('Registration PDF')] || ''));
+      check('Backend: the row links the PDF in the "Registration PDF" column', /^https?:\/\/drive\.google\.com(?:[/?#]|$)/.test(st.kids[0][st.headers.indexOf('Registration PDF')] || ''));
       const stored = await page.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }));
       check('Nothing personal left in browser storage', !/Tenzin|Dolma|98765/.test(stored), stored);
 
