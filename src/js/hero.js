@@ -41,6 +41,18 @@ export function initHero() {
     });
   }, { passive: true });
   hero.addEventListener('pointerleave', () => queue(() => { light(-9999, -9999); scene?.setPointer(0, 0); }));
+  // Touch: the snow and light follow the finger while it is on the hero.
+  const follow = (e) => {
+    const t0 = e.touches[0];
+    if (!t0) return;
+    queue(() => {
+      light(t0.clientX, t0.clientY);
+      scene?.setPointer((t0.clientX / window.innerWidth) * 2 - 1, (t0.clientY / window.innerHeight) * 2 - 1);
+    });
+  };
+  hero.addEventListener('touchstart', follow, { passive: true });
+  hero.addEventListener('touchmove', follow, { passive: true });
+  hero.addEventListener('touchend', (e) => { if (!e.touches.length) queue(() => { light(-9999, -9999); scene?.setPointer(0, 0); }); }, { passive: true });
 
   // Phones: tilt where the browser allows it without a permission prompt, else scroll.
   const touch = window.matchMedia('(hover: none)').matches;

@@ -16,6 +16,7 @@ All Tibetan text on the site is in `src/i18n/bo.json`. It is a **draft written w
 - **Dates.** We wrote them as `2027 ཕྱི་ཟླ་ 1 ཚེས་ 4`. Decide whether to keep Western digits (0 to 9) or use Tibetan digits (༠ to ༩) throughout.
 - **The consent statement** (`reg.f.consentStatementLocal`). This is a translation of the legal wording. The original English statement is always shown beneath it, and it is the English that the parent signs.
 - **Questions and answers** (`faq.items`) and the **privacy notice** (`privacy.sections`).
+- **Round 4 additions:** the registration PDF labels (`reg.pdf`), the new success-screen text (`reg.done.download`, `preparing`, `downloaded`, `private`, `pdfError`, `shareText`), the loader's `loader.soundLabel`, the language question "སྐད་ཡིག་འདེམས།" on the loading screen, and the new last paragraph of the privacy section on what is stored on your device. If the loading-screen question changes, run `node scripts/subset-toggle-font.mjs` so the English page has its letters.
 
 ## Kept in English on purpose
 

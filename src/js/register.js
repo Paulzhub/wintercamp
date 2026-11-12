@@ -4,10 +4,10 @@
 import { gsap, reduced, smoothPanel } from './motion.js';
 import { T, $, $$, fill } from './i18n.js';
 import { openModal } from './modal.js';
-import { fetchSeats, sendRegistration } from './api.js';
+import { fetchSeats, sendRegistration, sendPdf } from './api.js';
 import { initSignature } from './signature.js';
 import { prepareScreenshot } from './image.js';
-import { MAX, isoDate, dobProblem, todayIso, validPhone, normPhone } from './validate.js';
+import { MAX, isoDate, dobProblem, todayIso, validPhone, normPhone, ageOn } from './validate.js';
 
 const STEP_OF = {
   name: 0, dob: 0,
@@ -577,8 +577,12 @@ export function initRegistration({ audio }) {
       return;
     }
     lock(false);
-    if (res?.ok && res.status === 'registered') { success(); return; }
-    if (res?.ok && res.status === 'last_seat') { lastSeat(); return; }
+    if (res?.ok && (res.status === 'registered' || res.status === 'last_seat')) {
+      // Make the registration PDF from what was sent, before the form is cleared.
+      startPdf(record(res.submittedAt));
+      if (res.status === 'registered') success(); else lastSeat();
+      return;
+    }
     if (res?.error === 'duplicate') { showSendError(fill(E.duplicate, { phone })); return; }
     if (res?.error === 'busy') { showSendError(E.busy, submit); return; }
     if (res?.error === 'validation' && Array.isArray(res.fields)) {
@@ -629,14 +633,8 @@ export function initRegistration({ audio }) {
     $('#done-name').textContent = name;
     $('#done-category').textContent = category;
     $('#done-dates').textContent = R[`${cat}Dates`];
-    // Kept only in memory, for the Save and Share buttons, until the view closes.
-    state.confirm = {
-      rows: [[R.done.name, name], [R.done.category, category], [R.done.dates, R[`${cat}Dates`]], [R.done.venue, R.done.venueValue]],
-      ref: String(state.submissionId || '').replace(/-/g, '').slice(0, 8).toUpperCase(),
-      issued: new Date().toLocaleDateString(T.lang === 'bo' ? 'en-IN' : 'en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
-      file: `Winter-Camp-2027-${name.replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '') || 'registration'}.png`,
-    };
     prepareShare();
+    $('#done-status').textContent = '';
     resetForm();
     showOutcome(doneView);
     doneView.classList.add('is-shown');
@@ -655,28 +653,102 @@ export function initRegistration({ audio }) {
     if (!reduced()) gsap.fromTo('#reg-last > *', { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.64, clearProps: 'all' });
   }
 
-  // ---------- Save or share the confirmation as an image ----------
-  let shareFile = null;
-  async function confirmationFile() {
-    if (shareFile) return shareFile;
-    const { drawConfirmation } = await import('./confirm-image.js');
-    const c = state.confirm;
-    const blob = await drawConfirmation({
+  // ---------- Registration PDF: download, share, and a copy for the organisers ----------
+  // Everything here is kept only in memory, until the view closes.
+  const fmtDate = (iso) => {
+    const [y, m, d] = String(iso).split('-').map(Number);
+    if (!y) return iso;
+    return T.lang === 'bo' ? iso : new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+  };
+  function record(submittedAt) {
+    const p = payload();
+    const P = R.pdf;
+    const cat = state.cat;
+    const none = (v) => v || P.none;
+    const local = (key) => (R.f[`${key}Local`] ? `${R.f[`${key}Local`]}\n${R.f[key]}` : R.f[key]);
+    const agreeText = R.f.agreeOriginal ? `${R.f.agree}\n${R.f.agreeOriginal}` : R.f.agree;
+    const at = submittedAt || new Date().toLocaleString('en-GB', { timeZone: 'Asia/Kolkata', hour12: false }).replace(',', '');
+    const code = String(p.submissionId || '').replace(/-/g, '').slice(0, 8).toUpperCase();
+    return {
       lang: T.lang,
-      labels: { title: R.done.imageTitle, seat: R.done.imageSeat, ref: R.done.imageRef, contact: R.done.imageContact },
-      rows: c.rows, ref: c.ref, issued: c.issued,
+      name: p.name,
+      submissionId: p.submissionId,
+      ref: `${P.reference} ${code}`,
+      signature: p.signature || '',
+      labels: { title: P.title, page: P.page, contact: P.contact, screenshot: P.screenshot, signature: P.signature, signatureTyped: P.signatureTyped },
+      sections: [
+        { title: P.child, rows: [[P.name, p.name], [P.dob, fmtDate(p.dob)], [P.age, String(ageOn(p.dob, T.cats[cat].start))], [P.group, `${R[cat]} (${R[`${cat}Age`]})`], [P.dates, R[`${cat}Dates`]]] },
+        { title: P.family, rows: [[P.parent, p.parent], [P.address, p.address], [P.phones, p.phones.join(', ')], [P.medical, none(p.medical)], [P.dietary, none(p.dietary)]] },
+        {
+          title: P.consent,
+          rows: [[`${P.consentQ}: ${local('consentStatement')}`, p.consent === 'yes' ? R.f.yes : R.f.no], [P.agreed, agreeText], [P.signDate, fmtDate(p.signDate)]],
+          signature: true,
+          typed: p.signatureTyped,
+        },
+      ],
+      payment: {
+        title: P.payment,
+        rows: [[P.amount, T.pay.amount], [P.payee, T.pay.payee], [P.upiId, T.pay.upiId], [P.ref, none(p.paymentRef)], [P.submitted, `${at} IST`]],
+        screenshot: p.screenshot.data,
+      },
+    };
+  }
+
+  let pdf = null; // { name, promise: Promise<File> }
+  function startPdf(rec) {
+    const safe = rec.name.replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '') || 'registration';
+    const name = `Winter-Camp-2027-${safe}-registration.pdf`;
+    const promise = import('./registration-pdf.js')
+      .then(({ buildRegistrationPdf }) => buildRegistrationPdf(rec))
+      .then((blob) => new File([blob], name, { type: 'application/pdf' }));
+    pdf = { name, promise };
+    // A copy for the organisers' private Drive. Retried quietly; the registration already stands.
+    promise.then((file) => uploadPdf(rec.submissionId, file)).catch((err) => console.warn('registration PDF', err));
+  }
+  async function uploadPdf(submissionId, file) {
+    const dataUrl = await new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+      r.readAsDataURL(file);
     });
-    shareFile = new File([blob], c.file, { type: 'image/png' });
-    return shareFile;
+    for (const waitMs of [0, 2000, 6000, 15000]) {
+      if (waitMs) await new Promise((r) => setTimeout(r, waitMs));
+      try {
+        const res = await sendPdf({ action: 'pdf', submissionId, pdf: dataUrl });
+        if (res?.ok || ['pdf', 'not_found', 'too_late', 'bad_request'].includes(res?.error)) return res;
+      } catch { /* network: try again */ }
+    }
+    return null;
+  }
+  async function pdfFile() {
+    if (!pdf) return null;
+    const btn = $('#done-save');
+    btn.setAttribute('aria-busy', 'true');
+    btn.classList.add('is-loading');
+    $('#done-status').textContent = R.done.preparing;
+    try {
+      return await pdf.promise;
+    } catch (err) {
+      console.warn(err);
+      $('#done-status').textContent = R.done.pdfError;
+      $('#done-error').hidden = false;
+      return null;
+    } finally {
+      btn.removeAttribute('aria-busy');
+      btn.classList.remove('is-loading');
+    }
   }
   function prepareShare() {
-    shareFile = null;
-    const probe = new File([new Blob(['x'], { type: 'image/png' })], 'probe.png', { type: 'image/png' });
-    $('#done-share').hidden = !(navigator.canShare && navigator.canShare({ files: [probe] }));
+    $('#done-error').hidden = true;
+    const probe = new File([new Blob(['%PDF-'], { type: 'application/pdf' })], 'probe.pdf', { type: 'application/pdf' });
+    let ok = false;
+    try { ok = Boolean(navigator.canShare && navigator.canShare({ files: [probe] })); } catch { ok = false; }
+    $('#done-share').hidden = !ok;
   }
   $('#done-save').addEventListener('click', async () => {
-    if (!state.confirm) return;
-    const file = await confirmationFile();
+    const file = await pdfFile();
+    if (!file) return;
     const url = URL.createObjectURL(file);
     const a = document.createElement('a');
     a.href = url;
@@ -684,23 +756,22 @@ export function initRegistration({ audio }) {
     doneView.append(a);
     a.click();
     a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 4000);
-    $('#done-status').textContent = R.done.saved;
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    $('#done-status').textContent = R.done.downloaded;
     audio.play('copy');
   });
   $('#done-share').addEventListener('click', async () => {
-    if (!state.confirm) return;
-    const file = await confirmationFile();
+    const file = await pdfFile();
+    if (!file) return;
     try {
-      await navigator.share({ files: [file], title: R.done.shareText, text: R.done.shareText });
+      await navigator.share({ files: [file], title: R.done.shareText });
     } catch (err) {
       if (err?.name !== 'AbortError') $('#done-save').click();
     }
   });
 
   function resetView() {
-    state.confirm = null;
-    shareFile = null;
+    pdf = null;
     doneView.hidden = true;
     doneView.classList.remove('is-shown');
     lastView.hidden = true;

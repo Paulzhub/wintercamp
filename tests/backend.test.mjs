@@ -83,7 +83,9 @@ test('the 30-seat limit holds; later paid submissions go to "Paid, no seat"', ()
   assert.equal(g.doPost(valid()).status, 'registered');
   assert.equal(g.doGet({ action: 'seats' }).seats.kids.left, 0);
   const late = g.doPost(valid());
-  assert.deepEqual(late, { ok: true, status: 'last_seat' });
+  assert.equal(late.ok, true);
+  assert.equal(late.status, 'last_seat');
+  assert.match(late.submittedAt, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
   const overflow = g.sheet('Paid, no seat').rows;
   assert.equal(overflow.length, 2);
   assert.equal(overflow[1][g.context.COL.Status], 'Paid, no seat');
@@ -157,4 +159,64 @@ test('rows in an old single "Registrations" tab are moved to the Kids and Youth 
   assert.ok(g.sheetNames().some((n) => n.startsWith('Registrations (old, moved')));
   g.doGet({ action: 'seats' });
   assert.equal(g.sheet('Kids registrations').rows.length, 2, 'moved only once');
+});
+
+const pdf = 'data:application/pdf;base64,' + Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(300, 32), Buffer.from('%%EOF')]).toString('base64');
+
+test('the registration PDF is stored once, privately, in the group\'s folder and linked from its row', () => {
+  const g = createSandbox();
+  const reg = valid({ category: 'youth', dob: '2012-01-01', name: 'Pema PDF' });
+  const res = g.doPost(reg);
+  assert.match(res.submittedAt, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+  const col = g.context.COL['Registration PDF'];
+  assert.equal(g.sheet('Youth registrations').rows[0][col], 'Registration PDF');
+  assert.equal(g.sheet('Youth registrations').rows[1][col], '');
+  assert.deepEqual(g.doPost({ action: 'pdf', submissionId: reg.submissionId, pdf }), { ok: true, status: 'saved' });
+  const saved = g.files.filter((f) => f.folder === 'Winter Camp 2027/Youth/Registration PDFs');
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].mime, 'application/pdf');
+  assert.match(saved[0].name, /^Youth - Pema PDF - .* - registration\.pdf$/);
+  assert.match(g.sheet('Youth registrations').rows[1][col], /^https:\/\/drive\.google\.com\//);
+  // A retry is harmless and does not make a second file.
+  assert.deepEqual(g.doPost({ action: 'pdf', submissionId: reg.submissionId, pdf }), { ok: true, status: 'saved' });
+  assert.equal(g.files.filter((f) => f.folder.endsWith('Registration PDFs')).length, 1);
+  // The retry of the registration itself reports the same time.
+  assert.equal(g.doPost(reg).submittedAt, res.submittedAt);
+});
+
+test('the PDF upload refuses unknown submissions, non-PDF files, oversized files and late uploads', () => {
+  const g = createSandbox();
+  const reg = valid();
+  g.doPost(reg);
+  assert.equal(g.doPost({ action: 'pdf', submissionId: 'no-such-submission', pdf }).error, 'not_found');
+  assert.equal(g.doPost({ action: 'pdf', submissionId: 'bad id!', pdf }).error, 'bad_request');
+  const fake = 'data:application/pdf;base64,' + Buffer.from('<html>' + ' '.repeat(100)).toString('base64');
+  assert.equal(g.doPost({ action: 'pdf', submissionId: reg.submissionId, pdf: fake }).error, 'pdf');
+  assert.equal(g.doPost({ action: 'pdf', submissionId: reg.submissionId, pdf: pdf.replace('application/pdf', 'image/png') }).error, 'pdf');
+  const big = 'data:application/pdf;base64,' + Buffer.concat([Buffer.from('%PDF-'), Buffer.alloc(8 * 1024 * 1024 + 10)]).toString('base64');
+  assert.equal(g.doPost({ action: 'pdf', submissionId: reg.submissionId, pdf: big }).error, 'pdf');
+  // Make the registration 31 minutes old.
+  const row = g.sheet('Kids registrations').rows[1];
+  row[g.context.COL.Timestamp] = g.context.Utilities.formatDate(new Date(Date.now() - 31 * 60000), 'Asia/Kolkata', 'yyyy-MM-dd HH:mm:ss');
+  assert.equal(g.doPost({ action: 'pdf', submissionId: reg.submissionId, pdf }).error, 'too_late');
+  assert.equal(g.files.filter((f) => f.folder.endsWith('Registration PDFs')).length, 0);
+});
+
+test('a "Paid, no seat" registration gets its PDF too', () => {
+  const g = createSandbox();
+  g.seed('kids', 30);
+  const reg = valid({ name: 'Late Kid' });
+  assert.equal(g.doPost(reg).status, 'last_seat');
+  assert.equal(g.doPost({ action: 'pdf', submissionId: reg.submissionId, pdf }).status, 'saved');
+  assert.ok(g.files.some((f) => f.folder === 'Winter Camp 2027/Kids/Registration PDFs'));
+  assert.match(g.sheet('Paid, no seat').rows[1][g.context.COL['Registration PDF']], /drive\.google\.com/);
+});
+
+test('tabs made by an earlier version get the "Registration PDF" heading added', () => {
+  const g = createSandbox();
+  const sh = g.context.SpreadsheetApp.getActiveSpreadsheet().insertSheet('Kids registrations');
+  sh.appendRow(g.context.HEADERS.slice(0, -1));
+  g.doGet({ action: 'seats' });
+  assert.equal(sh.rows[0].at(-1), 'Registration PDF');
+  assert.equal(sh.rows[0].length, g.context.HEADERS.length);
 });

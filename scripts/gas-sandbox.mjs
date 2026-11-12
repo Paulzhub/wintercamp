@@ -49,6 +49,7 @@ export function createSandbox() {
           });
           return range;
         },
+        setValue(v) { return range.setValues([[v]]); },
         setNumberFormat: () => range,
         setFontWeight: () => range,
       };

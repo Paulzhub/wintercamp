@@ -34,7 +34,8 @@
   "loader": {
     "label": "Loading Winter Camp 2027",
     "withSound": "Enter with sound",
-    "silent": "Enter silently"
+    "silent": "Enter silently",
+    "soundLabel": "Sound"
   },
   "hero": {
     "label": "Winter Camp 2027",
@@ -296,19 +297,49 @@
       "venue": "Venue",
       "venueValue": "Snow View Residency, Jogiwara Road, McLeodganj, Dharamshala",
       "close": "Back to the website",
-      "save": "Save as image",
       "share": "Share",
-      "saved": "Image saved",
-      "imageTitle": "Registration confirmed",
-      "imageSeat": "Seat confirmed. Payment will be checked by the organisers.",
-      "imageRef": "Reference",
-      "imageContact": "Questions? Call +91-8219012669",
-      "shareText": "Winter Camp 2027 registration confirmation",
-      "imageAlt": "Your registration confirmation as an image"
+      "shareText": "Winter Camp 2027 registration details",
+      "download": "Download registration details",
+      "preparing": "Preparing your registration details",
+      "downloaded": "Registration details downloaded",
+      "private": "This file holds your child's health details. Share it only with people you trust.",
+      "pdfError": "We could not make the file on this phone. Your registration is saved; please take a screenshot of this screen instead."
     },
     "lastSeat": "Oh No Someone booked the last seat just before you! Kindly contact +91-8219012669",
     "lastSeatNote": "Your details and payment screenshot have been saved for the organisers.",
-    "blocked": "Please fill in the fields marked in red to continue."
+    "blocked": "Please fill in the fields marked in red to continue.",
+    "pdf": {
+      "title": "Registration details",
+      "reference": "Reference",
+      "child": "Child",
+      "family": "Parent and health",
+      "consent": "Consent and signature",
+      "payment": "Payment",
+      "group": "Group",
+      "dates": "Camp dates",
+      "name": "Name",
+      "dob": "Date of birth",
+      "age": "Age on the first day of camp",
+      "parent": "Parent/Guardian's Name(s)",
+      "address": "Address",
+      "phones": "Emergency contact number(s)",
+      "medical": "Medical conditions or concerns",
+      "dietary": "Dietary requirements or allergies",
+      "consentQ": "Medical emergency consent",
+      "agreed": "Agreement",
+      "signature": "Signature",
+      "signatureTyped": "Signature (typed full name)",
+      "signDate": "Date of signing",
+      "amount": "Amount",
+      "payee": "Paid to",
+      "upiId": "UPI ID",
+      "ref": "UPI transaction reference",
+      "submitted": "Submitted",
+      "screenshot": "Payment screenshot",
+      "none": "None given",
+      "page": "Page {n} of {total}",
+      "contact": "Kid's Happy Club · +91-8219012669"
+    }
   },
   "privacy": {
     "title": "Privacy notice",
@@ -344,19 +375,20 @@
       {
         "h": "Who sees it",
         "p": [
-          "Only the camp organisers. The information is kept in a private Google Sheet and private Google Drive folders that are shared with named organisers only. We do not sell it, publish it or share it with advertisers. It may be shared with medical staff if your child needs treatment."
+          "Only the camp organisers. The information is kept in a private Google Sheet and private Google Drive folders (including a PDF copy of each registration) that are shared with named organisers only. We do not sell it, publish it or share it with advertisers. It may be shared with medical staff if your child needs treatment."
         ]
       },
       {
         "h": "How long we keep it",
         "p": [
-          "We keep registration details, signatures and payment screenshots until the camp accounts are settled, and delete them within 90 days of the end of the camp."
+          "We keep registration details, signatures, payment screenshots and registration PDFs until the camp accounts are settled, and delete them within 90 days of the end of the camp."
         ]
       },
       {
         "h": "What this website stores on your device",
         "p": [
-          "This website uses no cookies, advertising or tracking. It remembers only your language and sound settings in your browser. What you type in the form is held in the page until it is sent and is not saved on your device."
+          "This website uses no cookies, advertising or tracking. It remembers only your language and sound settings in your browser. What you type in the form is held in the page until it is sent and is not saved on your device.",
+          "After you register, your phone makes a PDF of the registration for you to download or share, and sends a copy to the organisers' private Google Drive. It holds your child's health details, so keep the downloaded file safe."
         ]
       },
       {
