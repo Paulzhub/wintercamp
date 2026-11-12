@@ -1332,7 +1332,7 @@ async function main() {
       await page.screenshot({ path: path.join(out, 'r7-dup-after-390.png') });
       const st = await waitFor(async () => { const x = await api('/__state'); return x.overflow[0]?.[x.headers.indexOf('Registration PDF')] && x; });
       const H = (n) => st.headers.indexOf(n);
-      check('Backend: the paid duplicate is saved in "Paid, no seat" as "Paid, duplicate", with screenshot and PDF', Boolean(st) && st.overflow.length === 1 && st.overflow[0][H('Status')] === 'Paid, duplicate' && /drive\.google\.com/.test(st.overflow[0][H('Payment screenshot')]));
+      check('Backend: the paid duplicate is saved in "Paid, no seat" as "Paid, duplicate", with screenshot and PDF', Boolean(st) && st.overflow.length === 1 && st.overflow[0][H('Status')] === 'Paid, duplicate' && /^https?:\/\/(?:[^/]+\.)?drive\.google\.com(?:\/|$)/.test(st.overflow[0][H('Payment screenshot')]));
       await ctx.close();
     }
     {
