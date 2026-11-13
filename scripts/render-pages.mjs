@@ -150,6 +150,19 @@ ${withLd ? `<script type="application/ld+json">${jsonLd(lang, t)}</script>` : ''
 const en = (s) => `<span lang="en">${s}</span>`;
 const brandWord = 'ILLUMINATE';
 
+// The Day 3 picnic card shows a gallery photo behind its text (Paul, round 8: gallery
+// item 20, children playing a group game outdoors). Found by id so it stays the same
+// photo if the gallery order changes; left out if the photo is removed.
+const PICNIC_PHOTO = 'p-3514f4ca1f';
+function picnicPhoto(lang) {
+  const item = gallery.find((g) => g.id === PICNIC_PHOTO && g.type === 'photo');
+  if (!item) return '';
+  const src = (w) => `${base}gallery/${item.id}-${w}.webp`;
+  const srcset = item.widths.map((w) => `${src(w)} ${w}w`).join(', ');
+  const w = item.widths[item.widths.length - 1];
+  return `<img class="card__photo" src="${src(item.widths[1] || w)}" srcset="${srcset}" sizes="(min-width: 1024px) 66vw, 100vw" width="${w}" height="${Math.round((w * item.height) / item.width)}" alt="${esc(item.alt[lang] || item.alt.en || '')}" loading="lazy" decoding="async" draggable="false">`;
+}
+
 function galleryItems(lang, t) {
   const total = gallery.length;
   return gallery
@@ -370,7 +383,12 @@ function registration(lang, t) {
           <p class="pay__row pay__row--code"><span class="pay__k">${esc(r.pay.code)}</span><strong class="pay__v pay__v--id" id="pay-code" lang="en"></strong></p>
           <p class="field__help pay__code-help" id="pay-code-help">${esc(r.pay.codeHelp)}</p>
           <p class="pay__warn" id="pay-warn" lang="en">${esc(r.pay.warn)}</p>
-          <a class="btn btn--dark pay__open" id="upi-open" data-note="${esc(config.upi.note)}" hidden href="upi://pay?pa=${encodeURIComponent(config.upi.id)}&amp;pn=${encodeURIComponent(config.upi.payeeName)}&amp;am=${config.fee.amount}&amp;cu=${config.fee.currency}&amp;tn=${encodeURIComponent(config.upi.note)}"><span class="btn__label">${esc(r.pay.open)}</span></a>
+          <button type="button" class="btn btn--dark pay__open" id="upi-open" aria-expanded="false" aria-controls="upi-apps" data-note="${esc(config.upi.note)}" data-upi="pa=${encodeURIComponent(config.upi.id)}&amp;pn=${encodeURIComponent(config.upi.payeeName)}&amp;am=${config.fee.amount}&amp;cu=${config.fee.currency}&amp;tn=${encodeURIComponent(config.upi.note)}" hidden><span class="btn__label">${esc(r.pay.open)}</span></button>
+          <div class="pay__apps" id="upi-apps" hidden>
+            <p class="pay__apps-title" id="upi-apps-title">${esc(r.pay.apps)}</p>
+            <ul class="pay__apps-list" aria-labelledby="upi-apps-title"></ul>
+            <p class="field__help">${esc(r.pay.appsHelp)}</p>
+          </div>
         </div>
       </div>
       <div class="field">
@@ -500,8 +518,8 @@ function homePage(lang) {
   const a = t.activities;
   const letters = [...brandWord].map((c, i) => `<span class="ltr${i === 0 ? ' ltr--accent' : ''}" aria-hidden="true">${c}</span>`).join('');
   const card = (key, extra = '') => `<li class="card ${extra}" data-reveal>
-  <article class="card__in" data-tilt>
-    ${key === 'picnic' ? '<div class="card__body">' : ''}
+  <article class="card__in${key === 'picnic' && picnicPhoto(lang) ? ' has-photo' : ''}" data-tilt>
+    ${key === 'picnic' ? `${picnicPhoto(lang)}<div class="card__body">` : ''}
     <span class="card__icon icon-${key}" aria-hidden="true">${icons[key]}</span>
     <h3 class="card__title">${esc(a.cards[key].title)}</h3>
     <p class="card__text">${esc(a.cards[key].text)}</p>
