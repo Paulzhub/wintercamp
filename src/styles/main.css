@@ -563,19 +563,12 @@ select.input { appearance: none; padding-right: var(--s6); background-image: lin
 .pay__grid { display: grid; gap: var(--s3); padding: var(--s3); border-radius: var(--r-lg); background: var(--t-dark); box-shadow: var(--sh1); }
 @media (min-width: 768px) { .pay__grid { grid-template-columns: 240px 1fr; align-items: start; } }
 .pay__qr { border-radius: calc(var(--r-lg) - var(--s3)); overflow: hidden; background: #fff; max-width: 280px; justify-self: center; box-shadow: var(--sh1); }
+.pay__qr-help { margin: 0; padding: var(--s2); color: var(--t-light); }
 .pay__details { display: grid; gap: var(--s2); }
 .pay__row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--s2); }
 .pay__k { width: 100%; font-size: 14px; color: var(--muted); }
 .pay__v { font-size: 18px; font-weight: 600; word-break: break-all; }
 .pay__v--id { font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace; font-size: 16px; }
-.pay__apps { display: grid; gap: var(--s2); padding: var(--s2); border-radius: var(--r-md); background: var(--c-light); }
-.pay__apps-title { font-weight: 600; }
-.pay__amount { font-weight: 600; color: var(--t-light); }
-.pay__apps-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); gap: var(--s1); }
-.pay__app { display: flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 var(--s2); border-radius: var(--r-pill); border: 2px solid rgb(24 14 85 / 0.16); background: var(--t-dark); color: var(--t-light); font-weight: 600; text-decoration: none; transition: border-color var(--d-micro) var(--ease), background-color var(--d-micro) var(--ease); }
-.pay__app:hover, .pay__app:focus-visible { border-color: var(--c-accent); }
-.pay__app:active { background: rgb(209 20 108 / 0.08); }
-.pay__open { width: 100%; }
 .shot { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: flex-start; }
 .shot__choose { cursor: pointer; }
 .shot__input:focus-visible + .shot__choose { outline: 3px solid var(--t-light); outline-offset: 3px; }
@@ -745,7 +738,6 @@ select.input { appearance: none; padding-right: var(--s6); background-image: lin
 .hold__ended p { margin: 0; font-weight: 500; }
 .pay__help { margin: 0; }
 /* Paul's request: the amount warning in red capitals before the UPI button (6.6:1 on the card). */
-.pay__warn { margin: 0; color: #B3001B; font-weight: 700; font-size: 18px; letter-spacing: 0.04em; text-transform: uppercase; }
 .pay__code-help { margin: -4px 0 0; }
 .hero__live { margin: 0; font-size: 15px; font-weight: 500; color: var(--t-dark); text-shadow: 0 1px 12px rgb(8 4 32 / 0.6); }
 .hero__live.is-full { font-weight: 600; }

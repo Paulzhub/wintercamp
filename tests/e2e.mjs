@@ -1263,9 +1263,7 @@ async function main() {
       const myId = Object.keys(st.holds.kids)[0];
       check('Backend: one hold for this submission', Object.keys(st.holds.kids).length === 1 && Boolean(myId));
       const code = (await page.textContent('#pay-code')).trim();
-      check('Payment step: registration code shown and put in the UPI note', /^[0-9A-F]{8}$/.test(code) && code === myId.replace(/-/g, '').slice(0, 8).toUpperCase() && (await page.getAttribute('#upi-open', 'data-upi')).includes(`tn=Winter%20Camp%202027%20${code}`), code);
-      const warn = await page.evaluate(() => { const w = document.getElementById('pay-warn'); const b = document.getElementById('upi-open'); return { t: w.textContent.trim(), c: getComputedStyle(w).color, before: Boolean(w.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING), vis: w.offsetParent !== null }; });
-      check('Red capital warning "CHECK AND PAY ₹ 500/- ONLY" right before the UPI button', warn.t === 'CHECK AND PAY ₹ 500/- ONLY' && warn.c === 'rgb(179, 0, 27)' && warn.before && warn.vis, JSON.stringify(warn));
+      check('Payment step: registration code shown (typed in the UPI note)', /^[0-9A-F]{8}$/.test(code) && code === myId.replace(/-/g, '').slice(0, 8).toUpperCase(), code);
       const helpLine = await page.evaluate(() => { const h = document.getElementById('pay-help'); return { t: h.textContent.trim(), before: Boolean(h.compareDocumentPosition(document.querySelector('.pay__qr')) & Node.DOCUMENT_POSITION_FOLLOWING) }; });
       check('"If anything goes wrong after you pay, call ..." shown before the QR code', helpLine.t === 'If anything goes wrong after you pay, call +91-8219012669 with your payment screenshot.' && helpLine.before, JSON.stringify(helpLine));
       await page.fill('#f-ref', 'UPI123');
@@ -1276,8 +1274,6 @@ async function main() {
       check('A 12-digit UTR with spaces is accepted', await page.isHidden('#err-ref'));
       await page.locator('#hold').scrollIntoViewIfNeeded();
       await page.screenshot({ path: path.join(out, 'r7-hold-390.png') });
-      await page.locator('#pay-warn').scrollIntoViewIfNeeded();
-      await page.screenshot({ path: path.join(out, 'r7-pay-warn-390.png') });
       await axe(page, 'Round 7: payment step with hold', '#register');
 
       // The tab reloads (as when the phone switches to the UPI app): the draft brings the form back.
@@ -1576,33 +1572,6 @@ async function main() {
       done();
       await ctx.close();
     }
-    // 20c. "Pay ₹500 with UPI" opens a list of UPI apps (Android and iPhone).
-    for (const [os, ua] of [['Android', 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36'], ['iPhone', 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1']]) {
-      await api('/__reset', {});
-      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, userAgent: ua });
-      const page = await ctx.newPage();
-      const done = watch(page, `Round 8 UPI apps ${os}`);
-      await page.goto(SITE);
-      await enter(page);
-      await page.click('.hero__cta [data-open-register]');
-      await fillToPayment(page, { cat: 'kids', dob: '2018-05-05' });
-      const code = (await page.textContent('#pay-code')).trim();
-      check(`${os}: "Pay ₹500 with UPI" shown, list closed`, await page.isVisible('#upi-open') && await page.isHidden('#upi-apps') && (await page.getAttribute('#upi-open', 'aria-expanded')) === 'false');
-      await page.click('#upi-open');
-      await page.waitForTimeout(400);
-      const links = await page.$$eval('#upi-apps .pay__app', (as) => as.map((a) => ({ t: a.textContent, h: a.getAttribute('href') })));
-      const names = links.map((l) => l.t).join(', ');
-      check(`${os}: tapping it opens a list of UPI apps`, await page.isVisible('#upi-apps') && (await page.getAttribute('#upi-open', 'aria-expanded')) === 'true' && names === 'Google Pay, PhonePe, Paytm, BHIM, CRED, Other UPI app', names);
-      const gp = links[0].h;
-      const ok = os === 'Android'
-        ? gp.startsWith('intent://pay?pa=') && gp.endsWith('#Intent;scheme=upi;package=com.google.android.apps.nbu.paisa.user;end')
-        : gp.startsWith('gpay://upi/pay?pa=');
-      check(`${os}: each app link opens that app with the payee and the registration code, and no amount (round 9: typed by the family)`, ok && links.every((l) => !/[?&]am=/.test(l.h) && l.h.includes('pa=achuisr1985.27-1%40okhdfcbank') && l.h.includes(`tn=Winter%20Camp%202027%20${code}`)) && links.at(-1).h.startsWith('upi://pay?'), gp);
-      await page.locator('#upi-apps').screenshot({ path: path.join(out, `r8-upi-apps-${os.toLowerCase()}.png`) });
-      await axe(page, `UPI app list ${os}`, '#register');
-      done();
-      await ctx.close();
-    }
     // 20d. Privacy notice: how long we keep it.
     {
       const ctx = await browser.newContext({ viewport: { width: 1024, height: 800 } });
@@ -1746,31 +1715,38 @@ async function main() {
       await ctx.close();
     }
 
-    // 21d. UPI: the family types the amount; tapping an app copies the UPI ID and keeps the hold through pagehide.
+    // 21d / 23. Paying (round 11): no UPI app button, list or red warning; scan the QR code
+    // or copy the UPI ID or phone number. Copying keeps the hold through pagehide.
     {
       await api('/__reset', {});
       const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1', permissions: ['clipboard-read', 'clipboard-write'] });
       const page = await ctx.newPage();
-      const done = watch(page, 'Round 9 UPI');
+      const done = watch(page, 'Round 11 paying');
       await page.goto(SITE);
       await enter(page);
       await page.click('.hero__cta [data-open-register]');
       await fillToPayment(page, { cat: 'kids', dob: '2018-08-08' });
-      await page.click('#upi-open');
+      const gone = await page.evaluate(() => ({ open: Boolean(document.getElementById('upi-open')), apps: Boolean(document.getElementById('upi-apps')), warn: Boolean(document.getElementById('pay-warn')), red: [...document.querySelectorAll('#pay-panel *')].some((el) => getComputedStyle(el).color === 'rgb(179, 0, 27)'), text: document.getElementById('pay-panel').textContent }));
+      check('Paying on a phone: no "Pay ₹500 with UPI" button, no UPI app list, no red warning', !gone.open && !gone.apps && !gone.warn && !gone.red && !gone.text.includes('CHECK AND PAY') && !gone.text.includes('Pay ₹500 with UPI'), JSON.stringify({ ...gone, text: undefined }));
+      const qr = await page.evaluate(() => ({ img: document.querySelector('.pay__qr img')?.complete, help: document.querySelector('.pay__qr-help')?.textContent || '' }));
+      check('Paying: the QR code is shown with how to scan it on the same phone', qr.help.includes('Scan this QR code') && qr.help.includes('screenshot of the QR code'), JSON.stringify(qr));
+      await page.locator('.pay__grid').scrollIntoViewIfNeeded();
       await page.waitForTimeout(400);
-      const txt = await page.textContent('#upi-apps');
-      check('UPI: the list says to type ₹500 and what to do if the app shows a limit error', txt.includes('Type the amount yourself: ₹500') && txt.includes('no money has been taken'));
-      await page.locator('#upi-apps').screenshot({ path: path.join(out, 'r9-upi-apps-iphone.png') });
-      // Tap Google Pay without leaving the page (the app can't open here).
-      await page.evaluate(() => { const a = document.querySelector('#upi-apps .pay__app'); a.addEventListener('click', (e) => e.preventDefault(), { once: true }); a.click(); });
+      await page.screenshot({ path: path.join(out, 'r11-pay-390.png') });
+      await page.click('#phone-copy');
       await page.waitForTimeout(300);
-      const clip = await page.evaluate(() => navigator.clipboard.readText().catch(() => ''));
-      check('UPI: tapping an app copies the UPI ID', clip === 'achuisr1985.27-1@okhdfcbank', clip);
+      let clip = await page.evaluate(() => navigator.clipboard.readText().catch(() => ''));
+      check('Paying: Copy next to the phone number copies it', clip === '8219012669' && (await page.textContent('#phone-copy')).trim() === 'Copied', clip);
+      await page.click('#upi-copy');
+      await page.waitForTimeout(300);
+      clip = await page.evaluate(() => navigator.clipboard.readText().catch(() => ''));
+      check('Paying: Copy next to the UPI ID copies it', clip === 'achuisr1985.27-1@okhdfcbank', clip);
+      await axe(page, 'Round 11 payment step', '#register');
       // iPhone may fire pagehide when Safari goes to the background: the hold must stay.
       await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false })));
       await page.waitForTimeout(600);
       const st = await api('/__state');
-      check('UPI: the seat stays held through pagehide after tapping an app (the family is paying)', Object.keys(st.holds.kids || {}).length === 1, JSON.stringify(st.holds));
+      check('Paying: the seat stays held through pagehide after copying (the family is paying)', Object.keys(st.holds.kids || {}).length === 1, JSON.stringify(st.holds));
       done();
       await ctx.close();
     }

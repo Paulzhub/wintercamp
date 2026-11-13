@@ -372,25 +372,17 @@ function registration(lang, t) {
       </div>
       <p class="notice notice--info pay__help" id="pay-help">${esc(r.pay.help)}</p>
       <div class="pay__grid">
-        <figure class="pay__qr"><img src="/assets/payment/upi-qr.jpg" width="1152" height="1600" alt="${esc(r.pay.qrAlt)}" loading="lazy" decoding="async"></figure>
+        <figure class="pay__qr"><img src="/assets/payment/upi-qr.jpg" width="1152" height="1600" alt="${esc(r.pay.qrAlt)}" loading="lazy" decoding="async"><figcaption class="field__help pay__qr-help">${esc(r.pay.qrHelp)}</figcaption></figure>
         <div class="pay__details">
           <p class="pay__row"><span class="pay__k">${esc(r.pay.payee)}</span><strong class="pay__v" lang="en">${esc(config.upi.payeeName)}</strong></p>
           <p class="notice notice--info">${esc(r.pay.payeeCheck)}</p>
           <p class="pay__row"><span class="pay__k">${esc(r.pay.upiId)}</span><span class="pay__v pay__v--id" id="upi-id" lang="en">${esc(config.upi.id)}</span>
-            <button type="button" class="btn btn--ghost btn--sm" id="upi-copy" data-tip="${esc(r.pay.copyTip)}"><span class="btn__icon" aria-hidden="true">${icons.copy}</span><span class="btn__label" data-copy-label>${esc(r.pay.copy)}</span></button></p>
+            <button type="button" class="btn btn--ghost btn--sm" id="upi-copy" data-copy="#upi-id" data-tip="${esc(r.pay.copyTip)}"><span class="btn__icon" aria-hidden="true">${icons.copy}</span><span class="btn__label" data-copy-label>${esc(r.pay.copy)}</span></button></p>
           <p class="sr-only" id="copy-status" role="status" aria-live="polite"></p>
-          <p class="pay__row"><span class="pay__k">${esc(r.pay.phone)}</span><span class="pay__v" lang="en">${esc(config.upi.phone)}</span></p>
+          <p class="pay__row"><span class="pay__k">${esc(r.pay.phone)}</span><span class="pay__v pay__v--id" id="upi-phone" lang="en">${esc(config.upi.phone)}</span>
+            <button type="button" class="btn btn--ghost btn--sm" id="phone-copy" data-copy="#upi-phone" data-tip="${esc(r.pay.phoneCopyTip)}"><span class="btn__icon" aria-hidden="true">${icons.copy}</span><span class="btn__label" data-copy-label>${esc(r.pay.copy)}</span></button></p>
           <p class="pay__row pay__row--code"><span class="pay__k">${esc(r.pay.code)}</span><strong class="pay__v pay__v--id" id="pay-code" lang="en"></strong></p>
           <p class="field__help pay__code-help" id="pay-code-help">${esc(r.pay.codeHelp)}</p>
-          <p class="pay__warn" id="pay-warn" lang="en">${esc(r.pay.warn)}</p>
-          <button type="button" class="btn btn--dark pay__open" id="upi-open" aria-expanded="false" aria-controls="upi-apps" data-note="${esc(config.upi.note)}" data-upi="pa=${encodeURIComponent(config.upi.id)}&amp;pn=${encodeURIComponent(config.upi.payeeName)}&amp;cu=${config.fee.currency}&amp;tn=${encodeURIComponent(config.upi.note)}" hidden><span class="btn__label">${esc(r.pay.open)}</span></button>
-          <div class="pay__apps" id="upi-apps" hidden>
-            <p class="pay__apps-title" id="upi-apps-title">${esc(r.pay.apps)}</p>
-            <p class="pay__amount" id="upi-amount">${esc(r.pay.enterAmount)}</p>
-            <ul class="pay__apps-list" aria-labelledby="upi-apps-title" aria-describedby="upi-amount"></ul>
-            <p class="field__help">${esc(r.pay.appsHelp)}</p>
-            <p class="field__help pay__app-error">${esc(r.pay.appError)}</p>
-          </div>
         </div>
       </div>
       <div class="field">
