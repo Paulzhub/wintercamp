@@ -407,6 +407,13 @@ html.wc-gutter { scrollbar-gutter: stable; }
 /* Opening and closing the full-screen view: 0.7 s, easing in and out. */
 ::view-transition-group(wc-media), ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 700ms; animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1); }
 ::view-transition-old(wc-media), ::view-transition-new(wc-media) { animation-duration: 700ms; animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1); }
+/* The moving gallery item is clipped to rounded corners the whole way (lightbox.js eases
+   the radius from the thumbnail's to the view's); both snapshots fill it. */
+::view-transition-group(wc-media) { overflow: clip; border-radius: var(--r-md); }
+::view-transition-image-pair(wc-media) { overflow: clip; border-radius: inherit; }
+::view-transition-old(wc-media), ::view-transition-new(wc-media) { width: 100%; height: 100%; object-fit: cover; }
+.lightbox__stage img, .lightbox__stage video { transition: box-shadow var(--d-ui) var(--ease); }
+html.wc-vt .lightbox__stage img, html.wc-vt .lightbox__stage video { box-shadow: none; transition: none; }
 
 /* ---------- FAQ ---------- */
 .faq__list { display: grid; gap: var(--s2); margin-top: var(--s4); }
