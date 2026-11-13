@@ -190,9 +190,16 @@ export async function buildRegistrationPdf(data) {
     g.textAlign = 'left';
   });
 
-  const jpegs = await Promise.all(pages.map((c) => new Promise((resolve, reject) => {
-    c.toBlob((b) => (b ? b.arrayBuffer().then((a) => resolve(new Uint8Array(a)), reject) : reject(new Error('toBlob failed'))), 'image/jpeg', 0.86);
-  })));
+  // One page at a time, and each canvas is released once encoded: iPhones limit
+  // the memory all canvases on a page may use together.
+  const jpegs = [];
+  for (const c of pages) {
+    jpegs.push(await new Promise((resolve, reject) => {
+      c.toBlob((b) => (b ? b.arrayBuffer().then((a) => resolve(new Uint8Array(a)), reject) : reject(new Error('toBlob failed'))), 'image/jpeg', 0.86);
+    }));
+    c.width = 0;
+    c.height = 0;
+  }
   return new Blob([writePdf(jpegs, data.labels.title)], { type: 'application/pdf' });
 }
 

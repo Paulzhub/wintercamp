@@ -383,11 +383,13 @@ function registration(lang, t) {
           <p class="pay__row pay__row--code"><span class="pay__k">${esc(r.pay.code)}</span><strong class="pay__v pay__v--id" id="pay-code" lang="en"></strong></p>
           <p class="field__help pay__code-help" id="pay-code-help">${esc(r.pay.codeHelp)}</p>
           <p class="pay__warn" id="pay-warn" lang="en">${esc(r.pay.warn)}</p>
-          <button type="button" class="btn btn--dark pay__open" id="upi-open" aria-expanded="false" aria-controls="upi-apps" data-note="${esc(config.upi.note)}" data-upi="pa=${encodeURIComponent(config.upi.id)}&amp;pn=${encodeURIComponent(config.upi.payeeName)}&amp;am=${config.fee.amount}&amp;cu=${config.fee.currency}&amp;tn=${encodeURIComponent(config.upi.note)}" hidden><span class="btn__label">${esc(r.pay.open)}</span></button>
+          <button type="button" class="btn btn--dark pay__open" id="upi-open" aria-expanded="false" aria-controls="upi-apps" data-note="${esc(config.upi.note)}" data-upi="pa=${encodeURIComponent(config.upi.id)}&amp;pn=${encodeURIComponent(config.upi.payeeName)}&amp;cu=${config.fee.currency}&amp;tn=${encodeURIComponent(config.upi.note)}" hidden><span class="btn__label">${esc(r.pay.open)}</span></button>
           <div class="pay__apps" id="upi-apps" hidden>
             <p class="pay__apps-title" id="upi-apps-title">${esc(r.pay.apps)}</p>
-            <ul class="pay__apps-list" aria-labelledby="upi-apps-title"></ul>
+            <p class="pay__amount" id="upi-amount">${esc(r.pay.enterAmount)}</p>
+            <ul class="pay__apps-list" aria-labelledby="upi-apps-title" aria-describedby="upi-amount"></ul>
             <p class="field__help">${esc(r.pay.appsHelp)}</p>
+            <p class="field__help pay__app-error">${esc(r.pay.appError)}</p>
           </div>
         </div>
       </div>
@@ -416,7 +418,7 @@ function registration(lang, t) {
 
   <div class="notice notice--error" id="send-error" role="alert" hidden></div>
   <p class="form__blocked" id="step-blocked" hidden>${esc(r.blocked)}</p>
-  <p class="form__gate" id="step-gate" hidden>${esc(r.consentGate)}</p>
+  <p class="form__gate" id="step-gate" hidden>${esc(`${r.gate.lead} ${r.gate.consent}, ${r.gate.agree} ${r.gate.and} ${r.gate.sign}.`)}</p>
   <div class="form__nav">
     <button type="button" class="btn btn--ghost" id="reg-back" hidden><span class="btn__label">${esc(r.back)}</span></button>
     <button type="button" class="btn btn--red" id="reg-next" aria-describedby="step-gate"><span class="btn__label">${esc(r.next)}</span></button>
@@ -439,6 +441,7 @@ function registration(lang, t) {
     <button type="button" class="btn btn--dark" id="done-share" hidden><span class="btn__icon" aria-hidden="true">${icons.share}</span><span class="btn__label">${esc(r.done.share)}</span></button>
   </div>
   <p class="done__note">${esc(r.done.private)}</p>
+  <p class="done__note done__note--copy" id="done-copy" role="status" hidden></p>
   <p class="done__note done__note--error" id="done-error" role="alert" hidden>${esc(r.done.pdfError)}</p>
   <p class="sr-only" id="done-status" role="status" aria-live="polite"></p>
   <button type="button" class="btn btn--ghost" data-close-register><span class="btn__label">${esc(r.done.close)}</span></button>
@@ -480,7 +483,7 @@ function siteHeader(lang, t, pathKey) {
   const registerBtn = (cls, label, extra = '') => onHome
     ? `<button type="button" class="${cls}" data-open-register ${extra}><span class="btn__label">${esc(label)}</span></button>`
     : `<a class="${cls}" href="${pre}#register" ${extra}><span class="btn__label">${esc(label)}</span></a>`;
-  return `<header class="nav${onHome ? '' : ' is-stuck nav--sub'}" id="nav" data-tone="dark">
+  return `<header class="nav${onHome ? '' : ' nav--sub'}" id="nav" data-tone="dark">
   <a class="nav__brand" href="${pre}#home" aria-label="Illuminate, ${esc(config.camp.name)}: ${esc(t.nav.home)}"><span class="nav__wordmark${onHome ? '' : ' is-shown'}" lang="en" aria-hidden="true">${brandWord}</span></a>
   <nav class="nav__nav" aria-label="${esc(t.nav.label)}">
     <ul class="nav__links">
@@ -702,25 +705,31 @@ ${registration(lang, t)}
 `;
 }
 
-function privacyPage(lang) {
-  const t = strings[lang];
-  const p = t.privacy;
+// Every page other than the home page: the same menu bar, see-through over an
+// indigo title band (a small hero, like the home page's), then the light content.
+// New sub-pages should be made with this, so no page starts light under the bar.
+function subPage({ lang, t, pathKey, title, metaTitle, metaDescription, meta = '', body }) {
   return `<!doctype html>
 <html lang="${lang}" class="lang-${lang} page-plain">
 <head>
-${head({ lang, t, title: p.metaTitle, description: p.metaDescription, pathKey: 'privacy', withLd: false })}
+${head({ lang, t, title: metaTitle, description: metaDescription, pathKey, withLd: false })}
 <script type="module" src="/src/entry-plain-${lang}.js"></script>
 </head>
 <body>
 <a class="skip" href="#main">${esc(t.common.skip)}</a>
-${siteHeader(lang, t, 'privacy')}
-<main id="main" class="section light plain" data-particles="accent" tabindex="-1">
-  <div class="wrap wrap--narrow prose">
-    <p><a class="link" href="${urls[lang].home}">← ${esc(p.back)}</a></p>
-    <h1 class="title">${esc(p.title)}</h1>
-    <p class="prose__meta">${esc(p.updated)}</p>
-    ${p.sections.map((s) => `<h2>${esc(s.h)}</h2>${s.p.map((x) => `<p>${esc(x)}</p>`).join('')}`).join('\n    ')}
-    <p><a class="btn btn--dark" href="${tel}"><span class="btn__icon" aria-hidden="true">${icons.phone}</span><span class="btn__label">${esc(fill(t.common.call, { phone }))}</span></a></p>
+${siteHeader(lang, t, pathKey)}
+<main id="main" class="plain" tabindex="-1">
+  <div class="page-hero dark" data-tone="dark" data-particles="secondary">
+    <div class="wrap wrap--narrow page-hero__inner">
+      <p class="page-hero__back"><a class="link" href="${urls[lang].home}">← ${esc(t.privacy.back)}</a></p>
+      <h1 class="title page-hero__title">${esc(title)}</h1>
+      ${meta ? `<p class="page-hero__meta">${esc(meta)}</p>` : ''}
+    </div>
+  </div>
+  <div class="section light plain__body" data-tone="light" data-particles="accent">
+    <div class="wrap wrap--narrow prose">
+    ${body}
+    </div>
   </div>
 </main>
 <footer class="footer dark footer--plain" data-particles="secondary">
@@ -730,6 +739,16 @@ ${siteHeader(lang, t, 'privacy')}
 </body>
 </html>
 `;
+}
+
+function privacyPage(lang) {
+  const t = strings[lang];
+  const p = t.privacy;
+  return subPage({
+    lang, t, pathKey: 'privacy', title: p.title, metaTitle: p.metaTitle, metaDescription: p.metaDescription, meta: p.updated,
+    body: `${p.sections.map((s) => `<h2>${esc(s.h)}</h2>${s.p.map((x) => `<p>${esc(x)}</p>`).join('')}`).join('\n    ')}
+    <p><a class="btn btn--dark" href="${tel}"><span class="btn__icon" aria-hidden="true">${icons.phone}</span><span class="btn__label">${esc(fill(t.common.call, { phone }))}</span></a></p>`,
+  });
 }
 
 function llmsTxt() {

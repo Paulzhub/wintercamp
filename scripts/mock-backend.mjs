@@ -7,7 +7,8 @@ import http from 'node:http';
 import { createSandbox } from './gas-sandbox.mjs';
 
 export function startMockBackend({ port = Number(process.env.MOCK_PORT || 8787), delay = Number(process.env.MOCK_DELAY || 0) } = {}) {
-  let gas = createSandbox();
+  // Like the live Sheet, timestamps (and dates of birth) come back as dates.
+  let gas = createSandbox({ sheetDates: true });
   const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' };
   const send = (res, code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', ...cors }); res.end(JSON.stringify(obj)); };
   const server = http.createServer((req, res) => {
@@ -22,9 +23,11 @@ export function startMockBackend({ port = Number(process.env.MOCK_PORT || 8787),
         if (url.pathname === '/__seed') { const { category, count } = JSON.parse(body); gas.seed(category, count); return send(res, 200, gas.doGet({ action: 'seats' })); }
         if (url.pathname === '/__clock') { const { advanceMs = 0 } = JSON.parse(body || '{}'); return send(res, 200, { ok: true, offset: gas.advance(advanceMs) }); }
         if (url.pathname === '/__hold') { const { submissionId, category } = JSON.parse(body); gas.resetRate(); return send(res, 200, gas.doPost({ action: 'hold', submissionId, category })); }
-        if (url.pathname === '/__reset') { gas = createSandbox(); return send(res, 200, { ok: true }); }
+        if (url.pathname === '/__reset') { gas = createSandbox({ sheetDates: true }); return send(res, 200, { ok: true }); }
         if (url.pathname === '/__state') {
-          const rows = (n) => (gas.sheet(n)?.rows || []).slice(1);
+          // Dates shown as the Sheet would show them: a day, or a day and time.
+          const cell = (v) => (Object.prototype.toString.call(v) === '[object Date]' ? (/ 00:00:00$/.test(gas.context.stamp_(v)) ? gas.context.text_(v) : gas.context.stamp_(v)) : v);
+          const rows = (n) => (gas.sheet(n)?.rows || []).slice(1).map((r) => r.map(cell));
           const headers = gas.context.HEADERS;
           return send(res, 200, { holds: gas.holds(), headers, kids: rows('Kids registrations'), youth: rows('Youth registrations'), main: [...rows('Kids registrations'), ...rows('Youth registrations')], overflow: rows('Paid, no seat'), files: gas.files });
         }

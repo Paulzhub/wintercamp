@@ -32,7 +32,9 @@ var CONFIG = {
   fee: 500,
   maxImageBytes: 5 * 1024 * 1024,
   maxPdfBytes: 8 * 1024 * 1024,
-  pdfWindowMinutes: 30, // the PDF must arrive within this time of its registration
+  pdfWindowDays: 7, // the PDF must arrive within this time of its registration (the browser keeps it until then)
+  minSignaturePoints: 4, // the same rule as the form: fewer points drawn is an empty pad
+  minSignatureBytes: 1000, // a drawn 900 x 300 signature PNG is several kilobytes, even blank
   maxBodyChars: 16 * 1024 * 1024,
   minFillMs: 5000, // four steps in under 5 seconds is a bot
   maxPerMinute: 120, // rate limit across all visitors for registrations and PDFs
@@ -50,12 +52,14 @@ var HEADERS = [
   'Medical conditions or concerns', 'Dietary requirements or allergies',
   'Medical emergency consent', 'Agreed to take part', 'Date of signing',
   'Signature', 'Typed signature', 'Payment screenshot', 'UPI transaction reference', 'Language', 'Status', 'Registration PDF', 'Fee non-refundable (agreed)',
-  'Registration code', 'Payment check', 'Possible duplicate payment', 'Screenshot fingerprint',
+  'Registration code', 'Payment check', 'Possible duplicate payment', 'Screenshot fingerprint', 'PDF status',
 ];
 // Filled in by the organisers. "Not received" and "Refunded" give the seat back.
 var PAYMENT_CHECK = ['Not checked', 'Received', 'Not received', 'Refund due', 'Refunded'];
 var FREES_SEAT = { 'Not received': true, 'Refunded': true };
 var STATUS = { seat: 'Seat given', noSeat: 'Paid, no seat', duplicate: 'Paid, duplicate' };
+// The "PDF status" column, so the organisers can see whether the registration PDF arrived.
+var PDF_STATUS = { waiting: 'Waiting for PDF', saved: 'Saved', refusedLate: 'Refused: arrived too late', refusedBad: 'Refused: not a valid PDF' };
 var COL = {};
 HEADERS.forEach(function (h, i) { COL[h] = i; });
 
@@ -160,9 +164,15 @@ function register_(d) {
   if (!shot) return validationError_([{ field: 'shot', code: d.screenshot ? 'shotType' : 'shot' }]);
   // Signature: drawn (PNG) or, for anyone who cannot draw one, their typed full name.
   var sig = null;
+  // An empty pad is refused: the browser sends how many points were drawn
+  // (pages loaded before round 9 don't send it), and any real drawing is a PNG
+  // of several kilobytes.
   if (d.signature) {
     sig = decodeImage_(d.signature, ['image/png']);
-    if (!sig) return validationError_([{ field: 'signature', code: 'signature' }]);
+    var points = d.signaturePoints;
+    if (!sig || sig.bytes.length < CONFIG.minSignatureBytes || (typeof points === 'number' && points < CONFIG.minSignaturePoints)) {
+      return validationError_([{ field: 'signature', code: 'signature' }]);
+    }
   } else if (!c.signatureTyped) {
     return validationError_([{ field: 'signature', code: 'signature' }]);
   }
@@ -486,6 +496,8 @@ function saveFiles_(c, shot, sig) {
     .createFile(Utilities.newBlob(sig.bytes, sig.mime, base + ' - signature.' + sig.ext)) : null;
   var shotFile = folder_([CONFIG.rootFolder, label, 'Payment screenshots'])
     .createFile(Utilities.newBlob(shot.bytes, shot.mime, base + ' - payment.' + shot.ext));
+  // The PDF arrives in a second request; make its folder now so it is always there.
+  folder_([CONFIG.rootFolder, label, 'Registration PDFs']);
   // Files stay private to the owner (Drive's default); never shared by link.
   return { signature: sigFile ? sigFile.getUrl() : '', screenshot: shotFile.getUrl() };
 }
@@ -569,6 +581,15 @@ function rows_(name) {
   return sh.getRange(2, 1, last - 1, HEADERS.length).getValues();
 }
 
+/**
+ * A Timestamp cell as 'yyyy-MM-dd HH:mm:ss'. Sheets may store it as a real date
+ * (it did on the live Sheet: right-aligned), and text_() would keep only the day.
+ */
+function stamp_(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, CONFIG.timeZone, 'yyyy-MM-dd HH:mm:ss');
+  return text_(v).trim();
+}
+
 function text_(v) {
   if (v instanceof Date) return Utilities.formatDate(v, CONFIG.timeZone, 'yyyy-MM-dd');
   return String(v === null || v === undefined ? '' : v).replace(/^'/, '');
@@ -599,9 +620,7 @@ function seatsFrom_(holds, now) {
 function findSubmission_(id) {
   var found = locate_(id);
   if (!found) return null;
-  var at = String(found.row[COL.Timestamp] instanceof Date
-    ? Utilities.formatDate(found.row[COL.Timestamp], CONFIG.timeZone, 'yyyy-MM-dd HH:mm:ss')
-    : text_(found.row[COL.Timestamp]));
+  var at = stamp_(found.row[COL.Timestamp]);
   var status = found.tab !== 'overflow' ? 'registered'
     : text_(found.row[COL.Status]) === STATUS.duplicate ? 'duplicate_paid' : 'last_seat';
   return { ok: true, status: status, submittedAt: at };
@@ -693,6 +712,7 @@ function row_(c, files, status) {
   r[COL['Payment check']] = 'Not checked';
   r[COL['Possible duplicate payment']] = c.flag || '';
   r[COL['Screenshot fingerprint']] = c.fingerprint || '';
+  r[COL['PDF status']] = PDF_STATUS.waiting;
   return r.map(safe_);
 }
 
@@ -700,35 +720,56 @@ function row_(c, files, status) {
 
 /**
  * The family's browser draws the registration as a PDF after the registration is
- * accepted, then sends it here. It is accepted once per submission, only as a real
- * PDF, only within CONFIG.pdfWindowMinutes, and saved privately next to the others.
+ * accepted, then sends it here (and again on a later visit if that failed: the
+ * browser keeps it until it is saved). It is accepted once per submission, only
+ * as a real PDF, only within CONFIG.pdfWindowDays, and saved privately in
+ * Winter Camp 2027/{Kids,Youth}/Registration PDFs. The row's "PDF status" says
+ * what happened, for the organisers.
  */
 function savePdf_(d) {
   var id = /^[A-Za-z0-9-]{8,64}$/.test(String(d.submissionId || '')) ? String(d.submissionId) : null;
   if (!id) return { ok: false, error: 'bad_request' };
   if (!rateOk_(id)) return { ok: false, error: 'busy' };
   var pdf = decodePdf_(d.pdf);
-  if (!pdf) return { ok: false, error: 'pdf' };
 
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) return { ok: false, error: 'busy' };
   try {
     var found = locate_(id);
-    if (!found) return { ok: false, error: 'not_found' };
+    if (!found) {
+      console.warn('Registration PDF for an unknown submission: ' + id);
+      return { ok: false, error: 'not_found' };
+    }
     if (text_(found.row[COL['Registration PDF']])) return { ok: true, status: 'saved' }; // already stored: retry-safe
-    var at = text_(found.row[COL.Timestamp]);
-    var limit = Utilities.formatDate(new Date(now_() - CONFIG.pdfWindowMinutes * 60000), CONFIG.timeZone, 'yyyy-MM-dd HH:mm:ss');
-    if (!at || at < limit) return { ok: false, error: 'too_late' };
+    var sh = sheet_(CONFIG.sheets[found.tab]);
+    var setStatus = function (v) { sh.getRange(found.index, COL['PDF status'] + 1).setValue(v); };
+    if (!pdf) {
+      console.warn('Registration PDF refused (not a valid PDF) for row ' + found.index + ' of ' + CONFIG.sheets[found.tab]);
+      setStatus(PDF_STATUS.refusedBad);
+      SpreadsheetApp.flush();
+      return { ok: false, error: 'pdf' };
+    }
+    var at = stamp_(found.row[COL.Timestamp]);
+    var limit = Utilities.formatDate(new Date(now_() - CONFIG.pdfWindowDays * 86400000), CONFIG.timeZone, 'yyyy-MM-dd HH:mm:ss');
+    // A timestamp that can't be read is no reason to lose the PDF (it is stored once only).
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(at) && at < limit) {
+      console.warn('Registration PDF refused (too late) for row ' + found.index + ' of ' + CONFIG.sheets[found.tab] + ', registered ' + at);
+      setStatus(PDF_STATUS.refusedLate);
+      SpreadsheetApp.flush();
+      return { ok: false, error: 'too_late' };
+    }
 
     var cat = text_(found.row[COL.Category]) === CONFIG.labels.youth ? 'youth' : 'kids';
     var label = CONFIG.labels[cat];
     var who = text_(found.row[COL.Name]).replace(/[^\p{L}\p{M}\p{N} ._-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 60) || 'child';
-    var stamp = at.replace(/:/g, '');
+    var stamp = (at || Utilities.formatDate(new Date(now_()), CONFIG.timeZone, 'yyyy-MM-dd HH:mm:ss')).replace(/:/g, '');
     var file = folder_([CONFIG.rootFolder, label, 'Registration PDFs'])
       .createFile(Utilities.newBlob(pdf, 'application/pdf', label + ' - ' + who + ' - ' + stamp + ' - registration.pdf'));
     // Private to the owner (Drive's default); never shared by link.
-    sheet_(CONFIG.sheets[found.tab]).getRange(found.index, COL['Registration PDF'] + 1).setValue(file.getUrl());
+    sh.getRange(found.index, COL['Registration PDF'] + 1).setValue(file.getUrl());
+    setStatus(PDF_STATUS.saved);
     SpreadsheetApp.flush();
+    console.log('Registration PDF saved for row ' + found.index + ' of ' + CONFIG.sheets[found.tab]);
     return { ok: true, status: 'saved' };
   } finally {
     lock.releaseLock();

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { createSandbox } from '../scripts/gas-sandbox.mjs';
 
 const jpeg = 'data:image/jpeg;base64,' + Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(200, 7)]).toString('base64');
-const png = 'data:image/png;base64,' + Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(200, 1)]).toString('base64');
+const png = 'data:image/png;base64,' + Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(1200, 1)]).toString('base64');
 let n = 0;
 const valid = (over = {}) => ({
   action: 'register', submissionId: `test-${Date.now()}-${++n}`, category: 'kids', name: `Tenzin ${n}`, dob: '2019-03-15',
@@ -215,13 +215,15 @@ test('the PDF upload refuses unknown submissions, non-PDF files, oversized files
   assert.equal(g.doPost({ action: 'pdf', submissionId: 'bad id!', pdf }).error, 'bad_request');
   const fake = 'data:application/pdf;base64,' + Buffer.from('<html>' + ' '.repeat(100)).toString('base64');
   assert.equal(g.doPost({ action: 'pdf', submissionId: reg.submissionId, pdf: fake }).error, 'pdf');
+  assert.equal(g.sheet('Kids registrations').rows[1][g.context.COL['PDF status']], 'Refused: not a valid PDF');
   assert.equal(g.doPost({ action: 'pdf', submissionId: reg.submissionId, pdf: pdf.replace('application/pdf', 'image/png') }).error, 'pdf');
   const big = 'data:application/pdf;base64,' + Buffer.concat([Buffer.from('%PDF-'), Buffer.alloc(8 * 1024 * 1024 + 10)]).toString('base64');
   assert.equal(g.doPost({ action: 'pdf', submissionId: reg.submissionId, pdf: big }).error, 'pdf');
-  // Make the registration 31 minutes old.
+  // Make the registration 8 days old (the browser keeps an unsent PDF and tries again for 7 days).
   const row = g.sheet('Kids registrations').rows[1];
-  row[g.context.COL.Timestamp] = g.context.Utilities.formatDate(new Date(Date.now() - 31 * 60000), 'Asia/Kolkata', 'yyyy-MM-dd HH:mm:ss');
+  row[g.context.COL.Timestamp] = g.context.Utilities.formatDate(new Date(Date.now() - 8 * 86400000), 'Asia/Kolkata', 'yyyy-MM-dd HH:mm:ss');
   assert.equal(g.doPost({ action: 'pdf', submissionId: reg.submissionId, pdf }).error, 'too_late');
+  assert.equal(row[g.context.COL['PDF status']], 'Refused: arrived too late');
   assert.equal(g.files.filter((f) => f.folder.endsWith('Registration PDFs')).length, 0);
 });
 
@@ -238,9 +240,9 @@ test('a "Paid, no seat" registration gets its PDF too', () => {
 test('tabs made by an earlier version get the newer headings added', () => {
   const g = createSandbox();
   const sh = g.context.SpreadsheetApp.getActiveSpreadsheet().insertSheet('Kids registrations');
-  sh.appendRow(g.context.HEADERS.slice(0, -6));
+  sh.appendRow(g.context.HEADERS.slice(0, -7));
   g.doGet({ action: 'seats' });
-  assert.deepEqual(sh.rows[0].slice(-6), ['Registration PDF', 'Fee non-refundable (agreed)', 'Registration code', 'Payment check', 'Possible duplicate payment', 'Screenshot fingerprint']);
+  assert.deepEqual(sh.rows[0].slice(-7), ['Registration PDF', 'Fee non-refundable (agreed)', 'Registration code', 'Payment check', 'Possible duplicate payment', 'Screenshot fingerprint', 'PDF status']);
   assert.equal(sh.rows[0].length, g.context.HEADERS.length);
   assert.deepEqual([...sh.validations.at(-1).rule.values], ['Not checked', 'Received', 'Not received', 'Refund due', 'Refunded'], 'Payment check dropdown added');
 });
@@ -378,4 +380,49 @@ test('rows marked "Not received" or "Refunded" give their seat back; a Summary t
   assert.equal(sum.rows[0][0], 'Group');
   assert.deepEqual(sum.rows.slice(1).map((r) => r[0]), ['Kids registrations', 'Youth registrations', 'Paid, no seat']);
   assert.match(sum.rows[1][4], /^=COUNTIF\('Kids registrations'!X2:X,"Received"\)$/);
+});
+
+test('round 9: an empty drawn signature is refused; pages from before round 9 still work', () => {
+  const g = createSandbox();
+  const r1 = g.doPost(valid({ signaturePoints: 2 }));
+  assert.equal(r1.error, 'validation');
+  assert.deepEqual(r1.fields, [{ field: 'signature', code: 'signature' }]);
+  const tiny = 'data:image/png;base64,' + Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(200, 1)]).toString('base64');
+  assert.equal(g.doPost(valid({ signature: tiny, signaturePoints: 40 })).fields[0].field, 'signature');
+  assert.equal(g.doPost(valid({ signature: '', signatureTyped: '', signaturePoints: 0 })).fields[0].field, 'signature');
+  assert.equal(g.sheet('Kids registrations')?.rows.length ?? 1, 1, 'nothing was saved');
+  assert.equal(g.doPost(valid({ signaturePoints: 40 })).status, 'registered');
+  assert.equal(g.doPost(valid()).status, 'registered', 'no point count (page loaded before round 9)');
+});
+
+test('round 9: with timestamps stored as dates (as on the live Sheet) the PDF is still saved', () => {
+  const g = createSandbox({ sheetDates: true });
+  const reg = valid();
+  const res = g.doPost(reg);
+  assert.equal(res.status, 'registered');
+  const sh = g.sheet('Kids registrations');
+  assert.equal(Object.prototype.toString.call(sh.rows[1][g.context.COL.Timestamp]), '[object Date]', 'the sandbox stores the timestamp as a date');
+  assert.equal(sh.rows[1][g.context.COL['PDF status']], 'Waiting for PDF');
+  // The folder exists before any PDF arrives.
+  assert.ok(g.folders.includes('Winter Camp 2027/Kids/Registration PDFs'));
+  // A retry of the registration reports the full time, not just the day.
+  assert.equal(g.doPost(reg).submittedAt, res.submittedAt);
+  assert.match(res.submittedAt, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+  const pdf = 'data:application/pdf;base64,' + Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(300, 32), Buffer.from('%%EOF')]).toString('base64');
+  assert.deepEqual(g.doPost({ action: 'pdf', submissionId: reg.submissionId, pdf }), { ok: true, status: 'saved' });
+  assert.equal(sh.rows[1][g.context.COL['PDF status']], 'Saved');
+  assert.match(sh.rows[1][g.context.COL['Registration PDF']], /^https:\/\/drive\.google\.com\//);
+  const saved = g.files.filter((f) => f.folder === 'Winter Camp 2027/Kids/Registration PDFs');
+  assert.equal(saved.length, 1);
+  assert.match(saved[0].name, /^Kids - Tenzin \d+ - \d{4}-\d{2}-\d{2} \d{6} - registration\.pdf$/);
+});
+
+test('round 9: a PDF that arrives days later (sent again on the next visit) is saved', () => {
+  const g = createSandbox({ sheetDates: true });
+  const reg = valid();
+  g.doPost(reg);
+  const row = g.sheet('Kids registrations').rows[1];
+  row[g.context.COL.Timestamp] = g.date(Date.now() - 6 * 86400000);
+  const pdf = 'data:application/pdf;base64,' + Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(300, 32)]).toString('base64');
+  assert.equal(g.doPost({ action: 'pdf', submissionId: reg.submissionId, pdf }).status, 'saved');
 });

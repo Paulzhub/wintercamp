@@ -563,6 +563,7 @@ select.input { appearance: none; padding-right: var(--s6); background-image: lin
 .pay__v--id { font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace; font-size: 16px; }
 .pay__apps { display: grid; gap: var(--s2); padding: var(--s2); border-radius: var(--r-md); background: var(--c-light); }
 .pay__apps-title { font-weight: 600; }
+.pay__amount { font-weight: 600; color: var(--t-light); }
 .pay__apps-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); gap: var(--s1); }
 .pay__app { display: flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 var(--s2); border-radius: var(--r-pill); border: 2px solid rgb(24 14 85 / 0.16); background: var(--t-dark); color: var(--t-light); font-weight: 600; text-decoration: none; transition: border-color var(--d-micro) var(--ease), background-color var(--d-micro) var(--ease); }
 .pay__app:hover, .pay__app:focus-visible { border-color: var(--c-accent); }
@@ -616,7 +617,19 @@ select.input { appearance: none; padding-right: var(--s6); background-image: lin
 
 /* ---------- Plain pages (privacy) ---------- */
 .page-plain body { background: var(--c-light); }
-.plain { padding-top: calc(var(--nav-h) + var(--s8)); min-height: 80vh; }
+.plain { min-height: 80vh; }
+/* Indigo title band at the top of every sub-page: the menu bar is see-through
+   over it (light text on indigo), as over the home page's hero, and frosts on scroll. */
+.page-hero { position: relative; overflow: hidden; padding: calc(var(--nav-h) + var(--s6)) 0 var(--s6); }
+@media (min-width: 1024px) { .page-hero { padding: calc(var(--nav-h) + var(--s8)) 0 var(--s8); } }
+.page-hero::before { content: ''; position: absolute; inset: auto -10% -60% -10%; height: 120%; background: radial-gradient(closest-side, rgb(230 30 123 / 0.28), rgb(230 30 123 / 0) 70%); pointer-events: none; }
+.page-hero::after { content: ''; position: absolute; inset: auto 0 0 0; height: 4px; background: var(--spectrum); }
+.page-hero__inner { position: relative; z-index: 1; }
+.page-hero__back { margin-bottom: var(--s3); }
+.page-hero__back .link { color: var(--t-dark); }
+.page-hero__title { font-size: clamp(40px, 8vw, 80px); margin-bottom: var(--s2); text-shadow: 0 0 32px rgb(230 30 123 / 0.35); }
+.page-hero__meta { color: var(--muted); }
+.plain__body { padding-top: var(--s4); }
 .nav--sub .nav__link.is-active { background: none; }
 .prose h2 { font-size: 22px; font-weight: 600; margin: var(--s4) 0 var(--s1); }
 .prose p { max-width: 68ch; }

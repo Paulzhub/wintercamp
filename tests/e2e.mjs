@@ -65,10 +65,10 @@ const waitFor = async (fn, ms = 15000) => { const t = Date.now(); for (;;) { con
 
 const api = async (p, body) => (await fetch(API + p, { method: body ? 'POST' : 'GET', body: body ? JSON.stringify(body) : undefined })).json();
 
-function watch(page, label) {
+function watch(page, label, { ignore = null } = {}) {
   const problems = [];
   page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
-  page.on('console', (m) => { if (m.type() === 'error') problems.push(`console: ${m.text()}`); });
+  page.on('console', (m) => { if (m.type() === 'error' && !(ignore && ignore.test(m.text()))) problems.push(`console: ${m.text()}`); });
   page.on('request', (r) => {
     const u = r.url();
     if (!/^(http:\/\/127\.0\.0\.1|data:|blob:)/.test(u)) problems.push(`external request: ${u}`);
@@ -610,9 +610,8 @@ async function main() {
       await page.click('#reg-next');
       await page.click('label.choice:has(input[name="consent"][value="yes"])');
       await page.click('label.choice:has(#f-agree)');
-      await page.click('#reg-next');
       await page.waitForTimeout(400);
-      check('Missing signature blocks "Next"', (await page.textContent('#err-signature')).includes('type your name') && await page.evaluate(() => [...document.querySelectorAll('.step')].findIndex((x) => !x.hidden)) === 2);
+      check('Missing signature blocks "Next" (round 9: Next is disabled, the note says to sign)', await page.isDisabled('#reg-next') && (await page.textContent('#step-gate')).includes('sign in the box or type your name') && await page.evaluate(() => [...document.querySelectorAll('.step')].findIndex((x) => !x.hidden)) === 2);
       await page.click('#sign-mode');
       check('"Type your name instead" shows a name field and hides the drawing box', await page.isVisible('#f-sign-typed') && await page.isHidden('#sign-wrap'));
       await page.fill('#f-sign-typed', 'Dolma Tsering');
@@ -1178,11 +1177,12 @@ async function main() {
       check('Consent NO keeps Next disabled, with a clear message', await page.isDisabled('#reg-next') && (await page.textContent('#err-consent')).includes('must be YES'));
       await page.screenshot({ path: path.join(out, 'r7-consent-no-390.png') });
       await page.click('label.choice:has(input[name="consent"][value="yes"])');
-      check('YES and the ticked agreement enable Next', await page.isEnabled('#reg-next') && await page.isHidden('#step-gate') && await page.isHidden('#err-consent'));
+      check('YES and the ticked agreement leave only the signature missing (round 9)', await page.isDisabled('#reg-next') && (await page.textContent('#step-gate')).trim() === 'To continue, sign in the box or type your name instead.' && await page.isHidden('#err-consent'));
+      await drawSignature(page);
+      check('YES, the agreement and a signature enable Next', await page.isEnabled('#reg-next') && await page.isHidden('#step-gate'));
       await page.click('label.choice:has(#f-agree)'); // untick
       check('Unticking the agreement disables Next again', await page.isDisabled('#reg-next'));
       await page.click('label.choice:has(#f-agree)');
-      await drawSignature(page);
       await page.click('#reg-next');
       await page.waitForSelector('#pay-panel:not([hidden])', { timeout: 8000 });
       // Hold and countdown.
@@ -1526,8 +1526,8 @@ async function main() {
       const gp = links[0].h;
       const ok = os === 'Android'
         ? gp.startsWith('intent://pay?pa=') && gp.endsWith('#Intent;scheme=upi;package=com.google.android.apps.nbu.paisa.user;end')
-        : gp.startsWith('tez://upi/pay?pa=');
-      check(`${os}: each app link opens that app with payee, ₹500 and the registration code`, ok && links.every((l) => l.h.includes('am=500') && l.h.includes('pa=achuisr1985.27-1%40okhdfcbank') && l.h.includes(`tn=Winter%20Camp%202027%20${code}`)) && links.at(-1).h.startsWith('upi://pay?'), gp);
+        : gp.startsWith('gpay://upi/pay?pa=');
+      check(`${os}: each app link opens that app with the payee and the registration code, and no amount (round 9: typed by the family)`, ok && links.every((l) => !/[?&]am=/.test(l.h) && l.h.includes('pa=achuisr1985.27-1%40okhdfcbank') && l.h.includes(`tn=Winter%20Camp%202027%20${code}`)) && links.at(-1).h.startsWith('upi://pay?'), gp);
       await page.locator('#upi-apps').screenshot({ path: path.join(out, `r8-upi-apps-${os.toLowerCase()}.png`) });
       await axe(page, `UPI app list ${os}`, '#register');
       done();
@@ -1541,6 +1541,200 @@ async function main() {
       const txt = await page.textContent('main');
       check('Privacy: data kept after the camp with no set end date, confidential, deleted on request', txt.includes('with no set end date') && txt.includes('never give them to anyone else') && txt.includes('ask us to delete') && !txt.includes('90 days'));
       check('Privacy: looking back on camps and planning future ones is listed as a use', txt.includes('plan future ones'));
+      await ctx.close();
+    }
+
+    // ---------- 21. Round 9 ----------
+    // 21a. A signature is needed before Next: empty, drawn, cleared, typed, typed then emptied, restored draft.
+    {
+      await api('/__reset', {});
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 } });
+      const page = await ctx.newPage();
+      const done = watch(page, 'Round 9 signature gate');
+      await page.goto(SITE);
+      await enter(page);
+      await page.click('.hero__cta [data-open-register]');
+      await page.waitForSelector('.cat[data-cat="youth"] [data-choose]:not([disabled])');
+      await page.click('.cat[data-cat="youth"] [data-choose]');
+      await page.fill('#f-name', 'Karma Yangzom');
+      await page.selectOption('#f-dob-d', '9'); await page.selectOption('#f-dob-m', '9'); await page.selectOption('#f-dob-y', '2012');
+      await page.click('#reg-next');
+      await page.fill('#f-parent', 'Pasang Lhamo'); await page.fill('#f-address', 'Temple Road, McLeodganj'); await page.fill('#f-phone-1', '9876512345');
+      await page.click('#reg-next');
+      await page.waitForTimeout(300);
+      const gate = async () => ((await page.isHidden('#step-gate')) ? '' : (await page.textContent('#step-gate')).trim());
+      check('Signature gate: with nothing done, the note lists all three things', await page.isDisabled('#reg-next') && (await gate()) === 'To continue, choose YES for medical emergency consent, tick the box to agree and sign in the box or type your name instead.', await gate());
+      await page.click('label.choice:has(input[name="consent"][value="yes"])');
+      await page.click('label.choice:has(#f-agree)');
+      check('Signature gate: an empty pad keeps Next disabled and says what is missing', await page.isDisabled('#reg-next') && (await gate()) === 'To continue, sign in the box or type your name instead.', await gate());
+      await page.screenshot({ path: path.join(out, 'r9-sign-gate-empty-1280.png') });
+      const box = await page.locator('#f-sign').boundingBox();
+      await page.mouse.click(box.x + 60, box.y + 60);
+      check('Signature gate: a single tap (a dot) is not a signature', await page.isDisabled('#reg-next'));
+      await drawSignature(page);
+      check('Signature gate: a drawn signature enables Next', await page.isEnabled('#reg-next') && (await gate()) === '');
+      await page.click('#f-sign-clear');
+      check('Signature gate: Clear disables Next again', await page.isDisabled('#reg-next') && (await gate()).includes('sign in the box'));
+      await page.click('#sign-mode');
+      check('Signature gate: switching to typing with no name keeps Next disabled', await page.isDisabled('#reg-next'));
+      await page.fill('#f-sign-typed', 'D');
+      check('Signature gate: one letter is not a typed signature', await page.isDisabled('#reg-next'));
+      await page.fill('#f-sign-typed', 'Pasang Lhamo');
+      check('Signature gate: a typed full name enables Next', await page.isEnabled('#reg-next') && (await gate()) === '');
+      await page.fill('#f-sign-typed', '');
+      check('Signature gate: emptying the typed name disables Next again', await page.isDisabled('#reg-next'));
+      await page.fill('#f-sign-typed', 'Pasang Lhamo');
+      await page.click('#sign-mode');
+      check('Signature gate: switching back to drawing (empty pad) disables Next, though a name was typed', await page.isDisabled('#reg-next'));
+      await drawSignature(page);
+      check('Signature gate: drawing then enables Next', await page.isEnabled('#reg-next'));
+      // The draft keeps the strokes: after a reload the gate is open again by itself.
+      await page.waitForTimeout(400);
+      await page.reload();
+      await enter(page);
+      await page.click('.hero__cta [data-open-register]');
+      await page.waitForSelector('#draft-note:not([hidden])', { timeout: 8000 });
+      await page.waitForTimeout(400);
+      const restored = await page.evaluate(() => ({ step: [...document.querySelectorAll('.step')].findIndex((s) => !s.hidden), ink: document.getElementById('sign-wrap').classList.contains('has-ink') }));
+      check('Signature gate: a restored draft keeps the signature and Next is enabled', restored.step === 2 && restored.ink && await page.isEnabled('#reg-next'), JSON.stringify(restored));
+      await page.click('#f-sign-clear');
+      check('Signature gate: clearing the restored signature disables Next', await page.isDisabled('#reg-next'));
+      // The server refuses an empty pad too (pages that skip the form's check).
+      const res = await (await fetch(API.replace(/\/$/, '') + '/exec', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'register', signaturePoints: 1 }) })).json().catch(() => null);
+      check('Server answers a malformed registration with an error, not a crash', res && res.ok === false, JSON.stringify(res));
+      await axe(page, 'Signature gate', '#register');
+      done();
+      await ctx.close();
+    }
+
+    // 21b. Registration PDF: saved to Drive with "PDF status: Saved"; if the upload fails it is kept and sent on the next visit.
+    {
+      await api('/__reset', {});
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+      const page = await ctx.newPage();
+      // The uploads blocked on purpose show as failed requests in the console.
+      const done = watch(page, 'Round 9 PDF', { ignore: /ERR_INTERNET_DISCONNECTED/ });
+      // Block every PDF upload (as if the family had no signal after registering).
+      let blocked = 0;
+      const block = async (route) => {
+        if ((route.request().postData() || '').includes('"action":"pdf"')) { blocked++; return route.abort('internetdisconnected'); }
+        return route.continue();
+      };
+      await page.route(`${API.replace(/\/$/, '')}/exec**`, block);
+      await page.goto(SITE);
+      await enter(page);
+      await page.click('.hero__cta [data-open-register]');
+      await fillToPayment(page, { cat: 'kids', dob: '2017-07-07' });
+      await page.setInputFiles('#f-shot', shotPng);
+      await page.waitForSelector('#shot-preview:not([hidden])');
+      await page.click('#reg-submit');
+      await page.waitForSelector('#reg-done:not([hidden])', { timeout: 15000 });
+      const saving = (await page.textContent('#done-copy')).trim();
+      check('PDF: the success screen says a copy is being saved for the organisers', saving.startsWith('Saving a copy of these details for the organisers'), saving);
+      await page.screenshot({ path: path.join(out, 'r9-pdf-saving-390.png') });
+      const later = await waitFor(async () => { const t = (await page.textContent('#done-copy')).trim(); return t.includes('next time you open this website') && t; }, 40000);
+      check('PDF: after the retries fail, it says the copy will be sent next time', Boolean(later) && blocked >= 4, `${blocked} blocked; ${later}`);
+      let st = await api('/__state');
+      const H = (h) => st.headers.indexOf(h);
+      check('Backend: the row says "Waiting for PDF", with no PDF yet; the Registration PDFs folder exists', st.kids.length === 1 && st.kids[0][H('PDF status')] === 'Waiting for PDF' && !st.kids[0][H('Registration PDF')] && !st.files.some((f) => f.mime === 'application/pdf'), st.kids[0]?.[H('PDF status')]);
+      check('Backend: the timestamp is stored as a date (as on the live Sheet)', /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(st.kids[0][H('Timestamp')]), st.kids[0][H('Timestamp')]);
+      const kept = await page.evaluate(() => new Promise((resolve) => { const r = indexedDB.open('wc-outbox', 1); r.onsuccess = () => { const q = r.result.transaction('pdfs').objectStore('pdfs').getAll(); q.onsuccess = () => resolve(q.result.map((x) => ({ id: x.id, n: x.dataUrl.length }))); }; r.onerror = () => resolve(null); }));
+      check('PDF: the unsent copy is kept in this browser (IndexedDB)', kept?.length === 1 && kept[0].n > 20000, JSON.stringify(kept));
+      // Next visit, with signal again.
+      await page.unroute(`${API.replace(/\/$/, '')}/exec**`, block);
+      await page.goto(SITE);
+      await enter(page);
+      st = await waitFor(async () => { const x = await api('/__state'); return x.files.some((f) => f.mime === 'application/pdf') && x; }, 20000);
+      check('PDF: on the next visit it is sent by itself and saved in Kids/Registration PDFs', Boolean(st) && st.files.some((f) => f.mime === 'application/pdf' && f.folder === 'Winter Camp 2027/Kids/Registration PDFs'));
+      check('Backend: "PDF status" becomes "Saved" and the row links the PDF', st && st.kids[0][st.headers.indexOf('PDF status')] === 'Saved' && /^https:\/\/drive\.google\.com\//.test(st.kids[0][st.headers.indexOf('Registration PDF')]));
+      await page.waitForTimeout(500);
+      const left = await page.evaluate(() => new Promise((resolve) => { const r = indexedDB.open('wc-outbox', 1); r.onsuccess = () => { const q = r.result.transaction('pdfs').objectStore('pdfs').getAll(); q.onsuccess = () => resolve(q.result.length); }; }));
+      check('PDF: the copy in the browser is deleted once saved', left === 0, String(left));
+      done();
+      await ctx.close();
+    }
+    // 21c. Normal case: "A copy ... has been saved".
+    {
+      await api('/__reset', {});
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+      const page = await ctx.newPage();
+      const done = watch(page, 'Round 9 PDF saved');
+      await page.goto(SITE);
+      await enter(page);
+      await page.click('.hero__cta [data-open-register]');
+      await fillToPayment(page, { cat: 'youth', dob: '2013-02-02' });
+      await page.setInputFiles('#f-shot', shotPng);
+      await page.waitForSelector('#shot-preview:not([hidden])');
+      await page.click('#reg-submit');
+      await page.waitForSelector('#reg-done:not([hidden])', { timeout: 15000 });
+      const saved = await waitFor(async () => { const t = (await page.textContent('#done-copy')).trim(); return t.startsWith('A copy of these details has been saved') && t; }, 20000);
+      check('PDF: the success screen confirms the organisers\' copy was saved', Boolean(saved), String(saved));
+      const st = await api('/__state');
+      check('Backend: Youth row "PDF status: Saved", PDF in Youth/Registration PDFs', st.youth[0]?.[st.headers.indexOf('PDF status')] === 'Saved' && st.files.some((f) => f.mime === 'application/pdf' && f.folder === 'Winter Camp 2027/Youth/Registration PDFs'));
+      await page.screenshot({ path: path.join(out, 'r9-pdf-saved-390.png'), fullPage: false });
+      done();
+      await ctx.close();
+    }
+
+    // 21d. UPI: the family types the amount; tapping an app copies the UPI ID and keeps the hold through pagehide.
+    {
+      await api('/__reset', {});
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1', permissions: ['clipboard-read', 'clipboard-write'] });
+      const page = await ctx.newPage();
+      const done = watch(page, 'Round 9 UPI');
+      await page.goto(SITE);
+      await enter(page);
+      await page.click('.hero__cta [data-open-register]');
+      await fillToPayment(page, { cat: 'kids', dob: '2018-08-08' });
+      await page.click('#upi-open');
+      await page.waitForTimeout(400);
+      const txt = await page.textContent('#upi-apps');
+      check('UPI: the list says to type ₹500 and what to do if the app shows a limit error', txt.includes('Type the amount yourself: ₹500') && txt.includes('no money has been taken'));
+      await page.locator('#upi-apps').screenshot({ path: path.join(out, 'r9-upi-apps-iphone.png') });
+      // Tap Google Pay without leaving the page (the app can't open here).
+      await page.evaluate(() => { const a = document.querySelector('#upi-apps .pay__app'); a.addEventListener('click', (e) => e.preventDefault(), { once: true }); a.click(); });
+      await page.waitForTimeout(300);
+      const clip = await page.evaluate(() => navigator.clipboard.readText().catch(() => ''));
+      check('UPI: tapping an app copies the UPI ID', clip === 'achuisr1985.27-1@okhdfcbank', clip);
+      // iPhone may fire pagehide when Safari goes to the background: the hold must stay.
+      await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false })));
+      await page.waitForTimeout(600);
+      const st = await api('/__state');
+      check('UPI: the seat stays held through pagehide after tapping an app (the family is paying)', Object.keys(st.holds.kids || {}).length === 1, JSON.stringify(st.holds));
+      done();
+      await ctx.close();
+    }
+
+    // 21e. Sub-pages: an indigo title band under a see-through menu bar, frosted once scrolled.
+    for (const width of [320, 390, 768, 1280]) {
+      const ctx = await browser.newContext({ viewport: { width, height: 800 }, ...(width < 768 ? { isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : {}) });
+      const page = await ctx.newPage();
+      const done = watch(page, `Round 9 privacy band ${width}`);
+      await page.goto(`${SITE}privacy/`);
+      await page.waitForTimeout(800);
+      const top = await page.evaluate(() => {
+        const nav = document.getElementById('nav');
+        const band = document.querySelector('.page-hero');
+        const b = band.getBoundingClientRect();
+        const n = nav.getBoundingClientRect();
+        const link = nav.querySelector('.nav__wordmark');
+        return { stuck: nav.classList.contains('is-stuck'), navBg: getComputedStyle(nav).backgroundColor, bandBg: getComputedStyle(band).backgroundColor, bandTop: b.top, bandBottom: b.bottom, navBottom: n.bottom, h1: band.querySelector('h1')?.textContent, word: getComputedStyle(link).color, wordShown: getComputedStyle(link).opacity };
+      });
+      check(`Privacy ${width}px: an indigo title band sits under the menu bar, which is see-through at the top`, !top.stuck && top.navBg === 'rgba(0, 0, 0, 0)' && top.bandBg === 'rgb(24, 14, 85)' && top.bandTop === 0 && top.bandBottom > top.navBottom + 120 && top.h1 === 'Privacy notice' && top.word === 'rgb(245, 245, 245)' && top.wordShown === '1', JSON.stringify(top));
+      await page.screenshot({ path: path.join(out, `r9-privacy-top-${width}.png`) });
+      await page.mouse.wheel(0, 900);
+      await page.waitForTimeout(1200);
+      check(`Privacy ${width}px: once scrolled, the menu bar is frosted indigo`, await page.evaluate(() => document.getElementById('nav').classList.contains('is-stuck')));
+      await page.screenshot({ path: path.join(out, `r9-privacy-scrolled-${width}.png`) });
+      if (width < 768) {
+        await page.click('#menu-open');
+        await page.waitForSelector('#menu[open]');
+        await page.waitForTimeout(1500);
+        check(`Privacy ${width}px: the phone menu still opens`, await page.isVisible('#menu .menu__links'));
+        await page.screenshot({ path: path.join(out, `r9-privacy-menu-${width}.png`) });
+      }
+      if (width === 1280) await axe(page, 'Privacy page with title band');
+      done();
       await ctx.close();
     }
   } finally {

@@ -88,6 +88,7 @@ export function initSignature(canvas, wrap, { onChange } = {}) {
   return {
     resize,
     hasInk,
+    points: pointCount,
     clear() {
       strokes = [];
       current = null;
