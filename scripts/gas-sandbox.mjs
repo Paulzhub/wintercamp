@@ -18,7 +18,19 @@ function fmtDate(d, tz, fmt) {
     .replace('HH', parts.hour).replace('mm', parts.minute).replace('ss', parts.second);
 }
 
-export function createSandbox() {
+// Like the live Sheet, which stored timestamps as real dates (right-aligned):
+// with { sheetDates: true }, text that looks like a date or a date and time
+// comes back from the Sheet as a Date (read as India time).
+const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})(?: (\d{2}):(\d{2}):(\d{2}))?$/;
+const asSheetValue = (v, D) => {
+  const m = typeof v === 'string' && DATE_RE.exec(v);
+  return m ? new D(`${m[1]}-${m[2]}-${m[3]}T${m[4] || '00'}:${m[5] || '00'}:${m[6] || '00'}+05:30`) : v;
+};
+
+export function createSandbox({ sheetDates = false } = {}) {
+  let SheetDate = Date; // the script's own Date (another realm), set below
+  const store = (v) => (sheetDates ? asSheetValue(v, SheetDate) : v);
+  const folders = [];
   const files = [];
   const cache = new Map();
   const props = new Map();
@@ -31,7 +43,7 @@ export function createSandbox() {
     getLastRow() { return this.rows.length; }
     getLastColumn() { return Math.max(0, ...this.rows.map((r) => r.length)); }
     setName(n) { sheets.delete(this.name); this.name = n; sheets.set(n, this); return this; }
-    appendRow(r) { this.rows.push([...r]); return this; }
+    appendRow(r) { this.rows.push(Array.from(r, store)); return this; }
     setFrozenRows() { return this; }
     getRange(r, c, nr = 1, nc = 1) {
       const self = this;
@@ -48,7 +60,7 @@ export function createSandbox() {
           values.forEach((row, i) => {
             const idx = r - 1 + i;
             self.rows[idx] = self.rows[idx] || [];
-            row.forEach((x, j) => { self.rows[idx][c - 1 + j] = x; });
+            row.forEach((x, j) => { self.rows[idx][c - 1 + j] = store(x); });
           });
           return range;
         },
@@ -76,7 +88,7 @@ export function createSandbox() {
         let i = 0;
         return { hasNext: () => i < list.length, next: () => list[i++] };
       },
-      createFolder(n) { const f = makeFolder(n, folderPath); children.push(f); return f; },
+      createFolder(n) { const f = makeFolder(n, folderPath); children.push(f); folders.push(f.path); return f; },
       createFile(blob) {
         const id = `file${++fileId}`;
         files.push({ id, folder: folderPath, name: blob.name, mime: blob.mime, size: blob.bytes.length });
@@ -122,10 +134,14 @@ export function createSandbox() {
   });
   vm.runInContext(readFileSync(path.join(root, 'apps-script/Code.gs'), 'utf8'), context, { filename: 'Code.gs' });
   context.now_ = () => Date.now() + clockOffset;
+  SheetDate = vm.runInContext('Date', context);
 
   const api = {
     context,
     files,
+    folders,
+    // A Date as the script sees it (for tests that put dates in the Sheet).
+    date: (ms) => new SheetDate(ms),
     cache,
     sheet: (name) => sheets.get(name),
     doGet: (params = {}) => JSON.parse(context.doGet({ parameter: params }).getContent()),

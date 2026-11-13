@@ -257,7 +257,9 @@
       "open": "Pay ₹500 with UPI",
       "apps": "Choose your UPI app",
       "appOther": "Other UPI app",
-      "appsHelp": "If your app does not open, scan the QR code or copy the UPI ID instead.",
+      "enterAmount": "Your app opens with Achui Sareo as the payee. Type the amount yourself: ₹500.",
+      "appsHelp": "Tapping an app also copies the UPI ID, so you can paste it if needed. If your app does not open, scan the QR code or copy the UPI ID instead.",
+      "appError": "If your app says a limit is reached or the payment may be risky, no money has been taken. Pay by scanning the QR code or by entering the UPI ID in your app.",
       "shot": "Payment screenshot",
       "shotHelp": "JPG, PNG or WebP. A seat is only given when the form is sent with the screenshot.",
       "shotChoose": "Choose screenshot",
@@ -326,7 +328,10 @@
       "preparing": "Preparing your registration details",
       "downloaded": "Registration details downloaded",
       "private": "This file holds your child's health details. Share it only with people you trust.",
-      "pdfError": "We could not make the file on this phone. Your registration is saved; please take a screenshot of this screen instead."
+      "pdfError": "We could not make the file on this phone. Your registration is saved; please take a screenshot of this screen instead.",
+      "copySaving": "Saving a copy of these details for the organisers. Please keep this page open for a moment.",
+      "copySaved": "A copy of these details has been saved for the organisers.",
+      "copyLater": "The organisers' copy of these details will be sent automatically the next time you open this website on this phone. Your registration is already saved."
     },
     "lastSeat": "Oh No Someone booked the last seat just before you! Kindly contact +91-8219012669",
     "lastSeatNote": "Your details and payment screenshot have been saved for the organisers.",
@@ -368,7 +373,13 @@
     "holdNote": "When you reach payment, your seat is held for 5 minutes.",
     "heldNote": "Some seats are held by families who are paying right now. If they don't finish, a seat may open within 5 minutes.",
     "checkAgain": "Check again",
-    "consentGate": "To continue, choose YES for medical emergency consent and tick the box to agree.",
+    "gate": {
+      "lead": "To continue,",
+      "consent": "choose YES for medical emergency consent",
+      "agree": "tick the box to agree",
+      "sign": "sign in the box or type your name instead",
+      "and": "and"
+    },
     "draftRestored": "We kept the details you were filling in. Please check them before you continue.",
     "draftShot": "Please attach your payment screenshot again.",
     "hold": {
@@ -434,7 +445,7 @@
       {
         "h": "What this website stores on your device",
         "p": [
-          "This website uses no cookies, advertising or tracking. It remembers only your sound setting in your browser. While you fill in the form, a draft of what you type (never your payment screenshot) is kept in this browser tab, so nothing is lost if the page reloads while you pay in your UPI app. The draft is deleted when your registration is sent, and when you close the tab.",
+          "This website uses no cookies, advertising or tracking. It remembers only your sound setting in your browser. While you fill in the form, a draft of what you type (never your payment screenshot) is kept in this browser tab, so nothing is lost if the page reloads while you pay in your UPI app. The draft is deleted when your registration is sent, and when you close the tab. After you register, the copy of your registration details for the organisers is kept in this browser only until it has reached them (at most 7 days), so it is not lost if your connection drops or you close the page too soon.",
           "After you register, your phone makes a PDF of the registration for you to download or share, and sends a copy to the organisers' private Google Drive. It holds your child's health details, so keep the downloaded file safe."
         ]
       },

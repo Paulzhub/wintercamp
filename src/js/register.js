@@ -10,6 +10,7 @@ import { openModal } from './modal.js';
 import { burst, sweep } from './effects.js';
 import { fetchSeats, sendRegistration, sendPdf, sendHold, sendRelease } from './api.js';
 import { initSignature } from './signature.js';
+import { keepPdf, dropPdf, waitingPdfs } from './pdf-outbox.js';
 import { prepareScreenshot } from './image.js';
 import { MAX, isoDate, dobProblem, todayIso, validPhone, normPhone, ageOn } from './validate.js';
 
@@ -79,7 +80,7 @@ export function initRegistration({ audio }) {
   const consentInputs = $$('input[name="consent"]', form);
   const phoneList = $('#phones-list');
   const signature = initSignature($('#f-sign'), $('#sign-wrap'), {
-    onChange: (ink) => { if (ink) clearError('signature'); },
+    onChange: (ink) => { if (ink) clearError('signature'); updateGate(); },
   });
   $('#f-sign-clear').addEventListener('click', () => signature.clear());
   // People who cannot draw a signature can type their name instead.
@@ -93,11 +94,12 @@ export function initRegistration({ audio }) {
     modeBtn.textContent = typed ? modeBtn.dataset.draw : modeBtn.dataset.type;
     modeBtn.setAttribute('aria-expanded', String(typed));
     clearError('signature');
+    updateGate();
     if (typed) { if (focus) typedInput.focus(); }
     else { requestAnimationFrame(() => signature.resize()); if (focus) $('#f-sign-clear').focus(); }
   }
   modeBtn.addEventListener('click', () => setSignMode(!typedMode));
-  typedInput.addEventListener('input', () => { if (state.touched.has('signature')) check('signature'); });
+  typedInput.addEventListener('input', () => { if (state.touched.has('signature')) check('signature'); updateGate(); });
   typedInput.addEventListener('blur', () => { if (typedInput.value) { state.touched.add('signature'); check('signature'); } });
 
   // ---------- Phones ----------
@@ -330,12 +332,23 @@ export function initRegistration({ audio }) {
   f.agree.addEventListener('change', () => { if (state.touched.has('agree') || f.agree.checked) check('agree'); updateGate(); });
 
   // Consent and signature: Next stays disabled until medical emergency consent
-  // is YES and the agreement box is ticked.
+  // is YES, the agreement box is ticked and there is a signature (drawn on the
+  // pad, or a typed full name). The note says only what is still missing.
   function updateGate() {
-    const ok = consentInputs.find((i) => i.checked)?.value === 'yes' && f.agree.checked;
-    const gated = state.step === 2 && !ok;
+    const G = R.gate;
+    const missing = [];
+    if (consentInputs.find((i) => i.checked)?.value !== 'yes') missing.push(G.consent);
+    if (!f.agree.checked) missing.push(G.agree);
+    if (rules.signature()) missing.push(G.sign);
+    const gated = state.step === 2 && missing.length > 0;
     btnNext.disabled = gated;
-    $('#step-gate').hidden = !gated;
+    const note = $('#step-gate');
+    note.hidden = !gated;
+    if (gated) {
+      const list = missing.length > 1 ? `${missing.slice(0, -1).join(', ')} ${G.and} ${missing[missing.length - 1]}` : missing[0];
+      const msg = `${G.lead} ${list}.`;
+      if (note.textContent !== msg) note.textContent = msg;
+    }
   }
   f.refund.addEventListener('change', () => { if (state.touched.has('refund') || f.refund.checked) check('refund'); });
 
@@ -460,7 +473,8 @@ export function initRegistration({ audio }) {
   // on Android shows the phone's own list of UPI apps.
   const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
   const UPI_APPS = [
-    { name: 'Google Pay', android: 'com.google.android.apps.nbu.paisa.user', ios: 'tez://upi/pay' },
+    // gpay:// is the iPhone link in Google's own guide (tez:// is the app's old name).
+    { name: 'Google Pay', android: 'com.google.android.apps.nbu.paisa.user', ios: 'gpay://upi/pay' },
     { name: 'PhonePe', android: 'com.phonepe.app', ios: 'phonepe://pay' },
     { name: 'Paytm', android: 'net.one97.paytm', ios: 'paytmmp://pay' },
     { name: 'BHIM', android: 'in.org.npci.upiapp', ios: 'bhim://upi/pay' },
@@ -481,6 +495,11 @@ export function initRegistration({ audio }) {
       a.href = upiLink(app);
       a.textContent = app ? app.name : R.pay.appOther;
       if (app) a.dataset.app = app.name;
+      // The UPI ID goes on the clipboard too, in case the app needs it pasted.
+      a.addEventListener('click', () => {
+        state.appOpenedAt = Date.now();
+        try { navigator.clipboard?.writeText(T.pay.upiId).catch(() => {}); } catch { /* not allowed: fine */ }
+      });
       li.append(a);
       return li;
     });
@@ -637,7 +656,13 @@ export function initRegistration({ audio }) {
     stopHold(true);
     sendRelease(state.submissionId, { keepalive });
   }
-  window.addEventListener('pagehide', () => releaseHold({ keepalive: true }));
+  // Only when the page really closes. Switching to a UPI app can fire pagehide on
+  // iPhones (the page may be kept, persisted, or reloaded later): the family is
+  // paying then, so the hold stays (it ends by itself after 5 minutes).
+  window.addEventListener('pagehide', (e) => {
+    if (e.persisted || Date.now() - (state.appOpenedAt || 0) < 15 * 60000) return;
+    releaseHold({ keepalive: true });
+  });
 
   // ---------- Payment ----------
   const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (window.matchMedia('(pointer: coarse)').matches && 'ontouchstart' in window);
@@ -761,6 +786,8 @@ export function initRegistration({ audio }) {
       agree: f.agree.checked,
       refundAck: f.refund.checked,
       signature: typedMode ? '' : signature.toDataURL(),
+      // How many points were drawn: the server refuses an empty pad, as the form does.
+      signaturePoints: typedMode ? 0 : signature.points(),
       signatureTyped: typedMode ? typedInput.value.trim() : '',
       signDate: f.signDate.value,
       screenshot: state.shot ? { type: state.shot.type, data: state.shot.dataUrl } : null,
@@ -829,7 +856,7 @@ export function initRegistration({ audio }) {
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { resendSoon(); tick(); } });
   // Warn before leaving with a payment screenshot that has not been sent.
   window.addEventListener('beforeunload', (e) => {
-    if (state.shot && !state.sent) { e.preventDefault(); e.returnValue = ''; }
+    if ((state.shot && !state.sent) || state.copySaving) { e.preventDefault(); e.returnValue = ''; }
   });
 
   function outcome(res) {
@@ -960,24 +987,63 @@ export function initRegistration({ audio }) {
       .then(({ buildRegistrationPdf }) => buildRegistrationPdf(rec))
       .then((blob) => new File([blob], name, { type: 'application/pdf' }));
     pdf = { name, promise };
-    // A copy for the organisers' private Drive. Retried quietly; the registration already stands.
-    promise.then((file) => uploadPdf(rec.submissionId, file)).catch((err) => console.warn('registration PDF', err));
+    // A copy for the organisers' private Drive. It is kept in this browser until the
+    // server confirms it, so closing the page or switching app doesn't lose it.
+    copyNote('saving');
+    let kept = false;
+    promise
+      .then((file) => readDataUrl(file))
+      .then(async (dataUrl) => {
+        kept = Boolean(await keepPdf(rec.submissionId, dataUrl) !== null);
+        return uploadPdf(rec.submissionId, dataUrl);
+      })
+      .then((res) => copyNote(res ? 'saved' : kept ? 'later' : 'none'))
+      .catch((err) => { console.warn('registration PDF', err); copyNote(kept ? 'later' : 'none'); });
   }
-  async function uploadPdf(submissionId, file) {
-    const dataUrl = await new Promise((resolve, reject) => {
-      const r = new FileReader();
-      r.onload = () => resolve(r.result);
-      r.onerror = () => reject(r.error);
-      r.readAsDataURL(file);
-    });
-    for (const waitMs of [0, 2000, 6000, 15000]) {
-      if (waitMs) await new Promise((r) => setTimeout(r, waitMs));
-      try {
-        const res = await sendPdf({ action: 'pdf', submissionId, pdf: dataUrl });
-        if (res?.ok || ['pdf', 'not_found', 'too_late', 'bad_request'].includes(res?.error)) return res;
-      } catch { /* network: try again */ }
+  const readDataUrl = (file) => new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(file);
+  });
+  // Answers that end the matter: saved, or refused for a reason a retry can't fix.
+  const FINAL = ['pdf', 'not_found', 'too_late', 'bad_request'];
+  const uploading = new Set();
+  async function uploadPdf(submissionId, dataUrl, waits = [0, 2000, 6000, 15000]) {
+    if (uploading.has(submissionId)) return null;
+    uploading.add(submissionId);
+    try {
+      for (const waitMs of waits) {
+        if (waitMs) await new Promise((r) => setTimeout(r, waitMs));
+        try {
+          const res = await sendPdf({ action: 'pdf', submissionId, pdf: dataUrl });
+          if (res?.ok || FINAL.includes(res?.error)) {
+            await dropPdf(submissionId);
+            return res?.ok ? res : null;
+          }
+        } catch { /* network: try again */ }
+      }
+      return null; // still kept: sent again on the next visit
+    } finally {
+      uploading.delete(submissionId);
     }
-    return null;
+  }
+  // PDFs from earlier visits that never reached the server: one try each, now.
+  async function sendWaitingPdfs() {
+    if (navigator.onLine === false) return;
+    for (const item of await waitingPdfs()) {
+      if (typeof item.id === 'string' && typeof item.dataUrl === 'string') await uploadPdf(item.id, item.dataUrl, [0]);
+    }
+  }
+  document.addEventListener('wc:ready', () => setTimeout(sendWaitingPdfs, 1500), { once: true });
+  window.addEventListener('online', sendWaitingPdfs);
+  function copyNote(kind) {
+    const el = $('#done-copy');
+    if (!el) return;
+    state.copySaving = kind === 'saving';
+    el.textContent = { saving: R.done.copySaving, saved: R.done.copySaved, later: R.done.copyLater }[kind] || '';
+    el.hidden = !el.textContent;
+    el.classList.toggle('is-saving', kind === 'saving');
   }
   async function pdfFile() {
     if (!pdf) return null;
@@ -1030,6 +1096,7 @@ export function initRegistration({ audio }) {
 
   function resetView() {
     pdf = null;
+    $('#done-copy').hidden = true;
     doneView.hidden = true;
     doneView.classList.remove('is-shown');
     lastView.hidden = true;
