@@ -765,7 +765,7 @@ async function main() {
       await page.waitForTimeout(600);
       check('Close without view transitions: animates for 0.7 s, then closes', stillOpen && await page.evaluate(() => !document.getElementById('lightbox').open));
 
-      // Moving between items: both move together, out and in the same direction, fading.
+      // Moving between items: both slide together, side by side (round 8: no fade).
       await page.tap('.car__item.is-active .car__btn');
       await page.waitForTimeout(900);
       const cap0 = await page.textContent('#lightbox-cap');
@@ -774,7 +774,7 @@ async function main() {
       const both = await page.evaluate(() => [...document.querySelectorAll('#lightbox-stage .lightbox__item')].map((el) => ({ leaving: el.classList.contains('is-leaving'), x: Math.round(new DOMMatrix(getComputedStyle(el).transform).m41), o: Number(getComputedStyle(el).opacity) })));
       const out1 = both.find((b) => b.leaving);
       const in1 = both.find((b) => !b.leaving);
-      check('Next: the current item slides left and fades out while the next slides in from the right and fades in, together', both.length === 2 && out1.x < 0 && in1.x > 0 && out1.o > 0.05 && out1.o < 0.95 && in1.o > 0.05 && in1.o < 0.95, JSON.stringify(both));
+      check('Next: the current item slides left while the next slides in from the right, together, side by side', both.length === 2 && out1.x < 0 && in1.x > 0 && out1.o === 1 && in1.o === 1 && in1.x - out1.x > 200, JSON.stringify(both));
       await page.waitForTimeout(600);
       const cap1 = await page.textContent('#lightbox-cap');
       check('The move takes 0.7 s and leaves one item', await page.locator('#lightbox-stage .lightbox__item').count() === 1 && cap0 !== cap1, `${cap0} -> ${cap1}`);
@@ -1193,7 +1193,7 @@ async function main() {
       const myId = Object.keys(st.holds.kids)[0];
       check('Backend: one hold for this submission', Object.keys(st.holds.kids).length === 1 && Boolean(myId));
       const code = (await page.textContent('#pay-code')).trim();
-      check('Payment step: registration code shown and put in the UPI note', /^[0-9A-F]{8}$/.test(code) && code === myId.replace(/-/g, '').slice(0, 8).toUpperCase() && (await page.getAttribute('#upi-open', 'href')).includes(`tn=Winter%20Camp%202027%20${code}`), code);
+      check('Payment step: registration code shown and put in the UPI note', /^[0-9A-F]{8}$/.test(code) && code === myId.replace(/-/g, '').slice(0, 8).toUpperCase() && (await page.getAttribute('#upi-open', 'data-upi')).includes(`tn=Winter%20Camp%202027%20${code}`), code);
       const warn = await page.evaluate(() => { const w = document.getElementById('pay-warn'); const b = document.getElementById('upi-open'); return { t: w.textContent.trim(), c: getComputedStyle(w).color, before: Boolean(w.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING), vis: w.offsetParent !== null }; });
       check('Red capital warning "CHECK AND PAY ₹ 500/- ONLY" right before the UPI button', warn.t === 'CHECK AND PAY ₹ 500/- ONLY' && warn.c === 'rgb(179, 0, 27)' && warn.before && warn.vis, JSON.stringify(warn));
       const helpLine = await page.evaluate(() => { const h = document.getElementById('pay-help'); return { t: h.textContent.trim(), before: Boolean(h.compareDocumentPosition(document.querySelector('.pay__qr')) & Node.DOCUMENT_POSITION_FOLLOWING) }; });
@@ -1355,6 +1355,192 @@ async function main() {
       await page.evaluate(() => window.dispatchEvent(new Event('online')));
       await page.waitForSelector('#reg-done:not([hidden])', { timeout: 10000 });
       check('Back online: the registration is sent without pressing anything', true);
+      await ctx.close();
+    }
+
+    // 20. Round 8.
+    // 20a. Desktop with real (classic) scrollbars, as on Windows: headless Chrome hides
+    // scrollbars by default, which is why round 5's checks passed while Paul saw no motion.
+    {
+      const b2 = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome', args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'], ignoreDefaultArgs: ['--hide-scrollbars'] });
+      const ctx = await b2.newContext({ viewport: { width: 1440, height: 900 } });
+      const page = await ctx.newPage();
+      const done = watch(page, 'Round 8 desktop');
+      await page.goto(`${SITE}#gallery`);
+      await enter(page);
+      await page.waitForTimeout(900);
+      await page.locator('.car__item.is-active .car__btn').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(700);
+      const bar = await page.evaluate(() => innerWidth - document.documentElement.clientWidth);
+      check('1440 with real scrollbars: the page has a classic scrollbar', bar > 0, `${bar}px`);
+      const openWatched = async () => {
+        await page.evaluate(() => {
+          window.__vt = [];
+          const o = document.startViewTransition.bind(document);
+          document.startViewTransition = (cb) => { const vt = o(cb); vt.ready.then(() => window.__vt.push('ran'), (e) => window.__vt.push(String(e.message))); return vt; };
+        });
+        await page.click('.car__item.is-active .car__btn');
+        const dur = await waitFor(() => page.evaluate(() => document.getAnimations().filter((a) => /view-transition-group\(wc-media\)/.test(a.effect?.pseudoElement || '')).map((a) => a.effect.getTiming().duration)[0]), 1500);
+        await page.waitForTimeout(900);
+        await settled(page).catch(() => {});
+        return { dur, log: await page.evaluate(() => window.__vt) };
+      };
+      // Without the fix (scrollbar space not kept) Chrome cancels the transition.
+      await page.evaluate(() => document.documentElement.style.setProperty('scrollbar-gutter', 'auto'));
+      const broken = await openWatched();
+      check('Cause reproduced: without scrollbar-gutter the transition is cancelled ("Viewport size changed")', /Viewport size changed/.test(broken.log.join(' ')), broken.log.join(' '));
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(1000);
+      await page.evaluate(() => document.documentElement.style.removeProperty('scrollbar-gutter'));
+      const fixed = await openWatched();
+      check('Fixed: with real scrollbars the 0.7 s opening transition runs', fixed.log.includes('ran') && fixed.dur === 700, `${fixed.log.join(' ')} ${fixed.dur}`);
+      const bg = await page.evaluate(() => { const cs = getComputedStyle(document.getElementById('lightbox')); return { bg: cs.backgroundColor, f: cs.backdropFilter }; });
+      check('Full-screen view: translucent indigo background with a soft blur', bg.bg === 'rgba(24, 14, 85, 0.7)' && /blur\(16px\)/.test(bg.f), JSON.stringify(bg));
+      await page.screenshot({ path: path.join(out, 'r8-lightbox-1440.png') });
+      // Mouse drag: the item follows the mouse and the next slides in alongside it.
+      const cap0 = await page.textContent('#lightbox-cap');
+      const mb = await page.locator('#lightbox-stage .lightbox__item > *').boundingBox();
+      const y = mb.y + mb.height / 2;
+      const x0 = mb.x + mb.width / 2;
+      await page.mouse.move(x0, y);
+      await page.mouse.down();
+      for (let k = 1; k <= 10; k++) { await page.mouse.move(x0 - k * 5, y); await page.waitForTimeout(30); }
+      const mid = await page.evaluate(() => [...document.querySelectorAll('#lightbox-stage .lightbox__item')].map((el) => ({ side: el.classList.contains('is-side'), x: Math.round(new DOMMatrix(getComputedStyle(el).transform).m41) })));
+      const cur = mid.find((m) => !m.side);
+      const side = mid.find((m) => m.side);
+      const noScroll = await page.evaluate(() => { const b = document.getElementById('lightbox'); return getComputedStyle(b).overflowX === 'clip' && b.offsetHeight - b.clientHeight === 0; });
+      check('Drag: the neighbour beyond the screen edge does not make the view scroll sideways', noScroll);
+      check('Drag: the current item follows the mouse and the next one sits alongside it', mid.length === 2 && cur && Math.abs(cur.x + 50) <= 2 && side && side.x > 200, JSON.stringify(mid));
+      await page.screenshot({ path: path.join(out, 'r8-drag-1440.png') });
+      await page.mouse.up();
+      await page.waitForTimeout(800);
+      check('Short slow drag: springs back to the same item, one item left', (await page.textContent('#lightbox-cap')) === cap0 && await page.locator('#lightbox-stage .lightbox__item').count() === 1);
+      await page.mouse.move(x0, y);
+      await page.mouse.down();
+      for (let k = 1; k <= 20; k++) { await page.mouse.move(x0 - k * 25, y); await page.waitForTimeout(16); }
+      await page.waitForTimeout(200); // stop moving, so this is a drag, not a flick
+      await page.mouse.up();
+      await page.waitForTimeout(150);
+      const finishing = await page.locator('#lightbox-stage .lightbox__item').count();
+      await page.waitForTimeout(800);
+      const cap1 = await page.textContent('#lightbox-cap');
+      check('Long drag: finishes the move to the next item, easing, then one item left', cap1 !== cap0 && finishing === 2 && await page.locator('#lightbox-stage .lightbox__item').count() === 1 && await page.evaluate(() => getComputedStyle(document.querySelector('#lightbox-stage .lightbox__item')).transform === 'none'), `${cap0} -> ${cap1}`);
+      await page.mouse.move(x0, y);
+      await page.mouse.down();
+      await page.mouse.move(x0 + 40, y);
+      await page.mouse.move(x0 + 90, y); // about 1 px/ms or faster, like a real flick
+      await page.mouse.up();
+      await page.waitForTimeout(900);
+      check('Quick flick right: moves back to the previous item', (await page.textContent('#lightbox-cap')) === cap0);
+      check('Dragging did not close the view', await page.evaluate(() => document.getElementById('lightbox').open));
+      await page.evaluate(() => { window.__vt = []; });
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(1200);
+      const closed = await page.evaluate(() => ({ log: window.__vt, gutter: document.documentElement.classList.contains('wc-gutter'), open: document.getElementById('lightbox').open }));
+      check('Fixed: with real scrollbars the closing transition runs too, and the scrollbar space is released after it', closed.log.includes('ran') && !closed.gutter && !closed.open, JSON.stringify(closed));
+      await page.click('.hero__cta [data-open-register], [data-open-register]');
+      await page.waitForSelector('#register[open]');
+      await page.waitForTimeout(800);
+      const reg = await page.evaluate(() => ({ w: document.getElementById('register').getBoundingClientRect().width, vw: innerWidth }));
+      check('Registration view still fills the screen with real scrollbars', reg.w === reg.vw, JSON.stringify(reg));
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(1000);
+      // Hero: capitals and a prominent countdown.
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.waitForTimeout(800);
+      const hero = await page.evaluate(() => {
+        const fs = (sel) => parseFloat(getComputedStyle(document.querySelector(sel)).fontSize);
+        const count = document.getElementById('hero-count');
+        return { tt: getComputedStyle(document.querySelector('.hero__sub')).textTransform, n: fs('.hero__count-n'), words: fs('#hero-count'), venue: fs('.hero__venue'), live: fs('.hero__live'), fact: fs('.hero__fact dd'), shown: !count.hidden };
+      });
+      check('Hero: "Light of the World" in capitals', hero.tt === 'uppercase');
+      check('Hero: the days-left countdown is larger than the facts, venue and seat line', hero.shown && hero.n >= 56 && hero.words > Math.max(hero.venue, hero.live, hero.fact), JSON.stringify(hero));
+      await page.locator('.hero').screenshot({ path: path.join(out, 'r8-hero-1440.png') });
+      // Day 3 picnic card: gallery item 20 behind the text.
+      await page.locator('.card--wide').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(1500);
+      const pic = await page.evaluate(() => {
+        const img = document.querySelector('.card--wide .card__photo');
+        const items = [...document.querySelectorAll('.car__item .car__media img')].map((i) => i.getAttribute('src').replace(/-\d+\.webp$/, ''));
+        return img && { loaded: img.complete && img.naturalWidth > 0, same: img.getAttribute('src').replace(/-\d+\.webp$/, '') === items[19], alt: img.alt, z: getComputedStyle(img).zIndex };
+      });
+      check('Activities: the Day 3 picnic card shows gallery item 20 behind its text', Boolean(pic) && pic.loaded && pic.same && pic.alt.length > 10, JSON.stringify(pic));
+      await page.locator('.card--wide').screenshot({ path: path.join(out, 'r8-picnic-1440.png') });
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.waitForTimeout(600);
+      // Pink buttons stay pink on hover.
+      await page.hover('.hero__cta [data-open-register]');
+      await page.waitForTimeout(500);
+      const hov = await page.evaluate(() => { const cs = getComputedStyle(document.querySelector('.hero__cta [data-open-register]')); return { bg: cs.backgroundColor, c: cs.color }; });
+      check('Pink button hover: deeper pink #B8105F, white label (6.4:1)', hov.bg === 'rgb(184, 16, 95)' && hov.c === 'rgb(255, 255, 255)', JSON.stringify(hov));
+      done();
+      await ctx.close();
+      await b2.close();
+    }
+    // 20b. Phone: drag follows the finger.
+    {
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+      const page = await ctx.newPage();
+      const done = watch(page, 'Round 8 phone drag');
+      await page.goto(`${SITE}#gallery`);
+      await enter(page, '#enter-silent', true);
+      await page.waitForTimeout(1200);
+      await page.locator('#carousel').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(600);
+      await page.tap('.car__item.is-active .car__btn');
+      await page.waitForTimeout(1000);
+      await settled(page).catch(() => {});
+      const cdp = await ctx.newCDPSession(page);
+      const cap0 = await page.textContent('#lightbox-cap');
+      const y = 420;
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 300, y, id: 1 }] });
+      for (let k = 1; k <= 8; k++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 300 - k * 10, y, id: 1 }] });
+      await page.waitForTimeout(80); // moves are delivered on the next frame
+      const mid = await page.evaluate(() => [...document.querySelectorAll('#lightbox-stage .lightbox__item')].map((el) => ({ side: el.classList.contains('is-side'), x: Math.round(new DOMMatrix(getComputedStyle(el).transform).m41) })));
+      check('Phone: the item follows the finger and the next slides in beside it', mid.length === 2 && Math.abs(mid.find((m) => !m.side).x + 80) <= 2 && mid.find((m) => m.side).x > 0, JSON.stringify(mid));
+      await page.screenshot({ path: path.join(out, 'r8-drag-390.png') });
+      for (let k = 9; k <= 22; k++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 300 - k * 10, y, id: 1 }] }); }
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await page.waitForTimeout(900);
+      check('Phone: a long swipe finishes the move to the next item', (await page.textContent('#lightbox-cap')) !== cap0 && await page.locator('#lightbox-stage .lightbox__item').count() === 1);
+      done();
+      await ctx.close();
+    }
+    // 20c. "Pay ₹500 with UPI" opens a list of UPI apps (Android and iPhone).
+    for (const [os, ua] of [['Android', 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36'], ['iPhone', 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1']]) {
+      await api('/__reset', {});
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, userAgent: ua });
+      const page = await ctx.newPage();
+      const done = watch(page, `Round 8 UPI apps ${os}`);
+      await page.goto(SITE);
+      await enter(page);
+      await page.click('.hero__cta [data-open-register]');
+      await fillToPayment(page, { cat: 'kids', dob: '2018-05-05' });
+      const code = (await page.textContent('#pay-code')).trim();
+      check(`${os}: "Pay ₹500 with UPI" shown, list closed`, await page.isVisible('#upi-open') && await page.isHidden('#upi-apps') && (await page.getAttribute('#upi-open', 'aria-expanded')) === 'false');
+      await page.click('#upi-open');
+      await page.waitForTimeout(400);
+      const links = await page.$$eval('#upi-apps .pay__app', (as) => as.map((a) => ({ t: a.textContent, h: a.getAttribute('href') })));
+      const names = links.map((l) => l.t).join(', ');
+      check(`${os}: tapping it opens a list of UPI apps`, await page.isVisible('#upi-apps') && (await page.getAttribute('#upi-open', 'aria-expanded')) === 'true' && names === 'Google Pay, PhonePe, Paytm, BHIM, CRED, Other UPI app', names);
+      const gp = links[0].h;
+      const ok = os === 'Android'
+        ? gp.startsWith('intent://pay?pa=') && gp.endsWith('#Intent;scheme=upi;package=com.google.android.apps.nbu.paisa.user;end')
+        : gp.startsWith('tez://upi/pay?pa=');
+      check(`${os}: each app link opens that app with payee, ₹500 and the registration code`, ok && links.every((l) => l.h.includes('am=500') && l.h.includes('pa=achuisr1985.27-1%40okhdfcbank') && l.h.includes(`tn=Winter%20Camp%202027%20${code}`)) && links.at(-1).h.startsWith('upi://pay?'), gp);
+      await page.locator('#upi-apps').screenshot({ path: path.join(out, `r8-upi-apps-${os.toLowerCase()}.png`) });
+      await axe(page, `UPI app list ${os}`, '#register');
+      done();
+      await ctx.close();
+    }
+    // 20d. Privacy notice: how long we keep it.
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1024, height: 800 } });
+      const page = await ctx.newPage();
+      await page.goto(`${SITE}privacy/`);
+      const txt = await page.textContent('main');
+      check('Privacy: data kept after the camp with no set end date, confidential, deleted on request', txt.includes('with no set end date') && txt.includes('never give them to anyone else') && txt.includes('ask us to delete') && !txt.includes('90 days'));
+      check('Privacy: looking back on camps and planning future ones is listed as a use', txt.includes('plan future ones'));
       await ctx.close();
     }
   } finally {

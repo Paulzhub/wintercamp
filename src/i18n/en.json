@@ -255,6 +255,9 @@
       "copied": "Copied",
       "phone": "Or pay to phone number",
       "open": "Pay ₹500 with UPI",
+      "apps": "Choose your UPI app",
+      "appOther": "Other UPI app",
+      "appsHelp": "If your app does not open, scan the QR code or copy the UPI ID instead.",
       "shot": "Payment screenshot",
       "shotHelp": "JPG, PNG or WebP. A seat is only given when the form is sent with the screenshot.",
       "shotChoose": "Choose screenshot",
@@ -388,7 +391,7 @@
   "privacy": {
     "title": "Privacy notice",
     "metaTitle": "Privacy notice · Winter Camp 2027 · Kid's Happy Club",
-    "metaDescription": "How Kid's Happy Club collects, uses, stores and deletes the information given when registering a child for Winter Camp 2027.",
+    "metaDescription": "How Kid's Happy Club collects, uses, stores and keeps the information given when registering a child for Winter Camp 2027.",
     "back": "Back to Winter Camp 2027",
     "updated": "Last updated: November 2026",
     "sections": [
@@ -407,7 +410,7 @@
       {
         "h": "Why we collect it",
         "p": [
-          "We use this information only to run the camp: to keep a seat for your child, to confirm your payment, to keep your child safe, to cater for health and dietary needs, and to contact you in an emergency."
+          "We use this information to run the camp: to keep a seat for your child, to confirm your payment, to keep your child safe, to cater for health and dietary needs, and to contact you in an emergency. We also use it within Kid's Happy Club to look back on our camps and plan future ones, for example how many children came, from which age groups, and what care they needed."
         ]
       },
       {
@@ -425,7 +428,7 @@
       {
         "h": "How long we keep it",
         "p": [
-          "We keep registration details, signatures, payment screenshots and registration PDFs until the camp accounts are settled, and delete them within 90 days of the end of the camp."
+          "We keep registration details, signatures, payment screenshots and registration PDFs after the camp, with no set end date, so we can look back on our camps and plan future ones. They stay confidential: only the camp organisers can see them, and we never give them to anyone else. You can ask us to delete your child's information at any time by calling +91-8219012669, and we will delete it unless a law requires us to keep something."
         ]
       },
       {
