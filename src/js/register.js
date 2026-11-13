@@ -467,44 +467,6 @@ export function initRegistration({ audio }) {
   });
   btnBack.addEventListener('click', () => goStep(state.step - 1));
 
-  // "Pay ₹500 with UPI" opens a list of UPI apps. Each link opens that app with the
-  // payee, amount and note filled in: on Android by package name, on iOS by the app's
-  // own link (iOS has no app chooser). "Other UPI app" uses the plain UPI link, which
-  // on Android shows the phone's own list of UPI apps.
-  const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
-  const UPI_APPS = [
-    // gpay:// is the iPhone link in Google's own guide (tez:// is the app's old name).
-    { name: 'Google Pay', android: 'com.google.android.apps.nbu.paisa.user', ios: 'gpay://upi/pay' },
-    { name: 'PhonePe', android: 'com.phonepe.app', ios: 'phonepe://pay' },
-    { name: 'Paytm', android: 'net.one97.paytm', ios: 'paytmmp://pay' },
-    { name: 'BHIM', android: 'in.org.npci.upiapp', ios: 'bhim://upi/pay' },
-    { name: 'CRED', android: 'com.dreamplug.androidapp', ios: 'credpay://upi/pay' },
-  ];
-  function upiLink(app) {
-    const q = $('#upi-open').dataset.upi;
-    if (!app) return `upi://pay?${q}`;
-    return ios ? `${app.ios}?${q}` : `intent://pay?${q}#Intent;scheme=upi;package=${app.android};end`;
-  }
-  function renderUpiApps() {
-    const list = $('#upi-apps .pay__apps-list');
-    if (!list) return;
-    const links = [...UPI_APPS, null].map((app) => {
-      const li = document.createElement('li');
-      const a = document.createElement('a');
-      a.className = 'pay__app';
-      a.href = upiLink(app);
-      a.textContent = app ? app.name : R.pay.appOther;
-      if (app) a.dataset.app = app.name;
-      // The UPI ID goes on the clipboard too, in case the app needs it pasted.
-      a.addEventListener('click', () => {
-        state.appOpenedAt = Date.now();
-        try { navigator.clipboard?.writeText(T.pay.upiId).catch(() => {}); } catch { /* not allowed: fine */ }
-      });
-      li.append(a);
-      return li;
-    });
-    list.replaceChildren(...links);
-  }
   // Before anyone is asked to pay, the server holds a seat for 5 minutes. The
   // same submission ID is used for the hold and the registration, so a retry,
   // a reload (draft) or "Hold my seat again" never takes a second seat.
@@ -512,9 +474,6 @@ export function initRegistration({ audio }) {
     if (!state.submissionId) state.submissionId = newId();
     const code = regCode(state.submissionId);
     $('#pay-code').textContent = code;
-    const open = $('#upi-open');
-    open.dataset.upi = open.dataset.upi.replace(/([?&]tn=|^tn=)[^&]*/, `$1${encodeURIComponent(`${open.dataset.note} ${code}`)}`);
-    renderUpiApps();
   }
 
   function showPanel() {
@@ -657,48 +616,41 @@ export function initRegistration({ audio }) {
     sendRelease(state.submissionId, { keepalive });
   }
   // Only when the page really closes. Switching to a UPI app can fire pagehide on
-  // iPhones (the page may be kept, persisted, or reloaded later): the family is
-  // paying then, so the hold stays (it ends by itself after 5 minutes).
+  // iPhones (the page may be kept, persisted, or reloaded later): after the family
+  // copied the UPI ID or phone number they are paying, so the hold stays (it ends
+  // by itself after 5 minutes).
   window.addEventListener('pagehide', (e) => {
     if (e.persisted || Date.now() - (state.appOpenedAt || 0) < 15 * 60000) return;
     releaseHold({ keepalive: true });
   });
 
   // ---------- Payment ----------
-  const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (window.matchMedia('(pointer: coarse)').matches && 'ontouchstart' in window);
-  $('#upi-open').hidden = !mobile;
-
-  const upiOpen = $('#upi-open');
-  upiOpen.addEventListener('click', () => {
-    const panel = $('#upi-apps');
-    const show = panel.hidden;
-    if (show) renderUpiApps();
-    panel.hidden = !show;
-    upiOpen.setAttribute('aria-expanded', String(show));
-    if (show && !reduced()) gsap.fromTo(panel, { opacity: 0, y: -8 }, { opacity: 1, y: 0, duration: 0.32, ease: 'std', clearProps: 'all' });
-  });
-  renderUpiApps();
-
-  const copyBtn = $('#upi-copy');
-  copyBtn.addEventListener('click', async () => {
-    const id = $('#upi-id').textContent.trim();
-    let ok = false;
-    try { await navigator.clipboard.writeText(id); ok = true; } catch {
-      const range = document.createRange();
-      range.selectNodeContents($('#upi-id'));
-      const sel = window.getSelection();
-      sel.removeAllRanges();
-      sel.addRange(range);
-      try { ok = document.execCommand('copy'); } catch { ok = false; }
-    }
-    if (!ok) return;
-    const label = $('[data-copy-label]', copyBtn);
-    label.textContent = R.pay.copied;
-    copyBtn.classList.add('is-done');
-    $('#copy-status').textContent = R.pay.copied;
-    audio.play('copy');
-    setTimeout(() => { label.textContent = R.pay.copy; copyBtn.classList.remove('is-done'); $('#copy-status').textContent = ''; }, 2000);
-  });
+  // Families pay in their own UPI app: they scan the QR code, or copy the UPI ID
+  // or phone number (round 11: the UPI app buttons were removed, apps blocked them).
+  for (const btn of document.querySelectorAll('#pay-panel [data-copy]')) {
+    btn.addEventListener('click', async () => {
+      const src = $(btn.dataset.copy);
+      const text = src.textContent.trim();
+      let ok = false;
+      try { await navigator.clipboard.writeText(text); ok = true; } catch {
+        const range = document.createRange();
+        range.selectNodeContents(src);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        try { ok = document.execCommand('copy'); } catch { ok = false; }
+      }
+      if (!ok) return;
+      // They are about to switch to their UPI app: keep the seat hold through that.
+      state.appOpenedAt = Date.now();
+      const label = $('[data-copy-label]', btn);
+      label.textContent = R.pay.copied;
+      btn.classList.add('is-done');
+      $('#copy-status').textContent = R.pay.copied;
+      audio.play('copy');
+      setTimeout(() => { label.textContent = R.pay.copy; btn.classList.remove('is-done'); $('#copy-status').textContent = ''; }, 2000);
+    });
+  }
 
   async function setShot(file) {
     if (!file) return;

@@ -254,12 +254,6 @@
       "copyTip": "Copy the UPI ID",
       "copied": "Copied",
       "phone": "Or pay to phone number",
-      "open": "Pay ₹500 with UPI",
-      "apps": "Choose your UPI app",
-      "appOther": "Other UPI app",
-      "enterAmount": "Your app opens with Achui Sareo as the payee. Type the amount yourself: ₹500.",
-      "appsHelp": "Tapping an app also copies the UPI ID, so you can paste it if needed. If your app does not open, scan the QR code or copy the UPI ID instead.",
-      "appError": "If your app says a limit is reached or the payment may be risky, no money has been taken. Pay by scanning the QR code or by entering the UPI ID in your app.",
       "shot": "Payment screenshot",
       "shotHelp": "JPG, PNG or WebP. A seat is only given when the form is sent with the screenshot.",
       "shotChoose": "Choose screenshot",
@@ -274,10 +268,11 @@
       "refundAck": "I understand that the ₹500 registration fee is non-refundable.",
       "nonRefundableShort": "non-refundable",
       "help": "If anything goes wrong after you pay, call +91-8219012669 with your payment screenshot.",
-      "warn": "CHECK AND PAY ₹ 500/- ONLY",
       "code": "Registration code",
       "codeHelp": "Type this code in the payment note (message) in your UPI app, so the organisers can match your payment.",
-      "refHelp": "The 12-digit number in your UPI app's payment details. It helps the organisers find your payment."
+      "refHelp": "The 12-digit number in your UPI app's payment details. It helps the organisers find your payment.",
+      "qrHelp": "Scan this QR code with any UPI app and pay ₹500. On this phone? Take a screenshot of the QR code and choose it from your gallery in your UPI app's scanner, or copy the UPI ID or phone number below.",
+      "phoneCopyTip": "Copy the phone number"
     },
     "err": {
       "summary": "Please fix the following:",
