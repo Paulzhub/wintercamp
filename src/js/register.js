@@ -997,7 +997,8 @@ export function initRegistration({ audio }) {
         kept = Boolean(await keepPdf(rec.submissionId, dataUrl) !== null);
         return uploadPdf(rec.submissionId, dataUrl);
       })
-      .then((res) => copyNote(res ? 'saved' : kept ? 'later' : 'none'))
+      // A final refusal is not "sent later": the copy was dropped, so say nothing.
+      .then((res) => copyNote(res?.ok ? 'saved' : res?.refused ? 'none' : kept ? 'later' : 'none'))
       .catch((err) => { console.warn('registration PDF', err); copyNote(kept ? 'later' : 'none'); });
   }
   const readDataUrl = (file) => new Promise((resolve, reject) => {
@@ -1019,7 +1020,8 @@ export function initRegistration({ audio }) {
           const res = await sendPdf({ action: 'pdf', submissionId, pdf: dataUrl });
           if (res?.ok || FINAL.includes(res?.error)) {
             await dropPdf(submissionId);
-            return res?.ok ? res : null;
+            if (!res.ok) console.warn('registration PDF refused:', res.error);
+            return res.ok ? res : { refused: res.error };
           }
         } catch { /* network: try again */ }
       }

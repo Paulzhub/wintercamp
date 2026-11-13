@@ -63,6 +63,76 @@ function readPdf(buf) {
 const settled = (page) => page.waitForFunction(() => !document.getAnimations().some((a) => /view-transition/.test(a.effect?.pseudoElement || '')), null, { timeout: 5000 });
 const waitFor = async (fn, ms = 15000) => { const t = Date.now(); for (;;) { const v = await fn(); if (v || Date.now() - t > ms) return v; await new Promise((r) => setTimeout(r, 250)); } };
 
+// Round 10: pauses the gallery's view transition at several points and checks that the
+// pixels just inside each corner of the moving box are not the image (the corners are
+// rounded). Each frame is compared with the same paused frame with the moving item hidden.
+async function cornerFrames(page, start, label, fractions = [0.1, 0.25, 0.5, 0.75]) {
+  // The page's CSP blocks <style> tags, so add rules through the CSSOM instead.
+  const addRule = (css) => page.evaluate((css) => { const sh = new CSSStyleSheet(); sh.replaceSync(css); document.adoptedStyleSheets = [...document.adoptedStyleSheets, sh]; return document.adoptedStyleSheets.length - 1; }, css);
+  const dropRule = (i) => page.evaluate((i) => { document.adoptedStyleSheets = document.adoptedStyleSheets.filter((_, k) => k !== i); }, i);
+  const noCanvas = await addRule('canvas { visibility: hidden !important; }'); // particles move between shots
+  await start();
+  const ok = await waitFor(() => page.evaluate(() => document.getAnimations().some((a) => /view-transition-group\(wc-media\)/.test(a.effect?.pseudoElement || ''))), 2000);
+  if (!ok) { await dropRule(noCanvas); return { ran: false, frames: [] }; }
+  const frames = [];
+  for (const f of fractions) {
+    await page.evaluate((f) => {
+      document.getAnimations().filter((a) => /view-transition/.test(a.effect?.pseudoElement || '')).forEach((a) => { a.pause(); a.currentTime = 700 * f; });
+      document.querySelectorAll('video').forEach((v) => v.pause()); // live snapshots: keep both shots the same
+    }, f);
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    const rect = await page.evaluate(() => {
+      const cs = getComputedStyle(document.documentElement, '::view-transition-group(wc-media)');
+      const m = new DOMMatrix(cs.transform);
+      return { m: m.is2D ? 'flat' : cs.transform.slice(0, 60), x: m.e, y: m.f, w: parseFloat(cs.width), h: parseFloat(cs.height), r: parseFloat(cs.borderTopLeftRadius), dpr: devicePixelRatio, vw: innerWidth, vh: innerHeight };
+    });
+    await page.waitForTimeout(120);
+    const shot = await page.screenshot();
+    const hide = await addRule('::view-transition-group(wc-media) { visibility: hidden !important; }');
+    await page.waitForFunction(() => getComputedStyle(document.documentElement, '::view-transition-group(wc-media)').visibility === 'hidden');
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    await page.waitForTimeout(200);
+    const bare = await page.screenshot();
+    await dropRule(hide);
+    const [a, b] = await Promise.all([shot, bare].map((buf) => sharp(buf).raw().toBuffer({ resolveWithObject: true })));
+    const px = (img, x, y) => { const i = (Math.round(y * rect.dpr) * img.info.width + Math.round(x * rect.dpr)) * img.info.channels; return [img.data[i], img.data[i + 1], img.data[i + 2]]; };
+    const diff = (x, y) => px(a, x, y).reduce((t, v, k) => t + Math.abs(v - px(b, x, y)[k]), 0);
+    const corners = [];
+    for (const [cx, cy, sx, sy] of [[rect.x, rect.y, 1, 1], [rect.x + rect.w, rect.y, -1, 1], [rect.x, rect.y + rect.h, 1, -1], [rect.x + rect.w, rect.y + rect.h, -1, -1]]) {
+      const ix = cx + sx * 2;
+      const iy = cy + sy * 2;
+      const deep = [cx + sx * 40, cy + sy * 40];
+      if (ix < 6 || iy < 6 || ix > rect.vw - 7 || iy > rect.vh - 7 || deep[1] < 1 || deep[1] > rect.vh - 2) continue; // off screen
+      // Nothing of the item just inside the corner: the pixel there matches the shot with the
+      // item hidden, or the background just outside the corner (whichever is closer).
+      const near = (p, q) => p.reduce((t, v, k) => t + Math.abs(v - q[k]), 0);
+      const bg = near(px(a, ix, iy), px(a, cx - sx * 4, cy - sy * 4));
+      corners.push({ corner: Math.min(diff(ix, iy), bg), inside: diff(...deep) });
+    }
+    frames.push({ f, r: Math.round(rect.r * 10) / 10, m: rect.m, corners });
+    if (corners.some((c) => c.corner > 60)) await sharp(shot).toFile(path.join(out, `r10-corners-FAIL-${label}-${f}.png`));
+    if (f === 0.25) await page.screenshot({ path: path.join(out, `r10-corners-${label}.png`) });
+  }
+  await page.evaluate(() => document.getAnimations().forEach((a) => a.play()));
+  await settled(page).catch(() => {});
+  await dropRule(noCanvas);
+  await page.waitForTimeout(300);
+  return { ran: true, frames };
+}
+// Rounded: nothing of the item is drawn just inside a corner, while it is drawn further in.
+// (Up to 60 of 765 allows for the blurred background re-rendering slightly between shots;
+// the image against the indigo background differs by well over 100.)
+const roundedOk = (res) => res.ran && res.frames.length > 0 && res.frames.every((fr) => fr.corners.length > 0 && fr.corners.every((c) => c.corner <= 60) && fr.corners.some((c) => c.inside > 60));
+const lbItems = (page) => page.evaluate(() => [...document.querySelectorAll('#lightbox-stage .lightbox__item')].map((el) => ({ side: el.classList.contains('is-side'), leaving: el.classList.contains('is-leaving'), x: Math.round(new DOMMatrix(getComputedStyle(el).transform).m41), o: Math.round(Number(getComputedStyle(el).opacity) * 1000) / 1000 })));
+async function toGalleryItem(page, type) {
+  const idx = await page.evaluate((t) => [...document.querySelectorAll('.car__item')].findIndex((el) => el.dataset.type === t), type);
+  const now = await page.evaluate(() => [...document.querySelectorAll('.car__item')].findIndex((el) => el.classList.contains('is-active')));
+  await page.focus('#carousel');
+  for (let k = now; k < idx; k++) { await page.keyboard.press('ArrowRight'); await page.waitForTimeout(120); }
+  await page.waitForTimeout(1000);
+  return idx;
+}
+
 const api = async (p, body) => (await fetch(API + p, { method: body ? 'POST' : 'GET', body: body ? JSON.stringify(body) : undefined })).json();
 
 function watch(page, label, { ignore = null } = {}) {
@@ -764,7 +834,7 @@ async function main() {
       await page.waitForTimeout(600);
       check('Close without view transitions: animates for 0.7 s, then closes', stillOpen && await page.evaluate(() => !document.getElementById('lightbox').open));
 
-      // Moving between items: both slide together, side by side (round 8: no fade).
+      // Moving between items: both slide together, side by side (round 10: fading as they go).
       await page.tap('.car__item.is-active .car__btn');
       await page.waitForTimeout(900);
       const cap0 = await page.textContent('#lightbox-cap');
@@ -773,7 +843,7 @@ async function main() {
       const both = await page.evaluate(() => [...document.querySelectorAll('#lightbox-stage .lightbox__item')].map((el) => ({ leaving: el.classList.contains('is-leaving'), x: Math.round(new DOMMatrix(getComputedStyle(el).transform).m41), o: Number(getComputedStyle(el).opacity) })));
       const out1 = both.find((b) => b.leaving);
       const in1 = both.find((b) => !b.leaving);
-      check('Next: the current item slides left while the next slides in from the right, together, side by side', both.length === 2 && out1.x < 0 && in1.x > 0 && out1.o === 1 && in1.o === 1 && in1.x - out1.x > 200, JSON.stringify(both));
+      check('Next: the current item slides left while the next slides in from the right, together, side by side', both.length === 2 && out1.x < 0 && in1.x > 0 && out1.o < 1 && in1.o < 1 && in1.x - out1.x > 200, JSON.stringify(both));
       await page.waitForTimeout(600);
       const cap1 = await page.textContent('#lightbox-cap');
       check('The move takes 0.7 s and leaves one item', await page.locator('#lightbox-stage .lightbox__item').count() === 1 && cap0 !== cap1, `${cap0} -> ${cap1}`);
@@ -1734,6 +1804,244 @@ async function main() {
         await page.screenshot({ path: path.join(out, `r9-privacy-menu-${width}.png`) });
       }
       if (width === 1280) await axe(page, 'Privacy page with title band');
+      done();
+      await ctx.close();
+    }
+
+    // 22. Round 10.
+    // 22a. Gallery: the corners stay rounded through the opening and closing transitions.
+    const cornerCase = async (page, label, tap = false) => {
+      const press = (sel) => (tap ? page.tap(sel) : page.click(sel));
+      const opened = await cornerFrames(page, () => press('.car__item.is-active .car__btn'), `${label}-open`);
+      check(`Corners ${label}: rounded throughout the opening transition (10, 25, 50, 75%)`, roundedOk(opened), JSON.stringify(opened.frames));
+      const radii = opened.frames.map((fr) => fr.r);
+      check(`Corners ${label}: the radius eases from the thumbnail's 32 px to the view's 24 px`, radii[0] > 30 && radii.at(-1) < 26 && radii.every((r, k) => k === 0 || r <= radii[k - 1] + 0.01), radii.join(' '));
+      const closed = await cornerFrames(page, () => page.keyboard.press('Escape'), `${label}-close`);
+      check(`Corners ${label}: rounded throughout the closing transition`, roundedOk(closed), JSON.stringify(closed.frames));
+      await page.waitForTimeout(400);
+    };
+    for (const width of [1280, 1440, 1920]) {
+      const ctx = await browser.newContext({ viewport: { width, height: width === 1920 ? 1080 : 900 } });
+      const page = await ctx.newPage();
+      const done = watch(page, `Round 10 corners ${width}`);
+      await page.goto(`${SITE}#gallery`);
+      await enter(page);
+      await page.waitForTimeout(900);
+      await page.locator('.car__item.is-active .car__btn').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(900);
+      await cornerCase(page, `photo-${width}`);
+      if (width === 1440) {
+        await toGalleryItem(page, 'video');
+        await cornerCase(page, 'video-1440');
+      }
+      done();
+      await ctx.close();
+    }
+    {
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+      const page = await ctx.newPage();
+      const done = watch(page, 'Round 10 corners phone');
+      await page.goto(`${SITE}#gallery`);
+      await enter(page, '#enter-silent', true);
+      await page.waitForTimeout(1200);
+      await page.locator('#carousel').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(800);
+      await cornerCase(page, 'photo-390', true);
+      done();
+      await ctx.close();
+    }
+    {
+      // Windows-style classic scrollbars (see 20a).
+      const b2 = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome', args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'], ignoreDefaultArgs: ['--hide-scrollbars'] });
+      const ctx = await b2.newContext({ viewport: { width: 1440, height: 900 } });
+      const page = await ctx.newPage();
+      const done = watch(page, 'Round 10 corners, real scrollbars');
+      await page.goto(`${SITE}#gallery`);
+      await enter(page);
+      await page.waitForTimeout(900);
+      await page.locator('.car__item.is-active .car__btn').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(900);
+      await cornerCase(page, 'scrollbars-1440');
+      done();
+      await ctx.close();
+      await b2.close();
+    }
+    {
+      // Browsers without view transitions: the GSAP fallback keeps the thumbnail's corners too.
+      const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      await ctx.addInitScript(() => { delete Document.prototype.startViewTransition; });
+      const page = await ctx.newPage();
+      const done = watch(page, 'Round 10 corners, GSAP fallback');
+      await page.goto(`${SITE}#gallery`);
+      await enter(page);
+      await page.waitForTimeout(900);
+      await page.locator('.car__item.is-active .car__btn').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(900);
+      await page.click('.car__item.is-active .car__btn');
+      const seen = [];
+      for (let k = 0; k < 6; k++) {
+        await page.waitForTimeout(90);
+        seen.push(await page.evaluate(() => { const el = document.querySelector('#lightbox-stage .lightbox__item > *'); const cs = getComputedStyle(el); return Math.round(parseFloat(cs.borderTopLeftRadius) * new DOMMatrix(cs.transform).a * 10) / 10; }));
+      }
+      check('Corners, GSAP fallback: the moving item looks rounded (24 to 32 px) all the way', seen.every((r) => r >= 23 && r <= 33), seen.join(' '));
+      await page.waitForTimeout(800);
+      check('Corners, GSAP fallback: ends at the view\'s 24 px', await page.evaluate(() => getComputedStyle(document.querySelector('#lightbox-stage .lightbox__item > *')).borderTopLeftRadius) === '24px');
+      await page.keyboard.press('Escape');
+      const back = [];
+      for (let k = 0; k < 5; k++) {
+        await page.waitForTimeout(110);
+        back.push(await page.evaluate(() => { const el = document.querySelector('#lightbox-stage .lightbox__item > *'); if (!el) return null; const cs = getComputedStyle(el); return Math.round(parseFloat(cs.borderTopLeftRadius) * new DOMMatrix(cs.transform).a * 10) / 10; }));
+      }
+      check('Corners, GSAP fallback: rounded all the way back to the thumbnail', back.filter((r) => r !== null).every((r) => r >= 23 && r <= 33), back.join(' '));
+      done();
+      await ctx.close();
+    }
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
+      const page = await ctx.newPage();
+      const done = watch(page, 'Round 10 reduced motion');
+      await page.goto(`${SITE}#gallery`);
+      await enter(page);
+      await page.waitForTimeout(900);
+      await page.locator('.car__item.is-active .car__btn').scrollIntoViewIfNeeded();
+      await page.click('.car__item.is-active .car__btn');
+      await page.waitForTimeout(100);
+      const r = await page.evaluate(() => ({ open: document.getElementById('lightbox').open, vt: document.getAnimations().some((a) => /view-transition/.test(a.effect?.pseudoElement || '')) }));
+      check('Reduced motion: the view opens at once, without a transition', r.open && !r.vt, JSON.stringify(r));
+      const cap0 = await page.textContent('#lightbox-cap');
+      await page.keyboard.press('ArrowRight');
+      await page.waitForTimeout(80);
+      const items = await lbItems(page);
+      check('Reduced motion: arrow keys change the item at once (no slide, no fade)', items.length === 1 && items[0].o === 1 && items[0].x === 0 && (await page.textContent('#lightbox-cap')) !== cap0, JSON.stringify(items));
+      done();
+      await ctx.close();
+    }
+
+    // 22b. Gallery: the item moving out fades out and the one moving in fades in.
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      const page = await ctx.newPage();
+      const done = watch(page, 'Round 10 fade');
+      await page.goto(`${SITE}#gallery`);
+      await enter(page);
+      await page.waitForTimeout(900);
+      await page.locator('.car__item.is-active .car__btn').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(900);
+      await page.click('.car__item.is-active .car__btn');
+      await page.waitForTimeout(900);
+      await settled(page).catch(() => {});
+      const cap0 = await page.textContent('#lightbox-cap');
+      const mb = await page.locator('#lightbox-stage .lightbox__item > *').boundingBox();
+      const y = mb.y + mb.height / 2;
+      const x0 = mb.x + mb.width / 2;
+      // Mid-drag: opacity follows the distance.
+      await page.mouse.move(x0, y);
+      await page.mouse.down();
+      for (let k = 1; k <= 10; k++) { await page.mouse.move(x0 - k * 5, y); await page.waitForTimeout(30); }
+      let it = await lbItems(page);
+      let cur = it.find((m) => !m.side);
+      let side = it.find((m) => m.side);
+      const d = side ? side.x - cur.x : 0; // span between the two
+      const want = 1 - 50 / d;
+      check('Fade, mid-drag: the current item is fading out and the next fading in, by the distance moved', it.length === 2 && Math.abs(cur.o - want) < 0.02 && Math.abs(side.o - (1 - want)) < 0.02, `${JSON.stringify(it)} want ${want.toFixed(3)}`);
+      await page.screenshot({ path: path.join(out, 'r10-fade-drag-1440.png') });
+      // Short drag: springs back, opacity restored.
+      await page.mouse.up();
+      await page.waitForTimeout(120);
+      const back = await lbItems(page);
+      const backCur = back.find((m) => !m.side);
+      check('Fade, spring-back: the item comes back to full opacity as it moves back', backCur && backCur.o > cur.o, JSON.stringify(back));
+      await page.waitForTimeout(800);
+      it = await lbItems(page);
+      check('Fade, spring-back: one item left, fully opaque, same item', it.length === 1 && it[0].o === 1 && (await page.textContent('#lightbox-cap')) === cap0, JSON.stringify(it));
+      // Long drag: commits; the outgoing fades to 0, the incoming to 1.
+      await page.mouse.move(x0, y);
+      await page.mouse.down();
+      for (let k = 1; k <= 20; k++) { await page.mouse.move(x0 - k * 25, y); await page.waitForTimeout(16); }
+      await page.waitForTimeout(200);
+      const before = await lbItems(page);
+      await page.mouse.up();
+      await page.waitForTimeout(150);
+      const fin = await lbItems(page);
+      const out1 = fin.find((m) => m.leaving);
+      const in1 = fin.find((m) => !m.leaving);
+      check('Fade, finishing a drag: the outgoing item keeps fading out and the incoming keeps fading in', fin.length === 2 && out1 && in1 && out1.o < before.find((m) => !m.side).o && in1.o > before.find((m) => m.side).o, `${JSON.stringify(before)} -> ${JSON.stringify(fin)}`);
+      await page.waitForTimeout(800);
+      it = await lbItems(page);
+      const cap1 = await page.textContent('#lightbox-cap');
+      check('Fade, after the drag: one item, fully opaque, the next item', it.length === 1 && it[0].o === 1 && it[0].x === 0 && cap1 !== cap0, JSON.stringify(it));
+      // Arrow key and buttons: both fade together during the full-width slide.
+      for (const [how, act] of [['arrow key', () => page.keyboard.press('ArrowRight')], ['next button', () => page.click('#lightbox-next')], ['previous button', () => page.click('#lightbox-prev')]]) {
+        await act();
+        await page.waitForTimeout(330);
+        const mid = await lbItems(page);
+        const o = mid.find((m) => m.leaving);
+        const n = mid.find((m) => !m.leaving);
+        check(`Fade, ${how}: half-way, the outgoing item is fading out while the incoming fades in`, mid.length === 2 && o && n && o.o > 0.05 && o.o < 0.95 && n.o > 0.05 && n.o < 0.95, JSON.stringify(mid));
+        if (how === 'arrow key') await page.screenshot({ path: path.join(out, 'r10-fade-key-1440.png') });
+        await page.waitForTimeout(700);
+        const end = await lbItems(page);
+        check(`Fade, ${how}: ends with one fully opaque item`, end.length === 1 && end[0].o === 1, JSON.stringify(end));
+      }
+      done();
+      await ctx.close();
+    }
+    {
+      // A video: dragging (fading) doesn't pause it; finishing the move pauses it, as before.
+      const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      const page = await ctx.newPage();
+      const done = watch(page, 'Round 10 fade video');
+      await page.goto(`${SITE}#gallery`);
+      await enter(page);
+      await page.waitForTimeout(900);
+      await page.locator('.car__item.is-active .car__btn').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(600);
+      await toGalleryItem(page, 'video');
+      await page.click('.car__item.is-active .car__btn');
+      await page.waitForTimeout(1000);
+      await settled(page).catch(() => {});
+      await page.evaluate(() => { const v = document.querySelector('#lightbox-stage video'); v.muted = true; return v.play().catch(() => {}); });
+      await page.waitForTimeout(400);
+      const mb = await page.locator('#lightbox-stage video').boundingBox();
+      const y = mb.y + mb.height / 3;
+      const x0 = mb.x + mb.width / 2;
+      await page.mouse.move(x0, y);
+      await page.mouse.down();
+      for (let k = 1; k <= 10; k++) { await page.mouse.move(x0 - k * 8, y); await page.waitForTimeout(30); }
+      const v1 = await page.evaluate(() => { const v = document.querySelector('#lightbox-stage .lightbox__item:not(.is-side) video'); return { paused: v.paused, o: Number(getComputedStyle(v.parentElement).opacity) }; });
+      check('Fade, video: while dragged (and fading) it keeps playing', !v1.paused && v1.o < 1, JSON.stringify(v1));
+      for (let k = 11; k <= 30; k++) { await page.mouse.move(x0 - k * 20, y); await page.waitForTimeout(16); }
+      await page.waitForTimeout(200);
+      await page.mouse.up();
+      await page.waitForTimeout(100);
+      const v2 = await page.evaluate(() => { const v = document.querySelector('#lightbox-stage .lightbox__item.is-leaving video'); return v ? v.paused : null; });
+      check('Fade, video: once the move is finished the outgoing video is paused', v2 === true, String(v2));
+      await page.waitForTimeout(900);
+      done();
+      await ctx.close();
+    }
+
+    // 22c. A PDF the server refuses for good (e.g. "too late") is not promised "next time".
+    {
+      await api('/__reset', {});
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+      const page = await ctx.newPage();
+      const done = watch(page, 'Round 10 PDF refused', { ignore: /registration PDF refused/ });
+      await page.route(`${API}/**`, async (route) => {
+        const body = route.request().postData() || '';
+        if (route.request().method() === 'POST' && body.includes('"action":"pdf"')) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'too_late' }) });
+        return route.fallback();
+      });
+      await page.goto(SITE);
+      await enter(page);
+      await page.click('.hero__cta [data-open-register]');
+      await fillToPayment(page, { cat: 'youth', dob: '2013-02-02' });
+      await page.setInputFiles('#f-shot', shotPng);
+      await page.waitForSelector('#shot-preview:not([hidden])');
+      await page.click('#reg-submit');
+      await page.waitForSelector('#reg-done:not([hidden])', { timeout: 15000 });
+      const note = await waitFor(() => page.evaluate(() => { const el = document.getElementById('done-copy'); return !el.classList.contains('is-saving') && { hidden: el.hidden, text: el.textContent.trim() }; }), 20000);
+      check('PDF refused by the server: the success screen does not say it will be sent next time', note && note.hidden && !/next time/.test(note.text), JSON.stringify(note));
       done();
       await ctx.close();
     }

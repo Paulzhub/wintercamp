@@ -4,7 +4,10 @@
 // - Moving between items: the items sit side by side, a gap apart. Dragging (finger or
 //   mouse) moves the current item with the pointer while the next or previous one slides
 //   in alongside it; on release the move finishes or springs back, easing in and out.
-//   The buttons and arrow keys make the same full-width slide in 0.7 s.
+//   The buttons and arrow keys make the same full-width slide in 0.7 s. The item moving
+//   out fades out and the one moving in fades in, by the distance moved (round 10).
+// - Corners stay rounded through the open and close (round 10): the rounded thumbnail
+//   wrapper is the shared element, and the moving box is clipped with an easing radius.
 // - Pinch to zoom photos and videos (eases back on release).
 import { gsap, reduced } from './motion.js';
 import { T, $, fill } from './i18n.js';
@@ -13,6 +16,8 @@ import { openModal } from './modal.js';
 const DUR = 0.7;
 const MAX_ZOOM = 4;
 const GAP = 32; // space between neighbouring items while sliding
+// Corner radii: the carousel thumbnail (--r-lg) and the media in the view (--r-md).
+const radius = (name, px) => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name)) || px;
 
 export function initLightbox({ items, onIndex, audio }) {
   const box = $('#lightbox');
@@ -89,7 +94,9 @@ export function initLightbox({ items, onIndex, audio }) {
 
   const current = () => stage.querySelector('.lightbox__item:not(.is-leaving):not(.is-side)');
   const currentMedia = () => current()?.firstElementChild || null;
-  const thumbOf = (i) => items[i]?.querySelector('.car__media img') || null;
+  // The rounded, clipped wrapper (not the image inside it, which has no corners of its
+  // own and is scaled by the slow pan): its snapshot keeps the thumbnail's corners.
+  const thumbOf = (i) => items[i]?.querySelector('.car__media') || null;
 
   function captionOf(i) {
     const it = items[i];
@@ -122,8 +129,8 @@ export function initLightbox({ items, onIndex, audio }) {
     // Side by side: the current item slides a full width out while the next slides in.
     const d = span(from, index);
     slide = gsap.timeline({ defaults: { duration: DUR, ease: 'std' }, onComplete: () => { out.remove(); slide = null; } })
-      .to(out, { x: -dir * d }, 0)
-      .fromTo(wrap, { x: dir * d }, { x: 0, clearProps: 'transform' }, 0);
+      .to(out, { x: -dir * d, opacity: 0 }, 0)
+      .fromTo(wrap, { x: dir * d, opacity: 0 }, { x: 0, opacity: 1, clearProps: 'transform,opacity' }, 0);
   }
 
   // ---------- Dragging between items ----------
@@ -141,16 +148,18 @@ export function initLightbox({ items, onIndex, audio }) {
       stage.append(wrap);
       drag = { dir, side: wrap, idx, d: span(index, idx) };
     }
-    gsap.set(cur, { x: dx });
-    if (drag) gsap.set(drag.side, { x: drag.dir * drag.d + dx });
+    // Opacity follows the distance moved: the current item fades out as the next fades in.
+    const p = drag ? Math.min(1, Math.abs(dx) / drag.d) : 0;
+    gsap.set(cur, { x: dx, opacity: 1 - p });
+    if (drag) gsap.set(drag.side, { x: drag.dir * drag.d + dx, opacity: p });
   }
   function cancelDrag() {
     box.classList.remove('is-dragging');
-    if (!drag) { const cur = current(); if (cur && !slide) gsap.set(cur, { clearProps: 'transform' }); return; }
+    if (!drag) { const cur = current(); if (cur && !slide) gsap.set(cur, { clearProps: 'transform,opacity' }); return; }
     gsap.killTweensOf([drag.side, current()]);
     drag.side.remove();
     const cur = current();
-    if (cur) gsap.set(cur, { clearProps: 'transform' });
+    if (cur) gsap.set(cur, { clearProps: 'transform,opacity' });
     drag = null;
   }
   // On release: finish the move to the neighbour, or spring back.
@@ -164,9 +173,9 @@ export function initLightbox({ items, onIndex, audio }) {
     const left = Math.abs(towards - dx) / dg.d; // share of the distance still to go
     const duration = Math.max(0.24, DUR * Math.min(1, left));
     if (!commit) {
-      slide = gsap.timeline({ defaults: { duration, ease: 'std' }, onComplete: () => { dg.side.remove(); gsap.set(cur, { clearProps: 'transform' }); slide = null; } })
-        .to(cur, { x: 0 }, 0)
-        .to(dg.side, { x: dg.dir * dg.d }, 0);
+      slide = gsap.timeline({ defaults: { duration, ease: 'std' }, onComplete: () => { dg.side.remove(); gsap.set(cur, { clearProps: 'transform,opacity' }); slide = null; } })
+        .to(cur, { x: 0, opacity: 1 }, 0)
+        .to(dg.side, { x: dg.dir * dg.d, opacity: 0 }, 0);
       return;
     }
     resetZoom(true);
@@ -179,9 +188,9 @@ export function initLightbox({ items, onIndex, audio }) {
     audio.play('whoosh');
     const v = dg.side.querySelector('video');
     if (v && !reduced()) v.play().catch(() => {});
-    slide = gsap.timeline({ defaults: { duration, ease: 'std' }, onComplete: () => { cur.remove(); gsap.set(dg.side, { clearProps: 'transform' }); slide = null; } })
-      .to(cur, { x: towards }, 0)
-      .to(dg.side, { x: 0 }, 0);
+    slide = gsap.timeline({ defaults: { duration, ease: 'std' }, onComplete: () => { cur.remove(); gsap.set(dg.side, { clearProps: 'transform,opacity' }); slide = null; } })
+      .to(cur, { x: towards, opacity: 0 }, 0)
+      .to(dg.side, { x: 0, opacity: 1 }, 0);
   }
   const step = (dir) => { show(index + dir, dir); audio.play('whoosh'); };
 
@@ -313,9 +322,14 @@ export function initLightbox({ items, onIndex, audio }) {
     if (reduced()) { doOpen(); return; }
     if (document.startViewTransition && thumb) {
       thumb.style.setProperty('view-transition-name', 'wc-media');
+      // No drop shadow on the media while it is captured: a shadow inside the snapshot
+      // would show inside the rounded corners. It fades back in afterwards.
+      document.documentElement.classList.add('wc-vt');
       const vt = document.startViewTransition(doOpen);
+      const unshadow = () => document.documentElement.classList.remove('wc-vt');
+      vt.finished.then(unshadow, unshadow);
       // A transition can be skipped (e.g. the page is hidden); the view still opens.
-      vt.ready.catch(() => {});
+      vt.ready.then(() => { const a = corners(radius('--r-lg', 32), radius('--r-md', 24)); const stop = () => a?.cancel(); vt.finished.then(stop, stop); }, () => {});
       vt.finished.catch(() => {});
       return;
     }
@@ -326,7 +340,18 @@ export function initLightbox({ items, onIndex, audio }) {
     const tl = gsap.timeline({ defaults: { duration: DUR, ease: 'std' }, onComplete: () => { animating = false; } });
     tl.fromTo(box, { backgroundColor: 'rgba(24,14,85,0)' }, { backgroundColor: 'rgba(24,14,85,0.7)', clearProps: 'backgroundColor' }, 0);
     tl.fromTo([cap, ...box.querySelectorAll('button')], { opacity: 0 }, { opacity: 1, clearProps: 'opacity' }, 0);
-    if (el) tl.fromTo(el, fromThumb(el, thumb), { x: 0, y: 0, scale: 1, opacity: 1, clearProps: 'transform,opacity' }, 0);
+    if (el) tl.fromTo(el, fromThumb(el, thumb), { x: 0, y: 0, scale: 1, opacity: 1, borderRadius: radius('--r-md', 24), clearProps: 'transform,opacity,borderRadius' }, 0);
+  }
+
+  // The moving box of the view transition is clipped (main.css); its corners ease from
+  // one radius to the other with the move, so they stay rounded the whole way.
+  function corners(from, to) {
+    try {
+      return document.documentElement.animate({ borderRadius: [`${from}px`, `${to}px`] }, {
+        duration: DUR * 1000, easing: 'cubic-bezier(0.65, 0, 0.35, 1)', fill: 'both',
+        pseudoElement: '::view-transition-group(wc-media)',
+      });
+    } catch { return null; /* the static radius in main.css still rounds it */ }
   }
 
   // Where the media must start (or end) to sit exactly over its carousel thumbnail.
@@ -334,10 +359,13 @@ export function initLightbox({ items, onIndex, audio }) {
     const r = el.getBoundingClientRect();
     const t = thumb?.getBoundingClientRect();
     if (!t || !t.width || !r.width) return { x: 0, y: 0, scale: 0.88, opacity: 0, transformOrigin: '50% 50%' };
+    const scale = t.width / r.width;
     return {
+      // Scaled down, the corners must still look like the thumbnail's.
+      borderRadius: radius('--r-lg', 32) / Math.max(0.05, scale),
       x: t.left + t.width / 2 - (r.left + r.width / 2),
       y: t.top + t.height / 2 - (r.top + r.height / 2),
-      scale: t.width / r.width,
+      scale,
       opacity: 1,
       transformOrigin: '50% 50%',
     };
@@ -359,13 +387,14 @@ export function initLightbox({ items, onIndex, audio }) {
     if (reduced()) { finishClose(); return; }
     if (document.startViewTransition && thumb) {
       animating = true;
+      document.documentElement.classList.add('wc-vt');
       const vt = document.startViewTransition(() => {
         finishClose();
         thumb.style.setProperty('view-transition-name', 'wc-media');
       });
-      const clean = () => { thumb.style.removeProperty('view-transition-name'); animating = false; document.documentElement.classList.remove('wc-gutter'); };
+      const clean = () => { thumb.style.removeProperty('view-transition-name'); animating = false; document.documentElement.classList.remove('wc-gutter', 'wc-vt'); };
       vt.finished.then(clean, clean);
-      vt.ready.catch(() => {});
+      vt.ready.then(() => { const a = corners(radius('--r-md', 24), radius('--r-lg', 32)); const stop = () => a?.cancel(); vt.finished.then(stop, stop); }, () => {});
       return;
     }
     animating = true;
