@@ -6,6 +6,8 @@
   },
   "common": {
     "skip": "Skip to content",
+    "framed": "This page has been opened inside another website. To register or pay safely, open Winter Camp 2027 on its own.",
+    "framedLink": "Open the Winter Camp 2027 website",
     "register": "Register",
     "registerNow": "Register now",
     "close": "Close",
@@ -304,7 +306,6 @@
       "refund": "Please tick the box to confirm you understand the fee is non-refundable.",
       "consentYes": "Medical emergency consent must be YES for your child to take part in Winter Camp 2027.",
       "refFormat": "A UPI transaction ID has 12 digits, for example 412345678901. Leave it empty if you can't find it.",
-      "duplicateBefore": "This child is already registered for this group, so there is no need to pay. For help, call {phone}.",
       "sendAuto": "We could not send your registration yet. Your details and screenshot are still here, and they will be sent automatically when your connection returns. Please keep this page open, or call {phone}.",
       "busyAuto": "Many registrations are arriving at once. Trying again automatically in {s} seconds."
     },
@@ -434,13 +435,13 @@
       {
         "h": "How long we keep it",
         "p": [
-          "We keep registration details, signatures, payment screenshots and registration PDFs after the camp, with no set end date, so we can look back on our camps and plan future ones. They stay confidential: only the camp organisers can see them, and we never give them to anyone else. You can ask us to delete your child's information at any time by calling +91-8219012669, and we will delete it unless a law requires us to keep something."
+          "We keep registration details, signatures, payment screenshots and registration PDFs for 6 months after the camp ends, so we can look back on the camp and plan future ones. We delete them by 13 July 2027. Until then they stay confidential: only the camp organisers can see them, and we never give them to anyone else. You can ask us to delete your child's information sooner, at any time, by calling +91-8219012669, and we will delete it unless a law requires us to keep something."
         ]
       },
       {
         "h": "What this website stores on your device",
         "p": [
-          "This website uses no cookies, advertising or tracking. It remembers only your sound setting in your browser. While you fill in the form, a draft of what you type (never your payment screenshot) is kept in this browser tab, so nothing is lost if the page reloads while you pay in your UPI app. The draft is deleted when your registration is sent, and when you close the tab. After you register, the copy of your registration details for the organisers is kept in this browser only until it has reached them (at most 7 days), so it is not lost if your connection drops or you close the page too soon.",
+          "This website uses no cookies, advertising or tracking. It remembers only your sound setting in your browser. While you fill in the form, a draft of what you type (never your payment screenshot) is kept in this browser tab, so nothing is lost if the page reloads while you pay in your UPI app. The draft is deleted when your registration is sent, when you close the tab, and after 2 hours. After you register, the copy of your registration details for the organisers is kept in this browser only until it has reached them (at most 7 days), so it is not lost if your connection drops or you close the page too soon.",
           "After you register, your phone makes a PDF of the registration for you to download or share, and sends a copy to the organisers' private Google Drive. It holds your child's health details, so keep the downloaded file safe."
         ]
       },

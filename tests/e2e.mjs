@@ -33,11 +33,11 @@ function staticServer() {
         const range = req.headers.range && /bytes=(\d+)-(\d*)/.exec(req.headers.range);
         if (range) {
           const s = Number(range[1]); const e = range[2] ? Number(range[2]) : body.length - 1;
-          res.writeHead(206, { 'Content-Type': TYPES[path.extname(p)] || 'application/octet-stream', 'Content-Range': `bytes ${s}-${e}/${body.length}`, 'Accept-Ranges': 'bytes', 'Content-Length': e - s + 1 });
+          res.writeHead(206, { 'Content-Type': TYPES[path.extname(p)] || 'application/octet-stream', 'Content-Range': `bytes ${s}-${e}/${body.length}`, 'Accept-Ranges': 'bytes', 'Content-Length': e - s + 1, 'Access-Control-Allow-Origin': '*' });
           res.end(body.subarray(s, e + 1));
           return;
         }
-        res.writeHead(200, { 'Content-Type': TYPES[path.extname(p)] || 'application/octet-stream', 'Accept-Ranges': 'bytes' });
+        res.writeHead(200, { 'Content-Type': TYPES[path.extname(p)] || 'application/octet-stream', 'Accept-Ranges': 'bytes', 'Access-Control-Allow-Origin': '*' }); // as GitHub Pages sends
         res.end(body);
       } catch { res.writeHead(404); res.end('not found'); }
     });
@@ -1356,7 +1356,7 @@ async function main() {
       await ctx.close();
     }
     {
-      // Duplicates: before paying, and after paying.
+      // Duplicates: no check before paying (round 12: it let anyone test a child's name and birth date), caught after paying.
       await api('/__reset', {});
       const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
       const page = await ctx.newPage();
@@ -1377,9 +1377,9 @@ async function main() {
       await page.click('label.choice:has(#f-agree)');
       await drawSignature(page);
       await page.click('#reg-next');
-      await page.waitForSelector('#pay-dup:not([hidden])', { timeout: 8000 });
-      check('Duplicate before paying: told there is no need to pay; no payment details shown', (await page.textContent('#pay-dup')).includes('no need to pay') && await page.isHidden('#pay-panel'));
-      await page.screenshot({ path: path.join(out, 'r7-dup-before-390.png') });
+      await page.waitForSelector('#pay-panel:not([hidden])', { timeout: 8000 });
+      check('Already registered child: no answer before paying (names and birth dates cannot be tested); payment details shown', (await page.$('#pay-dup')) === null && await page.isVisible('#pay-panel'));
+      await page.screenshot({ path: path.join(out, 'r12-no-dup-before-390.png') });
       // After paying: the same child is registered by someone else while this family pays.
       await page.click('#reg-back');
       await page.click('#reg-back');
@@ -1578,7 +1578,8 @@ async function main() {
       const page = await ctx.newPage();
       await page.goto(`${SITE}privacy/`);
       const txt = await page.textContent('main');
-      check('Privacy: data kept after the camp with no set end date, confidential, deleted on request', txt.includes('with no set end date') && txt.includes('never give them to anyone else') && txt.includes('ask us to delete') && !txt.includes('90 days'));
+      check('Privacy: data kept 6 months after the camp, deleted by 13 July 2027, confidential, deleted sooner on request', txt.includes('6 months after the camp ends') && txt.includes('13 July 2027') && txt.includes('never give them to anyone else') && txt.includes('ask us to delete') && !txt.includes('no set end date') && !txt.includes('90 days'));
+      check('Privacy: the form draft lasts at most 2 hours', txt.includes('after 2 hours'));
       check('Privacy: looking back on camps and planning future ones is listed as a use', txt.includes('plan future ones'));
       await ctx.close();
     }
@@ -2018,6 +2019,60 @@ async function main() {
       await page.waitForSelector('#reg-done:not([hidden])', { timeout: 15000 });
       const note = await waitFor(() => page.evaluate(() => { const el = document.getElementById('done-copy'); return !el.classList.contains('is-saving') && { hidden: el.hidden, text: el.textContent.trim() }; }), 20000);
       check('PDF refused by the server: the success screen does not say it will be sent next time', note && note.hidden && !/next time/.test(note.text), JSON.stringify(note));
+      done();
+      await ctx.close();
+    }
+
+    // 23. Round 12 (security review).
+    // 23a. Inside another website's frame the page shows only a link to the real site and does not start.
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1024, height: 800 } });
+      const page = await ctx.newPage();
+      for (const [label, url, sandbox] of [['home page', SITE, ''], ['privacy page', `${SITE}privacy/`, ''], ['home page, sandboxed frame', SITE, ' sandbox="allow-scripts"']]) {
+        await page.setContent(`<!doctype html><title>other site</title><iframe id="f" src="${url}" width="900" height="700"${sandbox}></iframe>`);
+        const frame = await waitFor(() => page.frames().find((fr) => fr.url().startsWith(url)), 8000);
+        await frame.waitForSelector('#framed:not([hidden])', { timeout: 8000 }).catch(() => {});
+        const st = await frame.evaluate(() => ({
+          framed: document.documentElement.classList.contains('wc-framed'),
+          started: document.documentElement.classList.contains('js-ok'),
+          note: !document.getElementById('framed').hidden,
+          link: document.querySelector('#framed a')?.getAttribute('href'),
+          target: document.querySelector('#framed a')?.getAttribute('target'),
+          shown: [...document.body.children].filter((el) => el.id !== 'framed' && getComputedStyle(el).display !== 'none').map((el) => el.className || el.tagName),
+        }));
+        check(`Framed (${label}): only the "open the real site" link shows, nothing else, and the page does not start`, st.framed && st.note && !st.started && st.shown.length === 0 && /^https:\/\/.+\/wintercamp\//.test(st.link) && st.target === '_top', JSON.stringify(st));
+        if (label === 'home page') await page.screenshot({ path: path.join(out, 'r12-framed-1024.png') });
+      }
+      await ctx.close();
+    }
+    // 23b. Not framed: the note stays hidden and the page starts as usual.
+    {
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      const page = await ctx.newPage();
+      await page.goto(SITE);
+      await enter(page);
+      check('Not framed: no frame note, the page starts', await page.evaluate(() => document.getElementById('framed').hidden && document.documentElement.classList.contains('js-ok') && !document.documentElement.classList.contains('wc-framed')));
+      await ctx.close();
+    }
+    // 23c. Many holds at once (8 is the most a group keeps): a family still reaches the payment details, without a countdown.
+    {
+      await api('/__reset', {});
+      for (let i = 0; i < 8; i++) await api('/exec', { action: 'hold', submissionId: `flood-${i}-${Date.now()}`, category: 'kids' });
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      const page = await ctx.newPage();
+      const done = watch(page, 'Round 12 hold limit');
+      await page.goto(SITE);
+      await enter(page);
+      await page.click('.hero__cta [data-open-register]');
+      await fillToPayment(page, { cat: 'kids', dob: '2019-03-15' });
+      const st = await page.evaluate(() => ({ panel: !document.getElementById('pay-panel').hidden, full: !document.getElementById('pay-full').hidden, hold: !document.getElementById('hold').hidden }));
+      check('Hold limit reached: the family still sees the payment details (no countdown, not "full")', st.panel && !st.full && !st.hold, JSON.stringify(st));
+      await page.setInputFiles('#f-shot', shotPng);
+      await page.waitForSelector('#shot-preview:not([hidden])');
+      await page.click('#reg-submit');
+      await page.waitForSelector('#reg-done:not([hidden])', { timeout: 15000 });
+      check('Hold limit reached: the family who paid gets a seat', true);
+      await page.screenshot({ path: path.join(out, 'r12-nohold-done-390.png') });
       done();
       await ctx.close();
     }
