@@ -332,6 +332,13 @@ html.wc-framed body { overflow: auto; }
 .card__photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 40%; border-radius: inherit; z-index: -2; pointer-events: none; }
 .card__in.has-photo::before { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none; background: linear-gradient(to top, rgb(24 14 85 / 0.96) 0%, rgb(24 14 85 / 0.82) 38%, rgb(24 14 85 / 0.2) 75%, rgb(24 14 85 / 0.05) 100%), radial-gradient(80% 60% at 80% 0%, rgb(230 30 123 / 0.28), transparent 70%); }
 .card__in.has-photo .card__text { text-shadow: 0 1px 12px rgb(8 4 32 / 0.6); }
+/* Round 13: the five small cards show a gallery photo as a strip on top. The text stays
+   dark on the light card, so its contrast does not depend on the photo. Concentric:
+   card radius 32 minus the 8 px inset = 24. The icon overlaps the strip's bottom edge. */
+.card__in.has-media { padding-top: var(--s1); }
+.card__media { margin: 0 calc(var(--s1) - var(--pad)); aspect-ratio: 16 / 9; border-radius: calc(var(--r-lg) - var(--s1)); overflow: hidden; background: var(--c-light); transform: translateZ(8px); pointer-events: none; }
+.card__img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 40%; }
+.has-media .card__icon { margin-top: calc(-1 * var(--s6)); box-shadow: 0 0 0 var(--s1) var(--t-dark); }
 .card__rail { position: relative; }
 .card__badge { position: sticky; top: calc(var(--nav-h) + var(--s2)); display: inline-block; white-space: nowrap; padding: var(--s1) var(--s2); border-radius: var(--r-pill); background: var(--c-accent); color: #FFFFFF; font-weight: 600; font-size: 14px; letter-spacing: 0.08em; text-transform: uppercase; box-shadow: 0 8px 24px rgb(230 30 123 / 0.4); z-index: 2; }
 
@@ -579,6 +586,13 @@ select.input { appearance: none; padding-right: var(--s6); background-image: lin
 .pay__k { width: 100%; font-size: 14px; color: var(--muted); }
 .pay__v { font-size: 18px; font-weight: 600; word-break: break-all; }
 .pay__v--id { font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace; font-size: 16px; }
+.nowrap { white-space: nowrap; }
+/* Round 13: WhatsApp button for the payment screenshot, after the upload field. */
+.btn--wrap { white-space: normal; min-height: var(--bh); height: auto; padding-block: var(--s1); line-height: 1.3; }
+.pay__wa { display: grid; gap: var(--s1); }
+.pay__wa-btn { width: 100%; justify-content: center; text-align: center; text-transform: uppercase; letter-spacing: 0.04em; }
+.pay__wa .field__help { margin: 0; }
+.pay__wa-btn .btn__icon { flex: 0 0 24px; width: 24px; height: 24px; }
 .shot { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: flex-start; }
 .shot__choose { cursor: pointer; }
 .shot__input:focus-visible + .shot__choose { outline: 3px solid var(--t-light); outline-offset: 3px; }

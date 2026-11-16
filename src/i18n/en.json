@@ -274,7 +274,9 @@
       "codeHelp": "Type this code in the payment note (message) in your UPI app, so the organisers can match your payment.",
       "refHelp": "The 12-digit number in your UPI app's payment details. It helps the organisers find your payment.",
       "qrHelp": "Scan this QR code with any UPI app and pay ₹500. On this phone? Take a screenshot of the QR code and choose it from your gallery in your UPI app's scanner, or copy the UPI ID or phone number below.",
-      "phoneCopyTip": "Copy the phone number"
+      "phoneCopyTip": "Copy the phone number",
+      "whatsapp": "Send the screenshot to Achui",
+      "whatsappHelp": "Please also upload it above to finish registering."
     },
     "err": {
       "summary": "Please fix the following:",

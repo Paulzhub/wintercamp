@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 import sharp from 'sharp';
 import { startMockBackend } from '../scripts/mock-backend.mjs';
+import siteConfig from '../site.config.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
@@ -2073,6 +2074,109 @@ async function main() {
       await page.waitForSelector('#reg-done:not([hidden])', { timeout: 15000 });
       check('Hold limit reached: the family who paid gets a seat', true);
       await page.screenshot({ path: path.join(out, 'r12-nohold-done-390.png') });
+      done();
+      await ctx.close();
+    }
+
+    // 24. Round 13.
+    // 24a. Activities: the five small cards show their gallery photo as a strip on top
+    // (ids in site.config.js activityPhotos); the text stays dark on the light card.
+    for (const width of [320, 390, 768, 1280]) {
+      const ctx = await browser.newContext({ viewport: { width, height: 900 }, ...(width < 768 ? { isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : {}) });
+      const page = await ctx.newPage();
+      const done = watch(page, `Round 13 activity photos ${width}`);
+      await page.goto(`${SITE}#activities`);
+      await enter(page);
+      await page.waitForTimeout(1200);
+      const want = siteConfig.activityPhotos;
+      const lazy = await page.evaluate(() => [...document.querySelectorAll('.card__img')].every((i) => i.loading === 'lazy'));
+      for (const key of ['games', 'craft', 'story', 'music', 'food']) {
+        await page.locator(`.card .icon-${key}`).scrollIntoViewIfNeeded();
+        await page.waitForTimeout(500);
+        await page.waitForFunction((k) => { const i = document.querySelector(`.icon-${k}`).closest('.card__in').querySelector('.card__img'); return i && i.complete && i.naturalWidth > 0; }, key, { timeout: 8000 }).catch(() => {});
+        const r = await page.evaluate((k) => {
+          const lum = (c) => { const [r, g, b] = c.match(/[\d.]+/g).slice(0, 3).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+          const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05); };
+          const card = document.querySelector(`.icon-${k}`).closest('.card__in');
+          const img = card.querySelector('.card__img');
+          const media = card.querySelector('.card__media');
+          const bg = getComputedStyle(card).backgroundColor;
+          const cr = card.getBoundingClientRect();
+          const mr = media.getBoundingClientRect();
+          const title = card.querySelector('.card__title');
+          return {
+            id: img.dataset.photo, alt: img.getAttribute('alt'), loaded: img.complete && img.naturalWidth > 0, first: media === card.firstElementChild,
+            radius: getComputedStyle(media).borderTopLeftRadius, inset: media.offsetLeft, insetR: card.clientWidth - media.offsetLeft - media.offsetWidth, inside: mr.right <= cr.right + 1 && mr.left >= cr.left - 1,
+            titleRatio: ratio(getComputedStyle(title).color, bg), textRatio: ratio(getComputedStyle(card.querySelector('.card__text')).color, bg),
+            textBelow: title.getBoundingClientRect().top >= mr.bottom - 1,
+          };
+        }, key);
+        check(`${width} activities: ${key} card shows its photo (${want[key]}), loaded, decorative alt`, r.id === want[key] && r.loaded && r.alt === '' && r.first, JSON.stringify(r));
+        check(`${width} activities: ${key} photo strip sits inside the card, 8 px inset, 24 px corners; text below it at 4.5:1+`, r.inside && r.inset === 8 && r.insetR === 8 && r.radius === '24px' && r.textBelow && r.titleRatio >= 4.5 && r.textRatio >= 4.5, JSON.stringify(r));
+      }
+      check(`${width} activities: the card photos load lazily`, lazy);
+      const ids = await page.evaluate(() => [...document.querySelectorAll('#activities [data-photo]')].map((i) => i.dataset.photo));
+      check(`${width} activities: six cards, six different photos (picnic unchanged)`, ids.length === 6 && new Set(ids).size === 6 && ids[5] === 'p-3514f4ca1f', JSON.stringify(ids));
+      const ox = await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
+      check(`${width} activities: no sideways scrolling`, ox);
+      await page.locator('#activities .cards').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(1200);
+      await page.locator('#activities .cards').screenshot({ path: path.join(out, `r13-activities-${width}.png`) });
+      if (width === 1280) {
+        // Spotlight and cursor orb over a card with a photo.
+        const box = await page.locator('.icon-games').evaluate((el) => { const r = el.closest('.card__in').querySelector('.card__media').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+        await page.mouse.move(box.x - 40, box.y - 40);
+        await page.mouse.move(box.x, box.y, { steps: 8 });
+        await page.waitForTimeout(800);
+        await page.locator('.icon-games').evaluate((el) => el.closest('.card').scrollIntoView({ block: 'center' }));
+        await page.screenshot({ path: path.join(out, 'r13-activities-hover-1280.png') });
+      }
+      done();
+      await ctx.close();
+    }
+
+    // 24b. Payment: a pink "Send the screenshot to Achui" button after the screenshot upload
+    // opens the WhatsApp chat with 8219012669 (no ready-typed message), and keeps the hold.
+    for (const width of [320, 390, 1280]) {
+      await api('/__reset', {});
+      const ctx = await browser.newContext({ viewport: { width, height: 844 }, ...(width < 768 ? { isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : {}) });
+      await ctx.route(/wa\.me/, (route) => route.fulfill({ status: 200, contentType: 'text/html', body: '<p>WhatsApp</p>' }));
+      const page = await ctx.newPage();
+      const done = watch(page, `Round 13 WhatsApp ${width}`);
+      await page.goto(SITE);
+      await enter(page);
+      await page.click('.hero__cta [data-open-register]');
+      await fillToPayment(page, { cat: 'kids', dob: '2018-08-08' });
+      const wa = await page.evaluate(() => {
+        const a = document.getElementById('wa-send');
+        const shot = document.getElementById('shot');
+        const cs = getComputedStyle(a);
+        const r = a.getBoundingClientRect();
+        const panel = document.getElementById('pay-panel').getBoundingClientRect();
+        return {
+          href: a.getAttribute('href'), target: a.target, rel: a.rel, label: a.innerText.replace(/\s+/g, ' ').trim(), help: document.getElementById('wa-help').textContent,
+          afterShot: Boolean(shot.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING), afterGrid: Boolean(document.querySelector('.pay__grid').compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING),
+          bg: cs.backgroundColor, color: cs.color, fits: r.left >= panel.left - 1 && r.right <= panel.right + 1, h: r.height,
+        };
+      });
+      check(`${width} WhatsApp button: opens wa.me/918219012669 in a new tab, no ready-typed message`, wa.href === 'https://wa.me/918219012669' && wa.target === '_blank' && wa.rel.includes('noopener'), JSON.stringify(wa));
+      check(`${width} WhatsApp button: "SEND THE SCREENSHOT TO ACHUI +91-8219012669", after the screenshot upload`, wa.label === 'SEND THE SCREENSHOT TO ACHUI +91-8219012669' && wa.afterShot && wa.afterGrid, JSON.stringify(wa));
+      check(`${width} WhatsApp button: pink with a white label, fits the screen, with the "upload it above" line`, wa.bg === 'rgb(209, 20, 108)' && wa.color === 'rgb(255, 255, 255)' && wa.fits && wa.h >= 48 && wa.help === 'Please also upload it above to finish registering.', JSON.stringify(wa));
+      await page.locator('.pay__wa').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(500);
+      await page.screenshot({ path: path.join(out, `r13-whatsapp-${width}.png`) });
+      if (width === 390) {
+        await axe(page, 'Round 13 payment step with WhatsApp', '#register');
+        const [popup] = await Promise.all([ctx.waitForEvent('page'), page.click('#wa-send')]);
+        check('WhatsApp button: tapping opens the chat link', popup.url() === 'https://wa.me/918219012669', popup.url());
+        await popup.close();
+        await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false })));
+        await page.waitForTimeout(600);
+        const st = await api('/__state');
+        check('WhatsApp button: the seat stays held while the family is in WhatsApp', Object.keys(st.holds.kids || {}).length === 1, JSON.stringify(st.holds));
+        const sub = await page.evaluate(() => document.getElementById('submit-hint').textContent);
+        check('WhatsApp button: the form still needs the uploaded screenshot', sub === 'Attach the payment screenshot to submit.', sub);
+      }
       done();
       await ctx.close();
     }
