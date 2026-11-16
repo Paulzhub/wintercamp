@@ -645,6 +645,10 @@ export function initRegistration({ audio }) {
     });
   }
 
+  // Round 13: the WhatsApp button (send the screenshot to Achui) leaves the page
+  // for WhatsApp; keep the seat hold through that, as the Copy buttons do.
+  $('#wa-send')?.addEventListener('click', () => { state.appOpenedAt = Date.now(); });
+
   async function setShot(file) {
     if (!file) return;
     clearError('shot');

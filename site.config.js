@@ -66,6 +66,24 @@ export default {
   contact: {
     phoneDisplay: '+91-8219012669',
     phoneHref: 'tel:+918219012669',
+    // WhatsApp chat for payment screenshots (round 13). Country code, no "+".
+    // The chat opens empty: no ready-typed message (Paul's decision).
+    whatsapp: '918219012669',
+    whatsappName: 'Achui',
+  },
+
+  // Gallery photo shown on each activity card (round 13; the picnic since round 8).
+  // To swap a photo, put another photo id here. Ids are 'p-' + the first 10 hex
+  // characters of the SHA-1 of the file name in gallery/photos (see
+  // scripts/build-gallery.mjs, or src/generated/gallery.json after a build).
+  // A card whose id is not in the gallery shows without a photo.
+  activityPhotos: {
+    games: 'p-69ff6cc1e0', // 13.26.54: hoops game on the grass
+    craft: 'p-b47e32aa00', // 13.26.57: tote bags they decorated
+    story: 'p-49ded36285', // 13.26.56 (1): leader with children on the floor
+    music: 'p-29ecc9642f', // 13.26.22: session in the hall
+    food: 'p-edd331d73e', // 13.26.51: picnic lunch on the ground
+    picnic: 'p-3514f4ca1f', // 13.26.53: group game on a blue ground sheet
   },
 
   // Paste the Google Apps Script web app URL here after deploying it
