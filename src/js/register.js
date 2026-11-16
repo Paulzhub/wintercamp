@@ -331,6 +331,14 @@ export function initRegistration({ audio }) {
   }));
   consentInputs.forEach((i) => i.addEventListener('change', () => { state.touched.add('consent'); check('consent'); updateGate(); audio.play('tick'); }));
   f.agree.addEventListener('change', () => { if (state.touched.has('agree') || f.agree.checked) check('agree'); updateGate(); });
+  // The date of signing can't be in the future: say so as soon as one is picked
+  // (phone date pickers, e.g. iOS Safari, ignore the input's max), and hold Next.
+  const signDateFuture = () => /^\d{4}-\d{2}-\d{2}$/.test(f.signDate.value) && f.signDate.value > todayIso();
+  ['input', 'change'].forEach((t) => f.signDate.addEventListener(t, () => {
+    f.signDate.max = todayIso();
+    if (f.signDate.value || state.touched.has('signDate')) { state.touched.add('signDate'); check('signDate'); }
+    updateGate();
+  }));
 
   // Consent and signature: Next stays disabled until medical emergency consent
   // is YES, the agreement box is ticked and there is a signature (drawn on the
@@ -341,6 +349,7 @@ export function initRegistration({ audio }) {
     if (consentInputs.find((i) => i.checked)?.value !== 'yes') missing.push(G.consent);
     if (!f.agree.checked) missing.push(G.agree);
     if (rules.signature()) missing.push(G.sign);
+    if (signDateFuture()) missing.push(G.date);
     const gated = state.step === 2 && missing.length > 0;
     btnNext.disabled = gated;
     const note = $('#step-gate');
@@ -794,6 +803,8 @@ export function initRegistration({ audio }) {
   async function submit({ auto = false } = {}) {
     if (state.busy || state.sent) return;
     if (!auto && !validateStep(3)) { audio.play('low'); return; }
+    // The date of signing is checked again on submit (e.g. a restored draft).
+    if (!auto && check('signDate')) { goStep(2); validateStep(2); updateGate(); audio.play('low'); return; }
     if (!state.shot) return;
     if (!auto && !waDone()) { updateSubmit(); waBtn.focus(); audio.play('low'); return; }
     ensureId();

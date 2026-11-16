@@ -2399,6 +2399,65 @@ async function main() {
       check('Privacy notice: says the WhatsApp message is sent only if the family taps the button', /a button opens WhatsApp with a message to Achui/.test(pv) && /only if you tap the button/.test(pv));
       await ctx.close();
     }
+    // 26. Round 15: the date of signing cannot be a future date.
+    for (const width of [390, 1280]) {
+      await api('/__reset', {});
+      const ctx = await browser.newContext({ viewport: { width, height: 844 }, ...(width < 768 ? { isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : {}) });
+      const page = await ctx.newPage();
+      const done = watch(page, `Round 15 sign date ${width}`);
+      await page.goto(SITE);
+      await enter(page);
+      await page.click('.hero__cta [data-open-register]');
+      await page.waitForSelector('.cat[data-cat="kids"] [data-choose]:not([disabled])', { timeout: 8000 });
+      await page.click('.cat[data-cat="kids"] [data-choose]');
+      await page.fill('#f-name', 'Tenzin Norbu');
+      await page.selectOption('#f-dob-d', '8');
+      await page.selectOption('#f-dob-m', '8');
+      await page.selectOption('#f-dob-y', '2018');
+      await page.click('#reg-next');
+      await page.fill('#f-parent', 'Dolma Tsering');
+      await page.fill('#f-address', 'Jogiwara Road, McLeodganj, Dharamshala');
+      await page.fill('#f-phone-1', '98765 43210');
+      await page.click('#reg-next');
+      await page.click('label.choice:has(input[name="consent"][value="yes"])');
+      await page.click('label.choice:has(#f-agree)');
+      await drawSignature(page);
+      const today = await page.evaluate(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; });
+      const tomorrow = await page.evaluate(() => { const d = new Date(Date.now() + 86400000); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; });
+      const r0 = await page.evaluate(() => ({ max: document.getElementById('f-signdate').max, value: document.getElementById('f-signdate').value }));
+      check(`${width} Date of signing: today by default, the picker's latest date is today`, r0.max === today && r0.value === today, JSON.stringify({ r0, today }));
+      await page.fill('#f-signdate', tomorrow);
+      await page.waitForTimeout(200);
+      const r1 = await page.evaluate(() => ({ err: document.getElementById('err-signDate').textContent, errShown: !document.getElementById('err-signDate').hidden, next: document.getElementById('reg-next').disabled, gate: document.getElementById('step-gate').textContent, gateShown: !document.getElementById('step-gate').hidden }));
+      check(`${width} Date of signing: a future date shows "cannot be a future date" at once and Next is disabled`, r1.errShown && r1.err.includes('cannot be a future date') && r1.next && r1.gateShown && r1.gate.includes('today or earlier'), JSON.stringify(r1));
+      await page.locator('#f-signdate').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: path.join(out, `r15-sign-date-future-${width}.png`) });
+      await page.click('#reg-next', { force: true }).catch(() => {});
+      await page.waitForTimeout(300);
+      check(`${width} Date of signing: with a future date the form stays on the consent step`, await page.evaluate(() => [...document.querySelectorAll('.step')].findIndex((x) => !x.hidden)) === 2);
+      await page.fill('#f-signdate', today);
+      await page.waitForTimeout(200);
+      const r2 = await page.evaluate(() => ({ errShown: !document.getElementById('err-signDate').hidden, next: document.getElementById('reg-next').disabled }));
+      check(`${width} Date of signing: today clears the message and enables Next`, !r2.errShown && !r2.next, JSON.stringify(r2));
+      await page.click('#reg-next');
+      await page.waitForSelector('#pay-panel:not([hidden])', { timeout: 8000 });
+      check(`${width} Date of signing: with today's date the family reaches payment`, await page.isVisible('#pay-panel'));
+      if (width === 390) {
+        // A future date that gets in some other way (e.g. a changed draft) is caught on submit.
+        await page.click('label.choice:has(#f-refund)');
+        await page.setInputFiles('#f-shot', shotPng);
+        await page.waitForSelector('#shot-preview:not([hidden])'); await waTap(page);
+        await page.evaluate((d) => { document.getElementById('f-signdate').value = d; }, tomorrow);
+        await page.click('#reg-submit');
+        await page.waitForTimeout(800);
+        const r3 = await page.evaluate(() => ({ step: [...document.querySelectorAll('.step')].findIndex((x) => !x.hidden), err: document.getElementById('err-signDate').textContent }));
+        const st = await api('/__state');
+        check('Date of signing: a future date found on submit goes back to the consent step with the message, nothing sent', r3.step === 2 && r3.err.includes('cannot be a future date') && st.kids.length === 0, JSON.stringify(r3));
+      }
+      done();
+      await ctx.close();
+    }
   } finally {
     await browser.close();
     site.close();

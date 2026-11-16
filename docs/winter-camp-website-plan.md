@@ -174,7 +174,7 @@ Plain-text answers to the questions parents and answer engines ask: who is it fo
 | 8 | Medical emergency consent | Radio: YES / NO | Yes, must be YES | Shown with the full statement below; NO blocks Next (round 7) |
 | 9 | "I have read and understood the above and am happy for my child to be involved in Winter Camp 2027." | Checkbox | Yes | |
 | 10 | Signed | Signature canvas with the prompt "Sign here" and a Clear button, or a typed full name | Yes | Works with finger, stylus or mouse |
-| 11 | Date of signing | Date | Yes | Filled with today's date, editable |
+| 11 | Date of signing | Date | Yes | Filled with today's date, editable. **Cannot be a future date** (round 15, Paul's request): the picker's latest date is today; a future date shows "The date of signing cannot be a future date. Choose today or an earlier date." at once and keeps Next disabled (the note by the buttons says "choose a date of signing that is today or earlier"); it is checked again on submit; the server refuses it too (one day of slack for time zones). |
 | 12 | Payment screenshot | Image upload | Yes | Saved to Google Drive, not GitHub |
 | 13 | UPI transaction ID (UTR) | Text | No | 12 digits when given |
 
