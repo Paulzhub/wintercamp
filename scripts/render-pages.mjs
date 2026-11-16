@@ -156,17 +156,26 @@ ${withLd ? `<script type="application/ld+json">${jsonLd(lang, t)}</script>` : ''
 const en = (s) => `<span lang="en">${s}</span>`;
 const brandWord = 'ILLUMINATE';
 
-// The Day 3 picnic card shows a gallery photo behind its text (Paul, round 8: gallery
-// item 20, children playing a group game outdoors). Found by id so it stays the same
-// photo if the gallery order changes; left out if the photo is removed.
-const PICNIC_PHOTO = 'p-3514f4ca1f';
-function picnicPhoto(lang) {
-  const item = gallery.find((g) => g.id === PICNIC_PHOTO && g.type === 'photo');
+// Activity cards show a gallery photo (round 8: the Day 3 picnic, behind its text;
+// round 13: the five small cards, as a strip on top). The ids are in
+// site.config.js (activityPhotos), found by id so a card keeps its photo if the
+// gallery order changes; a card whose photo was removed shows without one.
+const SMALL_SIZES = { food: '(min-width: 1024px) 33vw, 100vw' };
+function cardPhoto(key, lang) {
+  const id = (config.activityPhotos || {})[key];
+  const item = id && gallery.find((g) => g.id === id && g.type === 'photo');
   if (!item) return '';
   const src = (w) => `${base}gallery/${item.id}-${w}.webp`;
   const srcset = item.widths.map((w) => `${src(w)} ${w}w`).join(', ');
   const w = item.widths[item.widths.length - 1];
-  return `<img class="card__photo" src="${src(item.widths[1] || w)}" srcset="${srcset}" sizes="(min-width: 1024px) 66vw, 100vw" width="${w}" height="${Math.round((w * item.height) / item.width)}" alt="${esc(item.alt[lang] || item.alt.en || '')}" loading="lazy" decoding="async" draggable="false">`;
+  const h = Math.round((w * item.height) / item.width);
+  const common = `src="${src(item.widths[0])}" srcset="${srcset}" width="${w}" height="${h}" loading="lazy" decoding="async" draggable="false" data-photo="${item.id}"`;
+  if (key === 'picnic') {
+    return `<img class="card__photo" ${common.replace(`src="${src(item.widths[0])}"`, `src="${src(item.widths[1] || w)}"`)} sizes="(min-width: 1024px) 66vw, 100vw" alt="${esc(item.alt[lang] || item.alt.en || '')}">`;
+  }
+  // Decorative: the card title names the activity, and the same photo has its
+  // full description in the gallery below.
+  return `<div class="card__media"><img class="card__img" ${common} sizes="${SMALL_SIZES[key] || '(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw'}" alt=""></div>`;
 }
 
 function galleryItems(lang, t) {
@@ -403,6 +412,10 @@ function registration(lang, t) {
         </div>
         ${err('shot')}
       </div>
+      <div class="pay__wa">
+        <a class="btn btn--red btn--wrap pay__wa-btn" id="wa-send" href="https://wa.me/${config.contact.whatsapp}" target="_blank" rel="noopener noreferrer" aria-describedby="wa-help"><span class="btn__icon" aria-hidden="true">${icons.whatsapp}</span><span class="btn__label">${esc(r.pay.whatsapp)} <span lang="en" class="nowrap">${esc(config.contact.phoneDisplay)}</span></span></a>
+        <p class="field__help" id="wa-help">${esc(r.pay.whatsappHelp)}</p>
+      </div>
       <div class="field">
         <label class="field__label" for="f-ref">${esc(r.pay.ref)} ${opt}</label>
         <p class="field__help" id="help-ref">${esc(r.pay.refHelp)}</p>
@@ -517,15 +530,19 @@ function homePage(lang) {
   const t = strings[lang];
   const a = t.activities;
   const letters = [...brandWord].map((c, i) => `<span class="ltr${i === 0 ? ' ltr--accent' : ''}" aria-hidden="true">${c}</span>`).join('');
-  const card = (key, extra = '') => `<li class="card ${extra}" data-reveal>
-  <article class="card__in${key === 'picnic' && picnicPhoto(lang) ? ' has-photo' : ''}" data-tilt>
-    ${key === 'picnic' ? `${picnicPhoto(lang)}<div class="card__body">` : ''}
+  const card = (key, extra = '') => {
+    const photo = cardPhoto(key, lang);
+    const wide = key === 'picnic';
+    return `<li class="card ${extra}" data-reveal>
+  <article class="card__in${photo ? (wide ? ' has-photo' : ' has-media') : ''}" data-tilt>
+    ${wide ? `${photo}<div class="card__body">` : photo}
     <span class="card__icon icon-${key}" aria-hidden="true">${icons[key]}</span>
     <h3 class="card__title">${esc(a.cards[key].title)}</h3>
     <p class="card__text">${esc(a.cards[key].text)}</p>
-    ${key === 'picnic' ? `</div><div class="card__rail"><span class="card__badge">${esc(a.cards.picnic.badge)}</span></div>` : ''}
+    ${wide ? `</div><div class="card__rail"><span class="card__badge">${esc(a.cards.picnic.badge)}</span></div>` : ''}
   </article>
 </li>`;
+  };
   // Strings the scripts need at run time (no personal data).
   const clientStrings = { lang, api: appsScriptUrl, holdMinutes: config.holdMinutes, live: t.hero.live, common: t.common, gallery: t.gallery, reg: t.reg, phone, tel, cats: config.categories, count: t.hero.count, pay: { amount: config.fee.display, payee: config.upi.payeeName, upiId: config.upi.id } };
   const venueLine = `${config.venue.name}, ${config.venue.street}, ${config.venue.locality}, ${config.venue.region}, ${config.venue.country}, ${config.venue.postalCode}`;
