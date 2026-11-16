@@ -53,6 +53,7 @@ export function initRegistration({ audio }) {
     panelShown: false, // the payment details were shown: the family may have paid
     sent: false, pending: false, // pending: a send failed on the network and will be retried
     hold: { exp: 0, timer: 0, warned: false }, // exp: local time the hold ends
+    waKey: '', // round 14: group and code the WhatsApp confirmation was opened for
   };
   const HOLD_MS = (T.holdMinutes || 5) * 60000;
 
@@ -645,15 +646,51 @@ export function initRegistration({ audio }) {
     });
   }
 
-  // Round 13: the WhatsApp button (send the screenshot to Achui) leaves the page
-  // for WhatsApp; keep the seat hold through that, as the Copy buttons do.
-  $('#wa-send')?.addEventListener('click', () => { state.appOpenedAt = Date.now(); });
+  // ---------- WhatsApp payment confirmation (round 14) ----------
+  // Shown once a screenshot is attached. It opens a WhatsApp chat with Achui with the
+  // payment details typed in (text only: a wa.me link cannot carry the screenshot).
+  // Submit stays disabled until it has been tapped once. The site can only know the
+  // button was tapped, not that the message was sent. The link is built on each tap
+  // from what is in the form then, so a UTR typed before tapping is included.
+  const waBtn = $('#wa-send');
+  const waBox = $('#wa');
+  const waKey = () => `${state.cat}:${regCode(state.submissionId)}`;
+  const waDone = () => Boolean(state.waKey) && state.waKey === waKey();
+  function waText() {
+    const M = R.pay.waMsg;
+    const ref = text(f.ref).replace(/\s+/g, '');
+    return [
+      M.title,
+      fill(M.child, { v: text(f.name) }),
+      fill(M.parent, { v: text(f.parent) }),
+      fill(M.group, { v: `${R[state.cat]} (${R[`${state.cat}Dates`]})` }),
+      fill(M.amount, T.pay),
+      fill(M.code, { v: regCode(state.submissionId) }),
+      ref ? fill(M.ref, { v: ref }) : '',
+      M.shot,
+    ].filter(Boolean).join('\n');
+  }
+  const waHref = () => `${waBtn.href.split('?')[0]}?text=${encodeURIComponent(waText())}`;
+  waBtn.addEventListener('click', () => {
+    waBtn.href = waHref(); // before the browser follows the link
+    state.appOpenedAt = Date.now(); // they leave for WhatsApp: keep the seat hold, as the Copy buttons do
+    state.waKey = waKey();
+    $('#wa-status').textContent = R.pay.whatsappDone;
+    audio.play('copy');
+    updateSubmit();
+    saveDraft();
+  });
+  function resetWa() {
+    state.waKey = '';
+    $('#wa-status').textContent = '';
+  }
 
   async function setShot(file) {
     if (!file) return;
     clearError('shot');
     try {
       const img = await prepareScreenshot(file);
+      if (state.shot) resetWa(); // a different screenshot: confirm again on WhatsApp
       if (state.shotUrl) URL.revokeObjectURL(state.shotUrl);
       state.shot = img;
       state.shotUrl = URL.createObjectURL(img.blob);
@@ -671,6 +708,7 @@ export function initRegistration({ audio }) {
   function removeShot() {
     if (state.shotUrl) URL.revokeObjectURL(state.shotUrl);
     state.shot = null;
+    resetWa();
     state.shotUrl = null;
     $('#shot-img').removeAttribute('src');
     $('#shot-preview').hidden = true;
@@ -682,9 +720,14 @@ export function initRegistration({ audio }) {
   $('#shot-remove').addEventListener('click', () => { removeShot(); f.shot.focus(); });
 
   function updateSubmit() {
-    const ready = Boolean(state.shot) && state.payOk && !state.busy;
+    const sent = waDone();
+    const ready = Boolean(state.shot) && sent && state.payOk && !state.busy;
     btnSubmit.disabled = !ready;
-    $('#submit-hint').hidden = Boolean(state.shot);
+    waBox.hidden = !state.shot;
+    if (!sent) $('#wa-status').textContent = '';
+    const hint = $('#submit-hint');
+    hint.textContent = !state.shot ? R.pay.submitNeedShot : R.pay.submitNeedWa;
+    hint.hidden = Boolean(state.shot) && sent;
   }
 
   // ---------- Submit ----------
@@ -752,6 +795,7 @@ export function initRegistration({ audio }) {
     if (state.busy || state.sent) return;
     if (!auto && !validateStep(3)) { audio.play('low'); return; }
     if (!state.shot) return;
+    if (!auto && !waDone()) { updateSubmit(); waBtn.focus(); audio.play('low'); return; }
     ensureId();
     clearTimeout(busyTimer);
     sendError.hidden = true;
@@ -1143,6 +1187,7 @@ export function initRegistration({ audio }) {
       consent: consentInputs.find((i) => i.checked)?.value || '',
       agree: f.agree.checked, refund: f.refund.checked,
       typedMode, typed: typedInput.value, strokes: signature.strokes(),
+      waKey: state.waKey,
     };
     try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify(d)); } catch { /* storage full or blocked: memory only */ }
   }
@@ -1171,6 +1216,7 @@ export function initRegistration({ audio }) {
     if (typeof d.id === 'string' && /^[A-Za-z0-9-]{8,64}$/.test(d.id)) state.submissionId = d.id;
     state.started = Number(d.started) || Date.now();
     state.panelShown = d.panelShown === true;
+    state.waKey = typeof d.waKey === 'string' ? d.waKey.slice(0, 40) : ''; // they need not message Achui twice
     const step = Math.max(0, Math.min(3, Number(d.step) || 0));
     choose(d.cat, { force: true, step });
     const note = $('#draft-note');

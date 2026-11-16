@@ -5,6 +5,7 @@ import { initNav } from './nav.js';
 import { initPointer } from './pointer.js';
 import { initFaq } from './faq.js';
 import { initCarousel } from './carousel.js';
+import { initCardPhotos } from './lightbox.js';
 import { initRegistration } from './register.js';
 import { initSeatLine } from './seats-line.js';
 import { initHero } from './hero.js';
@@ -25,6 +26,7 @@ export function boot() {
     initPointer(audio);
     initFaq(audio);
     initCarousel(audio);
+    initCardPhotos(audio);
     initParticles();
     initRegistration({ audio, motion });
     initSeatLine();

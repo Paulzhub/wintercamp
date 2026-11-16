@@ -49,11 +49,31 @@ export function initNav(motion, audio) {
   const menu = $('#menu');
   const openBtn = $('#menu-open');
   const closeBtn = $('#menu-close');
+  // Round 14: closing is the exact reverse of opening. Opening unrolls the menu
+  // downwards (0.8 s, 'big') while the links rise in (0.64 s, from 0.24 s); closing
+  // lowers the links out and rolls the menu back up, ending where opening began.
+  const OPEN_DUR = 0.8;
+  const ITEMS_DUR = 0.64;
+  const ITEMS_DELAY = 0.24;
+  const menuItems = () => $$('.menu__links li, .menu__foot', menu);
+  const clearMenu = () => gsap.set([menu, ...menuItems()], { clearProps: 'clipPath,opacity,transform' });
+  let menuTl = null;
+  let closing = false;
   const closeMenu = (after) => {
     if (!menu.open) { after?.(); return; }
-    const finish = () => { menu.close(); setTimeout(() => after?.(), 0); };
-    if (reduced()) finish();
-    else gsap.to(menu, { opacity: 0, duration: 0.32, onComplete: () => { gsap.set(menu, { clearProps: 'opacity' }); finish(); } });
+    if (closing) return;
+    const finish = () => {
+      closing = false;
+      clearMenu();
+      menu.close();
+      setTimeout(() => after?.(), 0);
+    };
+    menuTl?.kill();
+    if (reduced()) { finish(); return; }
+    closing = true;
+    menuTl = gsap.timeline({ onComplete: finish });
+    menuTl.to(menuItems(), { opacity: 0, y: 40, duration: ITEMS_DUR, ease: 'std' }, 0);
+    menuTl.fromTo(menu, { clipPath: 'inset(0% 0% 0% 0%)' }, { clipPath: 'inset(0% 0% 100% 0%)', duration: OPEN_DUR, ease: 'big' }, ITEMS_DELAY + ITEMS_DUR - OPEN_DUR);
   };
   openBtn?.addEventListener('click', () => {
     openModal(menu, { trigger: openBtn });
@@ -61,12 +81,20 @@ export function initNav(motion, audio) {
     menu.addEventListener('close', () => openBtn.setAttribute('aria-expanded', 'false'), { once: true });
     audio?.play('whoosh');
     if (reduced()) return;
-    gsap.fromTo(menu, { clipPath: 'inset(0% 0% 100% 0%)' }, { clipPath: 'inset(0% 0% 0% 0%)', duration: 0.8, ease: 'big', clearProps: 'clipPath' });
-    gsap.fromTo($$('.menu__links li, .menu__foot', menu), { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.64, delay: 0.24, clearProps: 'all' });
+    menuTl?.kill();
+    menuTl = gsap.timeline();
+    menuTl.fromTo(menu, { clipPath: 'inset(0% 0% 100% 0%)' }, { clipPath: 'inset(0% 0% 0% 0%)', duration: OPEN_DUR, ease: 'big', clearProps: 'clipPath' }, 0);
+    menuTl.fromTo(menuItems(), { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: ITEMS_DUR, ease: 'std', clearProps: 'all' }, ITEMS_DELAY);
   });
   closeBtn?.addEventListener('click', () => closeMenu());
   menu?.addEventListener('cancel', (e) => { if (e.target !== menu) return; e.preventDefault(); closeMenu(); });
-  $$('[data-open-register]', menu).forEach((b) => b.addEventListener('click', () => menu.close(), { capture: true }));
+  // Register closes the menu at once (Paul's decision): the registration view opens over it.
+  $$('[data-open-register]', menu).forEach((b) => b.addEventListener('click', () => {
+    menuTl?.kill();
+    closing = false;
+    clearMenu();
+    menu.close();
+  }, { capture: true }));
 
   // In-page links glide (or jump, with reduced motion) and move focus to the target.
   document.addEventListener('click', (e) => {

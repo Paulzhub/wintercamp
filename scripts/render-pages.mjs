@@ -161,7 +161,7 @@ const brandWord = 'ILLUMINATE';
 // site.config.js (activityPhotos), found by id so a card keeps its photo if the
 // gallery order changes; a card whose photo was removed shows without one.
 const SMALL_SIZES = { food: '(min-width: 1024px) 33vw, 100vw' };
-function cardPhoto(key, lang) {
+function cardPhoto(key, lang, t) {
   const id = (config.activityPhotos || {})[key];
   const item = id && gallery.find((g) => g.id === id && g.type === 'photo');
   if (!item) return '';
@@ -170,12 +170,16 @@ function cardPhoto(key, lang) {
   const w = item.widths[item.widths.length - 1];
   const h = Math.round((w * item.height) / item.width);
   const common = `src="${src(item.widths[0])}" srcset="${srcset}" width="${w}" height="${h}" loading="lazy" decoding="async" draggable="false" data-photo="${item.id}"`;
+  // Round 14: each photo is a button that opens it full screen on its own (not a
+  // set: no previous/next). The data-* are what the full-screen view needs, as on
+  // the gallery items; the caption and description come from the gallery.
+  const alt = item.alt[lang] || item.alt.en || '';
+  const open = `type="button" aria-label="${esc(fill(t.activities.openPhoto, { name: t.activities.cards[key].title }))}" data-cursor="${esc(t.gallery.cursorView)}" data-type="photo" data-w="${item.width}" data-h="${item.height}" data-full="${src(w)}" data-fw="${w}" data-alt="${esc(alt)}" data-caption="${esc(alt)}"`;
   if (key === 'picnic') {
-    return `<img class="card__photo" ${common.replace(`src="${src(item.widths[0])}"`, `src="${src(item.widths[1] || w)}"`)} sizes="(min-width: 1024px) 66vw, 100vw" alt="${esc(item.alt[lang] || item.alt.en || '')}">`;
+    return `<button class="card__photo-btn card__open" ${open}><img class="card__photo" ${common.replace(`src="${src(item.widths[0])}"`, `src="${src(item.widths[1] || w)}"`)} sizes="(min-width: 1024px) 66vw, 100vw" alt="${esc(alt)}"></button>`;
   }
-  // Decorative: the card title names the activity, and the same photo has its
-  // full description in the gallery below.
-  return `<div class="card__media"><img class="card__img" ${common} sizes="${SMALL_SIZES[key] || '(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw'}" alt=""></div>`;
+  // The img itself stays decorative: the button is named after the activity.
+  return `<button class="card__media card__open" ${open}><img class="card__img" ${common} sizes="${SMALL_SIZES[key] || '(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw'}" alt=""></button>`;
 }
 
 function galleryItems(lang, t) {
@@ -412,15 +416,16 @@ function registration(lang, t) {
         </div>
         ${err('shot')}
       </div>
-      <div class="pay__wa">
-        <a class="btn btn--red btn--wrap pay__wa-btn" id="wa-send" href="https://wa.me/${config.contact.whatsapp}" target="_blank" rel="noopener noreferrer" aria-describedby="wa-help"><span class="btn__icon" aria-hidden="true">${icons.whatsapp}</span><span class="btn__label">${esc(r.pay.whatsapp)} <span lang="en" class="nowrap">${esc(config.contact.phoneDisplay)}</span></span></a>
-        <p class="field__help" id="wa-help">${esc(r.pay.whatsappHelp)}</p>
-      </div>
       <div class="field">
         <label class="field__label" for="f-ref">${esc(r.pay.ref)} ${opt}</label>
         <p class="field__help" id="help-ref">${esc(r.pay.refHelp)}</p>
         <input class="input" type="text" id="f-ref" name="paymentRef" maxlength="64" autocomplete="off" inputmode="numeric" aria-describedby="help-ref err-ref">
         ${err('ref')}
+      </div>
+      <div class="pay__wa" id="wa" hidden>
+        <a class="btn btn--red btn--wrap pay__wa-btn" id="wa-send" href="https://wa.me/${config.contact.whatsapp}" target="_blank" rel="noopener noreferrer" aria-describedby="wa-help wa-status"><span class="btn__icon" aria-hidden="true">${icons.whatsapp}</span><span class="btn__label">${esc(r.pay.whatsapp)} <span lang="en" class="nowrap">${esc(config.contact.phoneDisplay)}</span></span></a>
+        <p class="field__help" id="wa-help">${esc(r.pay.whatsappHelp)}</p>
+        <p class="pay__wa-status" id="wa-status" role="status" aria-live="polite"></p>
       </div>
       <p class="field__help" id="submit-hint">${esc(r.pay.submitNeedShot)}</p>
     </div>
@@ -531,10 +536,10 @@ function homePage(lang) {
   const a = t.activities;
   const letters = [...brandWord].map((c, i) => `<span class="ltr${i === 0 ? ' ltr--accent' : ''}" aria-hidden="true">${c}</span>`).join('');
   const card = (key, extra = '') => {
-    const photo = cardPhoto(key, lang);
+    const photo = cardPhoto(key, lang, t);
     const wide = key === 'picnic';
     return `<li class="card ${extra}" data-reveal>
-  <article class="card__in${photo ? (wide ? ' has-photo' : ' has-media') : ''}" data-tilt>
+  <article class="card__in dark${photo ? (wide ? ' has-photo' : ' has-media') : ''}" data-tone="dark" data-tilt>
     ${wide ? `${photo}<div class="card__body">` : photo}
     <span class="card__icon icon-${key}" aria-hidden="true">${icons[key]}</span>
     <h3 class="card__title">${esc(a.cards[key].title)}</h3>
