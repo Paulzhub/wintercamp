@@ -133,8 +133,8 @@ test('bots: honeypot, too fast, and rate limit', () => {
   assert.equal(g.doPost('not json').error, 'bad_request');
   g.resetRate();
   let busy = 0;
-  for (let i = 0; i < 125; i++) if (g.doPost(valid({ category: i % 2 ? 'kids' : 'youth', dob: i % 2 ? '2019-03-15' : '2010-03-15' })).error === 'busy') busy++;
-  assert.equal(busy, 5, 'across all visitors: 120 a minute');
+  for (let i = 0; i < 35; i++) if (g.doPost(valid({ category: i % 2 ? 'kids' : 'youth', dob: i % 2 ? '2019-03-15' : '2010-03-15' })).error === 'busy') busy++;
+  assert.equal(busy, 5, 'across all visitors: 30 valid registrations a minute');
   g.resetRate();
   const p = valid();
   let mine = 0;
@@ -217,7 +217,7 @@ test('the PDF upload refuses unknown submissions, non-PDF files, oversized files
   assert.equal(g.doPost({ action: 'pdf', submissionId: reg.submissionId, pdf: fake }).error, 'pdf');
   assert.equal(g.sheet('Kids registrations').rows[1][g.context.COL['PDF status']], 'Refused: not a valid PDF');
   assert.equal(g.doPost({ action: 'pdf', submissionId: reg.submissionId, pdf: pdf.replace('application/pdf', 'image/png') }).error, 'pdf');
-  const big = 'data:application/pdf;base64,' + Buffer.concat([Buffer.from('%PDF-'), Buffer.alloc(8 * 1024 * 1024 + 10)]).toString('base64');
+  const big = 'data:application/pdf;base64,' + Buffer.concat([Buffer.from('%PDF-'), Buffer.alloc(4 * 1024 * 1024 + 10)]).toString('base64');
   assert.equal(g.doPost({ action: 'pdf', submissionId: reg.submissionId, pdf: big }).error, 'pdf');
   // Make the registration 8 days old (the browser keeps an unsent PDF and tries again for 7 days).
   const row = g.sheet('Kids registrations').rows[1];
@@ -319,12 +319,16 @@ test('paying after the hold expired and the seat was taken goes to "Paid, no sea
   assert.equal(g.sheet('Paid, no seat').rows[1][g.context.COL.Status], 'Paid, no seat');
 });
 
-test('hold: a child already registered is told before paying; release frees the seat; bad input is refused', () => {
+test('hold: says nothing about who is registered; release frees the seat; bad input is refused', () => {
   const g = createSandbox();
   g.doPost(valid({ name: 'Pema Lhamo' }));
+  // Round 12: the same child and birth date get an ordinary hold, so names and birth dates cannot be tested.
   const p = valid({ name: 'pema lhamo' });
-  assert.equal(hold(g, p).error, 'duplicate');
-  assert.deepEqual(g.holds().kids, {});
+  const h = hold(g, p);
+  assert.equal(h.status, 'held');
+  assert.equal(h.error, undefined);
+  g.resetRate();
+  g.doPost({ action: 'release', submissionId: p.submissionId });
   const q = valid();
   hold(g, q);
   assert.equal(g.doGet({ action: 'seats' }).seats.kids.held, 1);
@@ -425,4 +429,79 @@ test('round 9: a PDF that arrives days later (sent again on the next visit) is s
   row[g.context.COL.Timestamp] = g.date(Date.now() - 6 * 86400000);
   const pdf = 'data:application/pdf;base64,' + Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(300, 32)]).toString('base64');
   assert.equal(g.doPost({ action: 'pdf', submissionId: reg.submissionId, pdf }).status, 'saved');
+});
+
+// ---------- Round 12: security review fixes ----------
+
+const holdOnly = (g, cat = 'kids') => g.doPost({ action: 'hold', submissionId: `h-${++n}-${Math.random().toString(36).slice(2)}`, category: cat });
+const quiet = (fn) => { const w = console.warn; console.warn = () => {}; try { return fn(); } finally { console.warn = w; } };
+
+test('round 12: holds keep at most 8 seats a group; past that families go on without a hold', () => {
+  const g = createSandbox();
+  const res = quiet(() => Array.from({ length: 30 }, () => holdOnly(g)));
+  assert.equal(res.filter((r) => r.status === 'held').length, 8);
+  assert.equal(res.at(-1).status, 'nohold');
+  assert.deepEqual(g.doGet({ action: 'seats' }).seats.kids, { left: 22, total: 30, held: 8 });
+  // A family who pays without a hold still gets a seat.
+  assert.equal(quiet(() => g.doPost(valid())).status, 'registered');
+});
+
+test('round 12: a flood of hold requests does not block families', () => {
+  const g = createSandbox();
+  quiet(() => { for (let i = 0; i < 320; i++) holdOnly(g, i % 2 ? 'kids' : 'youth'); });
+  const r = holdOnly(g);
+  assert.equal(r.ok, true);
+  assert.equal(r.status, 'nohold');
+  for (let i = 0; i < 320; i++) g.doPost({ action: 'release', submissionId: `r-${i}-abcdefgh` });
+  assert.equal(quiet(() => g.doPost(valid())).status, 'registered', 'registrations have their own budget');
+});
+
+test('round 12: the organisers can switch holds off (Script property holds_off)', () => {
+  const g = createSandbox();
+  g.props.set('holds_off', '1');
+  const r = holdOnly(g);
+  assert.equal(r.status, 'nohold');
+  assert.equal(r.seats.kids.left, 30);
+  assert.deepEqual(g.holds().kids, {});
+});
+
+test('round 12: junk requests do not use up the registration budget; PDFs have their own', () => {
+  const g = createSandbox();
+  for (let i = 0; i < 200; i++) g.doPost(valid({ name: '' })); // invalid: refused before the shared budget
+  for (let i = 0; i < 200; i++) g.doPost({ action: 'pdf', submissionId: `nope-${i}-abcdef`, pdf: 'data:application/pdf;base64,JVBERi0=' });
+  assert.equal(quiet(() => g.doPost(valid())).status, 'registered');
+});
+
+test('round 12: "Paid, no seat" stops at 60 rows and a day\'s uploads are capped', () => {
+  const g = createSandbox();
+  g.seed('kids', 30);
+  const out = [];
+  for (let i = 0; i < 70; i++) { g.resetRate(); out.push(quiet(() => g.doPost(valid())))}
+  assert.equal(out.filter((r) => r.status === 'last_seat').length, 60);
+  assert.equal(out.at(-1).error, 'busy');
+  assert.equal(g.sheet('Paid, no seat').rows.length - 1, 60);
+  const g2 = createSandbox();
+  const before = g2.files.length;
+  g2.cache.set('bytes:' + g2.context.today_(0), String(1024 * 1024 * 1024));
+  assert.equal(quiet(() => g2.doPost(valid())).error, 'busy');
+  assert.equal(g2.files.length, before, 'nothing stored once the budget is used');
+});
+
+test('round 12: screenshots over 2 MB and PDFs over 4 MB are refused', () => {
+  const g = createSandbox();
+  const big = 'data:image/jpeg;base64,' + Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(2 * 1024 * 1024, 1)]).toString('base64');
+  assert.equal(g.doPost(valid({ screenshot: { data: big } })).error, 'validation');
+  const ok = 'data:image/jpeg;base64,' + Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(1900 * 1024, 1)]).toString('base64');
+  assert.equal(g.doPost(valid({ screenshot: { data: ok } })).status, 'registered');
+});
+
+test('round 12: submission IDs that are names of object methods behave like any other', () => {
+  const g = createSandbox();
+  for (const id of ['constructor', 'toString', 'hasOwnProperty', 'isPrototypeOf']) {
+    g.resetRate();
+    const r = g.doPost({ action: 'hold', submissionId: id, category: 'kids' });
+    assert.equal(r.status, 'held', id);
+    assert.equal(typeof r.expiresAt, 'number', id);
+  }
+  assert.equal(Object.keys(g.holds().kids).length, 4);
 });

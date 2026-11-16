@@ -30,14 +30,18 @@ var CONFIG = {
   rootFolder: 'Winter Camp 2027',
   sheets: { kids: 'Kids registrations', youth: 'Youth registrations', overflow: 'Paid, no seat', summary: 'Summary', old: 'Registrations' },
   fee: 500,
-  maxImageBytes: 5 * 1024 * 1024,
-  maxPdfBytes: 8 * 1024 * 1024,
+  maxImageBytes: 2 * 1024 * 1024, // the browser shrinks every screenshot to a JPEG of a few hundred KB
+  maxPdfBytes: 4 * 1024 * 1024, // a registration PDF made by the site is well under 1 MB
   pdfWindowDays: 7, // the PDF must arrive within this time of its registration (the browser keeps it until then)
   minSignaturePoints: 4, // the same rule as the form: fewer points drawn is an empty pad
   minSignatureBytes: 1000, // a drawn 900 x 300 signature PNG is several kilobytes, even blank
-  maxBodyChars: 16 * 1024 * 1024,
+  maxBodyChars: 7 * 1024 * 1024,
   minFillMs: 5000, // four steps in under 5 seconds is a bot
-  maxPerMinute: 120, // rate limit across all visitors for registrations and PDFs
+  maxPerMinute: 30, // valid registrations a minute, across all visitors (the camp has 60 seats)
+  maxPdfsPerMinute: 60, // PDFs have their own budget, so junk PDF requests cannot block registrations
+  maxActiveHolds: 8, // seats per group that holds may keep at one time
+  maxOverflowRows: 60, // "Paid, no seat" stops growing here (then: call the organisers)
+  maxBytesPerDay: 1024 * 1024 * 1024, // Drive upload budget a day (60 real registrations are about 60 MB)
   maxPerIdPerMinute: 10, // and per submission (retries are safe, floods are not)
   maxHoldsPerMinute: 300, // hold, release and seat checks are small and cheap
   holdMinutes: 5, // a seat is held this long once the payment step opens
@@ -152,7 +156,7 @@ function register_(d) {
   // Honeypot and minimum fill time: quietly refuse bots.
   if (d.website) return validationError_([{ field: 'form', code: 'server' }]);
   if (typeof d.elapsedMs !== 'number' || d.elapsedMs < CONFIG.minFillMs) return validationError_([{ field: 'form', code: 'server' }]);
-  if (!rateOk_(d.submissionId)) return { ok: false, error: 'busy' };
+  if (!count_('rate-id:' + String(d.submissionId || '').slice(0, 64), CONFIG.maxPerIdPerMinute)) return { ok: false, error: 'busy' };
   migrateOldTab_();
   summary_();
 
@@ -179,6 +183,14 @@ function register_(d) {
 
   var prior = findSubmission_(c.submissionId);
   if (prior) return prior;
+  // Only complete, valid registrations use the shared budget, so junk cannot lock families out.
+  if (!count_('rate', CONFIG.maxPerMinute)) return { ok: false, error: 'busy' };
+  // A flood: once "Paid, no seat" is this long, or a day's uploads this large, nothing more is stored.
+  if (rows_(CONFIG.sheets.overflow).length >= CONFIG.maxOverflowRows && countCategory_(c.category) >= CONFIG.seats[c.category]) {
+    console.warn('Registration refused: "Paid, no seat" has reached ' + CONFIG.maxOverflowRows + ' rows');
+    return { ok: false, error: 'busy' };
+  }
+  if (!bytesOk_(shot.bytes.length + (sig ? sig.bytes.length : 0))) return { ok: false, error: 'busy' };
 
   // The family has paid by now, so nothing below refuses to save: a duplicate
   // or a full group is recorded in "Paid, no seat" for the organisers.
@@ -226,12 +238,13 @@ function hold_(d) {
   var id = validId_(d.submissionId);
   var cat = d.category === 'kids' || d.category === 'youth' ? d.category : null;
   if (!id || !cat) return { ok: false, error: 'bad_request' };
-  if (!holdRateOk_()) return { ok: false, error: 'busy' };
+  // Too many hold requests this minute (a flood): families are not held up, they go on without a held seat.
+  if (!holdRateOk_()) return { ok: true, status: 'nohold', now: now_() };
   migrateOldTab_();
-  // Tell the family before they pay if this child is already registered.
-  var name = clean_(d.name, CONFIG.max.name);
-  var dob = parseIso_(d.dob) ? String(d.dob) : '';
-  if (name && dob && isDuplicate_({ category: cat, name: name, dob: dob })) return { ok: false, error: 'duplicate' };
+  // No "already registered?" answer here (round 12): it let anyone test a child's name and birth date.
+  // A second registration of the same child is still caught when the form is sent ("Paid, duplicate").
+  // Organisers' switch (Script property holds_off = 1): no seat is held, families go straight to paying.
+  if (PropertiesService.getScriptProperties().getProperty('holds_off')) return { ok: true, status: 'nohold', now: now_(), seats: seats_() };
 
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) return { ok: false, error: 'busy' };
@@ -240,10 +253,10 @@ function hold_(d) {
     if (prior) return prior;
     var now = now_();
     var holds = loadHolds_();
-    var mine = holds[cat][id];
+    var mine = own_(holds[cat], id);
     if (mine && mine.exp > now) return held_(holds, cat, mine, now); // retry-safe
     var other = cat === 'kids' ? 'youth' : 'kids';
-    if (holds[other][id]) delete holds[other][id]; // changed group
+    if (own_(holds[other], id)) delete holds[other][id]; // changed group
     var first = mine ? mine.first : now;
     var exp = Math.min(now + CONFIG.holdMinutes * 60000, first + CONFIG.maxHoldMinutes * 60000);
     if (exp <= now) { saveHolds_(holds); return { ok: true, status: 'limit', now: now, seats: seatsFrom_(holds, now) }; }
@@ -254,6 +267,13 @@ function hold_(d) {
       var res = { ok: true, status: 'full', reason: rows >= CONFIG.seats[cat] ? 'taken' : 'held', now: now, seats: seatsFrom_(holds, now) };
       if (res.reason === 'held') res.until = nextExpiry_(holds, cat, now);
       return res;
+    }
+    // Holds can keep only a few seats at a time. Past that the family still goes on to pay, without a held seat
+    // (the page then checks the seat count as it did before holds), so a flood of holds cannot close registration.
+    if (heldByOthers >= CONFIG.maxActiveHolds) {
+      saveHolds_(holds);
+      console.warn('Hold not given: ' + heldByOthers + ' holds already active in ' + cat);
+      return { ok: true, status: 'nohold', now: now, seats: seatsFrom_(holds, now) };
     }
     holds[cat][id] = { exp: exp, first: first };
     saveHolds_(holds);
@@ -270,7 +290,7 @@ function held_(holds, cat, h, now) {
 function release_(d) {
   var id = validId_(d.submissionId);
   if (!id) return { ok: false, error: 'bad_request' };
-  if (!holdRateOk_()) return { ok: false, error: 'busy' };
+  if (!count_('rate-release', CONFIG.maxHoldsPerMinute)) return { ok: false, error: 'busy' };
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) return { ok: false, error: 'busy' };
   try {
@@ -281,6 +301,10 @@ function release_(d) {
   } finally {
     lock.releaseLock();
   }
+}
+
+function own_(obj, key) {
+  return Object.prototype.hasOwnProperty.call(obj, key) ? obj[key] : undefined;
 }
 
 function validId_(v) {
@@ -729,7 +753,7 @@ function row_(c, files, status) {
 function savePdf_(d) {
   var id = /^[A-Za-z0-9-]{8,64}$/.test(String(d.submissionId || '')) ? String(d.submissionId) : null;
   if (!id) return { ok: false, error: 'bad_request' };
-  if (!rateOk_(id)) return { ok: false, error: 'busy' };
+  if (!count_('rate-id:' + id, CONFIG.maxPerIdPerMinute) || !count_('rate-pdf', CONFIG.maxPdfsPerMinute)) return { ok: false, error: 'busy' };
   var pdf = decodePdf_(d.pdf);
 
   var lock = LockService.getScriptLock();
@@ -759,6 +783,7 @@ function savePdf_(d) {
       return { ok: false, error: 'too_late' };
     }
 
+    if (!bytesOk_(pdf.length)) return { ok: false, error: 'busy' };
     var cat = text_(found.row[COL.Category]) === CONFIG.labels.youth ? 'youth' : 'kids';
     var label = CONFIG.labels[cat];
     var who = text_(found.row[COL.Name]).replace(/[^\p{L}\p{M}\p{N} ._-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 60) || 'child';
@@ -803,10 +828,14 @@ function count_(key, limit) {
   return n <= limit;
 }
 
-/** Registrations and PDFs: a limit across all visitors and a smaller one per submission. */
-function rateOk_(id) {
-  if (id && !count_('rate-id:' + String(id).slice(0, 64), CONFIG.maxPerIdPerMinute)) return false;
-  return count_('rate', CONFIG.maxPerMinute);
+/** A daily budget for bytes saved to Drive (kept in the cache; approximate is enough). */
+function bytesOk_(n) {
+  var cache = CacheService.getScriptCache();
+  var k = 'bytes:' + today_(0);
+  var used = Number(cache.get(k) || 0) + n;
+  if (used > CONFIG.maxBytesPerDay) { console.warn('Daily upload budget reached: nothing more is stored today'); return false; }
+  cache.put(k, String(used), 21600);
+  return true;
 }
 
 function holdRateOk_() {

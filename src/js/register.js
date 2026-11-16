@@ -22,7 +22,7 @@ const STEP_OF = {
 };
 const MAX_PHONES = 4;
 const DRAFT_KEY = 'wc-reg-draft';
-const DRAFT_HOURS = 24;
+const DRAFT_HOURS = 2; // round 12: shorter, for shared phones (the hold itself lasts at most 15 minutes)
 const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`);
 export const regCode = (id) => String(id || '').replace(/-/g, '').slice(0, 8).toUpperCase();
 
@@ -505,12 +505,11 @@ export function initRegistration({ audio }) {
     if (!paid) { state.payOk = false; $('#pay-panel').hidden = true; }
     $('#pay-checking').hidden = paid;
     $('#pay-full').hidden = true;
-    $('#pay-dup').hidden = true;
     updateSubmit();
-    const p = payload({ forHold: true });
     let res;
     try {
-      res = await sendHold({ action: 'hold', submissionId: state.submissionId, category: state.cat, name: p.name, dob: p.dob });
+      // Only the submission ID and group: the server no longer checks names before payment (round 12).
+      res = await sendHold({ action: 'hold', submissionId: state.submissionId, category: state.cat });
     } catch {
       $('#pay-checking').hidden = true;
       if (paid) { holdEnded('offline'); return; }
@@ -521,14 +520,6 @@ export function initRegistration({ audio }) {
     $('#pay-checking').hidden = true;
     if (res?.seats) { state.seats = res.seats; renderSeats(); }
     if (res?.ok && ['registered', 'last_seat', 'duplicate_paid'].includes(res.status)) { outcome(res); return; } // already sent earlier
-    if (res?.error === 'duplicate') {
-      stopHold(true);
-      $('#pay-dup').hidden = false;
-      $('#pay-dup').setAttribute('tabindex', '-1');
-      $('#pay-dup').focus();
-      audio.play('low');
-      return;
-    }
     if (res?.ok && res.status === 'held') {
       startHold(res);
       showPanel();
@@ -541,6 +532,8 @@ export function initRegistration({ audio }) {
       return;
     }
     if (res?.ok && res.status === 'limit') { stopHold(true); showPanel(); holdEnded('limit'); return; }
+    // No seat held (many holds at once, or the organisers turned holds off): check the seat count instead.
+    if (res?.ok && res.status === 'nohold') { stopHold(true); await legacyCheck(); return; }
     if (res?.error === 'busy') { showSendError(E.busy, () => checkBeforePay({ again })); return; }
     // A backend without seat holds (before round 7): check the seats as before.
     await legacyCheck();
@@ -720,9 +713,8 @@ export function initRegistration({ audio }) {
     updateSubmit();
   }
 
-  function payload({ forHold = false } = {}) {
+  function payload() {
     const iso = isoDate(f.dobY.value, f.dobM.value, f.dobD.value);
-    if (forHold) return { name: text(f.name), dob: iso };
     return {
       action: 'register',
       submissionId: state.submissionId,
@@ -843,7 +835,6 @@ export function initRegistration({ audio }) {
     stopHold(true);
     $('#pay-code').textContent = '';
     $('#draft-note').hidden = true;
-    $('#pay-dup').hidden = true;
   }
 
   function showOutcome(view) {

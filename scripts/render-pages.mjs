@@ -117,6 +117,12 @@ function jsonLd(lang, t) {
   return JSON.stringify({ '@context': 'https://schema.org', '@graph': graph }).replace(/</g, '\\u003c');
 }
 
+// Round 12: shown only when the page is inside another site's frame (src/js/frame-guard.js).
+// GitHub Pages cannot send X-Frame-Options, and a <meta> CSP ignores frame-ancestors.
+function framed(lang, t, pathKey) {
+  return `<div class="framed" id="framed" hidden><p>${esc(t.common.framed)}</p><a class="btn btn--red" href="${abs(urls[lang][pathKey])}" target="_top" rel="noopener">${esc(t.common.framedLink)}</a></div>`;
+}
+
 function head({ lang, t, title, description, pathKey, withLd }) {
   const self = urls[lang][pathKey];
   return `<meta charset="utf-8">
@@ -353,7 +359,6 @@ function registration(lang, t) {
     <div class="pay__checking" id="pay-checking" role="status"><span class="spinner" aria-hidden="true"></span> ${esc(r.pay.checking)}</div>
     <div class="notice notice--full" id="pay-full" role="alert" hidden><span lang="en">${esc(r.full)}</span>${r.fullLocal ? `<br><span>${esc(r.fullLocal)}</span>` : ''} <a class="link" href="${tel}">${esc(fill(t.common.call, { phone }))}</a>
       <p class="pay__held" id="pay-held" hidden><span>${esc(r.heldNote)}</span> <button type="button" class="link" id="pay-recheck">${esc(r.checkAgain)}</button></p></div>
-    <div class="notice notice--error" id="pay-dup" role="alert" hidden>${esc(fill(r.err.duplicateBefore, { phone }))}</div>
     <div class="pay" id="pay-panel" hidden>
       <h3 class="pay__title">${esc(r.pay.title)}</h3>
       <div class="hold" id="hold" hidden>
@@ -532,6 +537,7 @@ ${head({ lang, t, title: t.meta.title, description: t.meta.description, pathKey:
 <script type="module" src="/src/entry-${lang}.js"></script>
 </head>
 <body>
+${framed(lang, t, 'home')}
 <a class="skip" href="#main">${esc(t.common.skip)}</a>
 
 <div class="loader" id="loader" role="dialog" aria-modal="true" aria-label="${esc(t.loader.label)}">
@@ -708,6 +714,7 @@ ${head({ lang, t, title: metaTitle, description: metaDescription, pathKey, withL
 <script type="module" src="/src/entry-plain-${lang}.js"></script>
 </head>
 <body>
+${framed(lang, t, pathKey)}
 <a class="skip" href="#main">${esc(t.common.skip)}</a>
 ${siteHeader(lang, t, pathKey)}
 <main id="main" class="plain" tabindex="-1">

@@ -86,6 +86,16 @@ html.wc-gutter { scrollbar-gutter: stable; }
 }
 .skip:focus-visible { transform: none; outline-color: var(--c-accent); }
 
+/* Round 12: inside another website's frame only this note shows (src/js/frame-guard.js). */
+.framed[hidden] { display: none; }
+html.wc-framed body > :not(.framed) { display: none !important; }
+html.wc-framed body { overflow: auto; }
+.framed {
+  min-height: 100vh; min-height: 100dvh; display: grid; place-content: center; justify-items: center; gap: var(--s3);
+  padding: var(--s4) var(--s3); text-align: center; background: var(--c-dark); color: var(--t-dark);
+}
+.framed p { max-width: 36ch; font-size: 18px; }
+
 .wrap { width: min(100% - 2 * var(--s3), var(--wrap)); margin-inline: auto; }
 .wrap--narrow { --wrap: 800px; }
 @media (min-width: 768px) { .wrap { width: min(100% - 2 * var(--s6), var(--wrap)); } }

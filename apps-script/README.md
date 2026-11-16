@@ -73,7 +73,9 @@ Then delete the test row, and the test files in Drive, so the seat is freed. The
 ## Privacy
 
 - Keep the sheet and the `Winter Camp 2027` folder shared with **named organisers only**, never "anyone with the link".
-- The privacy notice on the site says registrations are deleted within 90 days of the end of camp. Put a reminder in your calendar for **13 April 2027**.
+- The privacy notice on the site says registration data is kept for **6 months after the camp ends** and deleted by **13 July 2027**. Put a reminder in your calendar for that date. Then delete the rows in the Kids, Youth and "Paid, no seat" tabs (the Summary tab has no personal data), and empty the `Winter Camp 2027` Drive folders (payment screenshots, signatures and registration PDFs), including Drive's Bin.
+- A family can ask for deletion sooner by phone. Delete their row and their three files (the links are in the row).
+- **If holds are misused** (the site keeps saying seats are held): in the Apps Script editor, **Project Settings → Script properties → Add**, name `holds_off`, value `1`. Families then go straight to paying, and seats are still counted when the form is sent. Delete the property to turn holds back on. No redeploy is needed.
 
 ## What the script checks
 
