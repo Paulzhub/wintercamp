@@ -124,6 +124,13 @@ async function cornerFrames(page, start, label, fractions = [0.1, 0.25, 0.5, 0.7
 // (Up to 60 of 765 allows for the blurred background re-rendering slightly between shots;
 // the image against the indigo background differs by well over 100.)
 const roundedOk = (res) => res.ran && res.frames.length > 0 && res.frames.every((fr) => fr.corners.length > 0 && fr.corners.every((c) => c.corner <= 60) && fr.corners.some((c) => c.inside > 60));
+// Round 14: Submit needs one tap on the WhatsApp confirmation button. Tap it without
+// leaving for wa.me (the page's own click handler runs first, then the link is cancelled).
+const waTap = (page) => page.evaluate(() => {
+  const a = document.getElementById('wa-send');
+  a.addEventListener('click', (e) => e.preventDefault(), { once: true });
+  a.click();
+});
 const lbItems = (page) => page.evaluate(() => [...document.querySelectorAll('#lightbox-stage .lightbox__item')].map((el) => ({ side: el.classList.contains('is-side'), leaving: el.classList.contains('is-leaving'), x: Math.round(new DOMMatrix(getComputedStyle(el).transform).m41), o: Math.round(Number(getComputedStyle(el).opacity) * 1000) / 1000 })));
 async function toGalleryItem(page, type) {
   const idx = await page.evaluate((t) => [...document.querySelectorAll('.car__item')].findIndex((el) => el.dataset.type === t), type);
@@ -215,6 +222,8 @@ async function main() {
   await sharp({ create: { width: 720, height: 1280, channels: 3, background: '#e8f5e9' } })
     .composite([{ input: Buffer.from('<svg width="720" height="1280"><text x="60" y="600" font-size="64">Paid 500</text></svg>'), top: 0, left: 0 }])
     .png().toFile(shotPng);
+  const shotPng2 = path.join(out, 'payment-screenshot-2.png'); // round 14: a different screenshot, for "Replace"
+  await sharp({ create: { width: 720, height: 1280, channels: 3, background: '#e3f2fd' } }).png().toFile(shotPng2);
 
   const site = await staticServer();
   const backend = await startMockBackend({ port: 8787, delay: 300 });
@@ -347,6 +356,8 @@ async function main() {
       check('Submit stays disabled until a screenshot is attached', await page.isDisabled('#reg-submit'));
       await page.setInputFiles('#f-shot', shotPng);
       await page.waitForSelector('#shot-preview:not([hidden])');
+      check('Screenshot attached: submit still disabled until the WhatsApp button is tapped (round 14)', await page.isDisabled('#reg-submit') && await page.isVisible('#wa-send'));
+      await waTap(page);
       check('Screenshot preview shown, submit enabled', await page.isEnabled('#reg-submit'));
       check('Fee: "non-refundable" is shown on the payment step before paying', (await page.textContent('#help-refund')).includes('non-refundable') && await page.isVisible('#help-refund'));
       await page.click('label.choice:has(#f-refund)'); // untick
@@ -406,7 +417,7 @@ async function main() {
       await page.click('.hero__cta [data-open-register]');
       await fillToPayment(page, { cat: 'youth', dob: '2012-06-01' });
       await page.setInputFiles('#f-shot', shotPng);
-      await page.waitForSelector('#shot-preview:not([hidden])');
+      await page.waitForSelector('#shot-preview:not([hidden])'); await waTap(page);
       await api('/__seed', { category: 'youth', count: 1 });
       await page.waitForTimeout(5200); // a person takes longer than the 5 s anti-bot minimum
       await page.click('#reg-submit');
@@ -454,7 +465,7 @@ async function main() {
       await page.click('.hero__cta [data-open-register]');
       await fillToPayment(page, { cat: 'kids', dob: '2018-08-08' });
       await page.setInputFiles('#f-shot', shotPng);
-      await page.waitForSelector('#shot-preview:not([hidden])');
+      await page.waitForSelector('#shot-preview:not([hidden])'); await waTap(page);
       await page.route('**/exec', (route) => (route.request().method() === 'POST' ? route.abort('failed') : route.continue()));
       await page.waitForTimeout(5200); // a person takes longer than the 5 s anti-bot minimum
       await page.click('#reg-submit');
@@ -676,7 +687,7 @@ async function main() {
       await page.fill('#f-phone-2', '12345');
       await page.click('#reg-next');
       await page.waitForTimeout(400);
-      check('A 5-digit phone number blocks "Next" with a clear message', (await page.textContent('#err-phones')).includes('up to 10 digits') && await page.evaluate(() => [...document.querySelectorAll('.step')].findIndex((x) => !x.hidden)) === 1);
+      check('A 5-digit phone number blocks "Next" with "Phone numbers up to 10 digits only." (round 14)', (await page.textContent('#err-phones')).trim() === 'Phone numbers up to 10 digits only.' && await page.evaluate(() => [...document.querySelectorAll('.step')].findIndex((x) => !x.hidden)) === 1);
       await page.fill('#f-phone-2', '');
       await page.click('#reg-next');
       await page.click('label.choice:has(input[name="consent"][value="yes"])');
@@ -695,7 +706,7 @@ async function main() {
       await page.waitForTimeout(900);
       check('Dismissing the photo picker does not close or shrink the registration view', await page.evaluate(() => document.getElementById('register').open && !document.getElementById('register').style.clipPath));
       await page.setInputFiles('#f-shot', shotPng);
-      await page.waitForSelector('#shot-preview:not([hidden])');
+      await page.waitForSelector('#shot-preview:not([hidden])'); await waTap(page);
       await page.waitForTimeout(600);
       const lay = await page.evaluate(() => { const r = document.getElementById('register').getBoundingClientRect(); return { w: r.width, h: r.height, vw: innerWidth, vh: innerHeight }; });
       check('After uploading the screenshot the view still fills the screen', lay.w === lay.vw && lay.h === lay.vh, JSON.stringify(lay));
@@ -1320,7 +1331,7 @@ async function main() {
       check('First family: "Hold again" now says seats are full, do not pay; payment panel stays', await page.isVisible('#pay-panel') && (await page.textContent('#hold-ended-text')).includes('If you have already paid, send the form anyway'));
       if (!(await page.isChecked('#f-refund'))) await page.click('label.choice:has(#f-refund)');
       await page.setInputFiles('#f-shot', shotPng);
-      await page.waitForSelector('#shot-preview:not([hidden])');
+      await page.waitForSelector('#shot-preview:not([hidden])'); await waTap(page);
       check('First family can still send the form after paying', await page.isEnabled('#reg-submit'));
       await page.click('#reg-submit');
       await page.waitForSelector('#reg-last:not([hidden])', { timeout: 10000 });
@@ -1331,7 +1342,7 @@ async function main() {
       check('Draft: deleted once the registration is sent', await page.evaluate(() => sessionStorage.getItem('wc-reg-draft') === null));
       // The second family sends: the group is now truly full.
       await p2.setInputFiles('#f-shot', shotPng);
-      await p2.waitForSelector('#shot-preview:not([hidden])');
+      await p2.waitForSelector('#shot-preview:not([hidden])'); await waTap(p2);
       await p2.waitForTimeout(5200);
       await p2.click('#reg-submit');
       await p2.waitForSelector('#reg-done:not([hidden])', { timeout: 10000 });
@@ -1390,7 +1401,7 @@ async function main() {
       await page.waitForSelector('#pay-panel:not([hidden])', { timeout: 8000 });
       if (!(await page.isChecked('#f-refund'))) await page.click('label.choice:has(#f-refund)');
       await page.setInputFiles('#f-shot', shotPng);
-      await page.waitForSelector('#shot-preview:not([hidden])');
+      await page.waitForSelector('#shot-preview:not([hidden])'); await waTap(page);
       await direct('Karma Yangchen', '2019-03-15');
       await page.waitForTimeout(5200);
       await page.click('#reg-submit');
@@ -1412,7 +1423,7 @@ async function main() {
       await page.click('.hero__cta [data-open-register]');
       await fillToPayment(page, { cat: 'youth', dob: '2011-02-02' });
       await page.setInputFiles('#f-shot', shotPng);
-      await page.waitForSelector('#shot-preview:not([hidden])');
+      await page.waitForSelector('#shot-preview:not([hidden])'); await waTap(page);
       await page.route('**/exec', (route) => (route.request().method() === 'POST' ? route.abort('internetdisconnected') : route.continue()));
       await page.waitForTimeout(5200);
       await page.click('#reg-submit');
@@ -1477,7 +1488,7 @@ async function main() {
       const side = mid.find((m) => m.side);
       const noScroll = await page.evaluate(() => { const b = document.getElementById('lightbox'); return getComputedStyle(b).overflowX === 'clip' && b.offsetHeight - b.clientHeight === 0; });
       check('Drag: the neighbour beyond the screen edge does not make the view scroll sideways', noScroll);
-      check('Drag: the current item follows the mouse and the next one sits alongside it', mid.length === 2 && cur && Math.abs(cur.x + 50) <= 2 && side && side.x > 200, JSON.stringify(mid));
+      check('Drag (round 14 depth slide): the current item moves back a quarter as far as the mouse and the next one slides in beside the pointer', mid.length === 2 && cur && Math.abs(cur.x + 12.5) <= 2 && side && side.x > 200, JSON.stringify(mid));
       await page.screenshot({ path: path.join(out, 'r8-drag-1440.png') });
       await page.mouse.up();
       await page.waitForTimeout(800);
@@ -1564,7 +1575,7 @@ async function main() {
       for (let k = 1; k <= 8; k++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 300 - k * 10, y, id: 1 }] });
       await page.waitForTimeout(80); // moves are delivered on the next frame
       const mid = await page.evaluate(() => [...document.querySelectorAll('#lightbox-stage .lightbox__item')].map((el) => ({ side: el.classList.contains('is-side'), x: Math.round(new DOMMatrix(getComputedStyle(el).transform).m41) })));
-      check('Phone: the item follows the finger and the next slides in beside it', mid.length === 2 && Math.abs(mid.find((m) => !m.side).x + 80) <= 2 && mid.find((m) => m.side).x > 0, JSON.stringify(mid));
+      check('Phone (round 14 depth slide): the item moves back a quarter as far as the finger and the next slides in beside it', mid.length === 2 && Math.abs(mid.find((m) => !m.side).x + 20) <= 2 && mid.find((m) => m.side).x > 0, JSON.stringify(mid));
       await page.screenshot({ path: path.join(out, 'r8-drag-390.png') });
       for (let k = 9; k <= 22; k++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 300 - k * 10, y, id: 1 }] }); }
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
@@ -1667,7 +1678,7 @@ async function main() {
       await page.click('.hero__cta [data-open-register]');
       await fillToPayment(page, { cat: 'kids', dob: '2017-07-07' });
       await page.setInputFiles('#f-shot', shotPng);
-      await page.waitForSelector('#shot-preview:not([hidden])');
+      await page.waitForSelector('#shot-preview:not([hidden])'); await waTap(page);
       await page.click('#reg-submit');
       await page.waitForSelector('#reg-done:not([hidden])', { timeout: 15000 });
       const saving = (await page.textContent('#done-copy')).trim();
@@ -1705,7 +1716,7 @@ async function main() {
       await page.click('.hero__cta [data-open-register]');
       await fillToPayment(page, { cat: 'youth', dob: '2013-02-02' });
       await page.setInputFiles('#f-shot', shotPng);
-      await page.waitForSelector('#shot-preview:not([hidden])');
+      await page.waitForSelector('#shot-preview:not([hidden])'); await waTap(page);
       await page.click('#reg-submit');
       await page.waitForSelector('#reg-done:not([hidden])', { timeout: 15000 });
       const saved = await waitFor(async () => { const t = (await page.textContent('#done-copy')).trim(); return t.startsWith('A copy of these details has been saved') && t; }, 20000);
@@ -1919,7 +1930,7 @@ async function main() {
       let it = await lbItems(page);
       let cur = it.find((m) => !m.side);
       let side = it.find((m) => m.side);
-      const d = side ? side.x - cur.x : 0; // span between the two
+      const d = side ? side.x + 50 : 0; // span between the two (the side item follows the pointer; round 14: the current one moves a quarter)
       const want = 1 - 50 / d;
       check('Fade, mid-drag: the current item is fading out and the next fading in, by the distance moved', it.length === 2 && Math.abs(cur.o - want) < 0.02 && Math.abs(side.o - (1 - want)) < 0.02, `${JSON.stringify(it)} want ${want.toFixed(3)}`);
       await page.screenshot({ path: path.join(out, 'r10-fade-drag-1440.png') });
@@ -2015,7 +2026,7 @@ async function main() {
       await page.click('.hero__cta [data-open-register]');
       await fillToPayment(page, { cat: 'youth', dob: '2013-02-02' });
       await page.setInputFiles('#f-shot', shotPng);
-      await page.waitForSelector('#shot-preview:not([hidden])');
+      await page.waitForSelector('#shot-preview:not([hidden])'); await waTap(page);
       await page.click('#reg-submit');
       await page.waitForSelector('#reg-done:not([hidden])', { timeout: 15000 });
       const note = await waitFor(() => page.evaluate(() => { const el = document.getElementById('done-copy'); return !el.classList.contains('is-saving') && { hidden: el.hidden, text: el.textContent.trim() }; }), 20000);
@@ -2069,7 +2080,7 @@ async function main() {
       const st = await page.evaluate(() => ({ panel: !document.getElementById('pay-panel').hidden, full: !document.getElementById('pay-full').hidden, hold: !document.getElementById('hold').hidden }));
       check('Hold limit reached: the family still sees the payment details (no countdown, not "full")', st.panel && !st.full && !st.hold, JSON.stringify(st));
       await page.setInputFiles('#f-shot', shotPng);
-      await page.waitForSelector('#shot-preview:not([hidden])');
+      await page.waitForSelector('#shot-preview:not([hidden])'); await waTap(page);
       await page.click('#reg-submit');
       await page.waitForSelector('#reg-done:not([hidden])', { timeout: 15000 });
       check('Hold limit reached: the family who paid gets a seat', true);
@@ -2135,49 +2146,257 @@ async function main() {
       await ctx.close();
     }
 
-    // 24b. Payment: a pink "Send the screenshot to Achui" button after the screenshot upload
-    // opens the WhatsApp chat with 8219012669 (no ready-typed message), and keeps the hold.
+    // 24b (round 14). Payment: once the screenshot is attached, a pink "Click here to send
+    // payment confirmation details to Achui" button appears after the UTR field. It opens
+    // WhatsApp with the payment details typed in (text only); Submit needs one tap on it.
     for (const width of [320, 390, 1280]) {
       await api('/__reset', {});
       const ctx = await browser.newContext({ viewport: { width, height: 844 }, ...(width < 768 ? { isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : {}) });
       await ctx.route(/wa\.me/, (route) => route.fulfill({ status: 200, contentType: 'text/html', body: '<p>WhatsApp</p>' }));
       const page = await ctx.newPage();
-      const done = watch(page, `Round 13 WhatsApp ${width}`);
+      const done = watch(page, `Round 14 WhatsApp ${width}`);
       await page.goto(SITE);
       await enter(page);
       await page.click('.hero__cta [data-open-register]');
       await fillToPayment(page, { cat: 'kids', dob: '2018-08-08' });
+      const before = await page.evaluate(() => ({ hidden: document.getElementById('wa').hidden, visible: Boolean(document.getElementById('wa-send').offsetParent), hint: document.getElementById('submit-hint').textContent }));
+      check(`${width} WhatsApp button: hidden until a screenshot is attached`, before.hidden && !before.visible && before.hint === 'Attach the payment screenshot to submit.', JSON.stringify(before));
+      await page.fill('#f-ref', '412345678901');
+      await page.setInputFiles('#f-shot', shotPng);
+      await page.waitForSelector('#shot-preview:not([hidden])');
+      await page.waitForSelector('#wa:not([hidden])');
       const wa = await page.evaluate(() => {
         const a = document.getElementById('wa-send');
-        const shot = document.getElementById('shot');
         const cs = getComputedStyle(a);
         const r = a.getBoundingClientRect();
         const panel = document.getElementById('pay-panel').getBoundingClientRect();
+        const after = (sel) => Boolean(document.querySelector(sel).compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING);
         return {
-          href: a.getAttribute('href'), target: a.target, rel: a.rel, label: a.innerText.replace(/\s+/g, ' ').trim(), help: document.getElementById('wa-help').textContent,
-          afterShot: Boolean(shot.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING), afterGrid: Boolean(document.querySelector('.pay__grid').compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING),
+          href: a.getAttribute('href'), target: a.target, rel: a.rel, label: a.innerText.replace(/\s+/g, ' ').trim(),
+          afterShot: after('#shot'), afterRef: after('#f-ref'), beforeHint: Boolean(a.compareDocumentPosition(document.getElementById('submit-hint')) & Node.DOCUMENT_POSITION_FOLLOWING),
           bg: cs.backgroundColor, color: cs.color, fits: r.left >= panel.left - 1 && r.right <= panel.right + 1, h: r.height,
+          disabled: document.getElementById('reg-submit').disabled, hint: document.getElementById('submit-hint').textContent, hintShown: !document.getElementById('submit-hint').hidden,
         };
       });
-      check(`${width} WhatsApp button: opens wa.me/918219012669 in a new tab, no ready-typed message`, wa.href === 'https://wa.me/918219012669' && wa.target === '_blank' && wa.rel.includes('noopener'), JSON.stringify(wa));
-      check(`${width} WhatsApp button: "SEND THE SCREENSHOT TO ACHUI +91-8219012669", after the screenshot upload`, wa.label === 'SEND THE SCREENSHOT TO ACHUI +91-8219012669' && wa.afterShot && wa.afterGrid, JSON.stringify(wa));
-      check(`${width} WhatsApp button: pink with a white label, fits the screen, with the "upload it above" line`, wa.bg === 'rgb(209, 20, 108)' && wa.color === 'rgb(255, 255, 255)' && wa.fits && wa.h >= 48 && wa.help === 'Please also upload it above to finish registering.', JSON.stringify(wa));
+      check(`${width} WhatsApp button: appears after upload, below the UTR field, label "CLICK HERE TO SEND PAYMENT CONFIRMATION DETAILS TO ACHUI +91-8219012669"`, wa.label === 'CLICK HERE TO SEND PAYMENT CONFIRMATION DETAILS TO ACHUI +91-8219012669' && wa.afterShot && wa.afterRef && wa.beforeHint, JSON.stringify(wa));
+      check(`${width} WhatsApp button: pink with a white label, fits the screen, new tab`, wa.bg === 'rgb(209, 20, 108)' && wa.color === 'rgb(255, 255, 255)' && wa.fits && wa.h >= 48 && wa.target === '_blank' && wa.rel.includes('noopener'), JSON.stringify(wa));
+      check(`${width} Submit: disabled until the WhatsApp button is tapped, with a hint saying so`, wa.disabled && wa.hintShown && wa.hint.startsWith('Tap the pink button above'), JSON.stringify(wa));
       await page.locator('.pay__wa').scrollIntoViewIfNeeded();
       await page.waitForTimeout(500);
-      await page.screenshot({ path: path.join(out, `r13-whatsapp-${width}.png`) });
+      await page.screenshot({ path: path.join(out, `r14-whatsapp-${width}.png`) });
       if (width === 390) {
-        await axe(page, 'Round 13 payment step with WhatsApp', '#register');
+        await axe(page, 'Round 14 payment step with WhatsApp', '#register');
+        const code = (await page.textContent('#pay-code')).trim();
         const [popup] = await Promise.all([ctx.waitForEvent('page'), page.click('#wa-send')]);
-        check('WhatsApp button: tapping opens the chat link', popup.url() === 'https://wa.me/918219012669', popup.url());
+        const u = new URL(popup.url());
+        const text = u.searchParams.get('text') || '';
+        const lines = text.split('\n');
+        const want = ['Winter Camp 2027 – payment confirmation', 'Child: Tenzin Norbu', 'Parent/guardian: Dolma Tsering', 'Group: Kids (11 to 13 January 2027)', 'Amount: ₹500 by UPI to Achui Sareo (achuisr1985.27-1@okhdfcbank)', `Registration code: ${code}`, 'UTR: 412345678901', 'Screenshot attached in the registration form.'];
+        check('WhatsApp button: opens wa.me/918219012669 with the payment details as text', u.origin + u.pathname === 'https://wa.me/918219012669' && lines.length === 8 && lines.every((l, i) => l === want[i]), JSON.stringify(lines));
         await popup.close();
+        const after = await page.evaluate(() => ({ disabled: document.getElementById('reg-submit').disabled, hintHidden: document.getElementById('submit-hint').hidden, status: document.getElementById('wa-status').textContent }));
+        check('WhatsApp button: once tapped, Submit is enabled and the status line says WhatsApp opened', !after.disabled && after.hintHidden && after.status.startsWith('WhatsApp opened'), JSON.stringify(after));
         await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false })));
         await page.waitForTimeout(600);
         const st = await api('/__state');
         check('WhatsApp button: the seat stays held while the family is in WhatsApp', Object.keys(st.holds.kids || {}).length === 1, JSON.stringify(st.holds));
-        const sub = await page.evaluate(() => document.getElementById('submit-hint').textContent);
-        check('WhatsApp button: the form still needs the uploaded screenshot', sub === 'Attach the payment screenshot to submit.', sub);
+        // The draft keeps the tap: after a reload and attaching the screenshot again, no second message is needed.
+        await page.waitForTimeout(400);
+        await page.reload();
+        await enter(page);
+        await page.waitForSelector('#pay-panel:not([hidden])', { timeout: 10000 });
+        await page.setInputFiles('#f-shot', shotPng);
+        await page.waitForSelector('#shot-preview:not([hidden])');
+        check('Draft restore: the tap is kept, Submit is enabled after attaching the screenshot again', await page.isEnabled('#reg-submit'));
+        // Replacing the screenshot asks for the confirmation again; so does removing it.
+        await page.setInputFiles('#f-shot', shotPng2);
+        await page.waitForFunction(() => document.getElementById('reg-submit').disabled, null, { timeout: 5000 }).catch(() => {});
+        check('Replacing the screenshot: Submit is disabled until the button is tapped again', await page.isDisabled('#reg-submit') && await page.isVisible('#wa-send'));
+        await waTap(page);
+        check('Tapping again enables Submit', await page.isEnabled('#reg-submit'));
+        await page.click('#shot-remove');
+        check('Removing the screenshot hides the button and disables Submit', await page.isDisabled('#reg-submit') && await page.isHidden('#wa'));
+        await page.setInputFiles('#f-shot', shotPng);
+        await page.waitForSelector('#shot-preview:not([hidden])');
+        check('Attaching it again after removing: the button must be tapped again', await page.isDisabled('#reg-submit'));
+        await waTap(page);
+        await page.click('#reg-submit');
+        await page.waitForSelector('#reg-done:not([hidden])', { timeout: 10000 });
+        check('After the tap the registration sends as before', await page.isVisible('#reg-done'));
       }
       done();
+      await ctx.close();
+    }
+
+    // 25. Round 14.
+    // 25a. Activity cards: indigo with light text; each photo opens full screen on its own
+    // (no previous/next, no swipe), with the view transition, and closes back into the card.
+    for (const width of [390, 1280]) {
+      const ctx = await browser.newContext({ viewport: { width, height: 900 }, ...(width < 768 ? { isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : {}) });
+      const page = await ctx.newPage();
+      const done = watch(page, `Round 14 activity cards ${width}`);
+      await page.goto(`${SITE}#activities`);
+      await enter(page);
+      await page.waitForTimeout(1200);
+      const look = await page.evaluate(() => {
+        const lum = (c) => { const [r, g, b] = c.match(/[\d.]+/g).slice(0, 3).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+        const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05); };
+        return [...document.querySelectorAll('.card__in')].map((c) => {
+          const icon = c.querySelector('.card__icon');
+          const bg = getComputedStyle(c).backgroundColor;
+          // The picnic tile is a 10% white tint: compare with the card colour mixed under it.
+          const tile = getComputedStyle(icon).backgroundColor;
+          const tv = tile.match(/[\d.]+/g).map(Number);
+          const bv = bg.match(/[\d.]+/g).map(Number);
+          const a = tv.length > 3 ? tv[3] : 1;
+          const under = `rgb(${[0, 1, 2].map((i) => Math.round(tv[i] * a + bv[i] * (1 - a))).join(', ')})`;
+          return { bg, tone: c.dataset.tone, title: ratio(getComputedStyle(c.querySelector('.card__title')).color, bg), text: ratio(getComputedStyle(c.querySelector('.card__text')).color, bg), icon: ratio(getComputedStyle(icon).color, under), btn: Boolean(c.querySelector('button.card__open[aria-label^="Open photo: "]')) };
+        });
+      });
+      check(`${width} activities: all six cards indigo (#180E55), marked dark, text 4.5:1+, icon 3:1+, each with an "Open photo" button`, look.length === 6 && look.every((c) => c.bg === 'rgb(24, 14, 85)' && c.tone === 'dark' && c.title >= 4.5 && c.text >= 4.5 && c.icon >= 3 && c.btn), JSON.stringify(look));
+      await page.locator('#activities .cards').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(1200);
+      await page.locator('#activities .cards').screenshot({ path: path.join(out, `r14-activities-${width}.png`) });
+      for (const key of ['games', 'picnic']) {
+        const btn = page.locator(`.card:has(.icon-${key}) .card__open`);
+        await btn.scrollIntoViewIfNeeded();
+        await page.waitForTimeout(600);
+        const label = await btn.getAttribute('aria-label');
+        await btn.click({ position: { x: 40, y: 40 } });
+        await page.waitForTimeout(250);
+        const midVt = await page.evaluate(() => document.getAnimations().some((a) => String(a.effect?.pseudoElement || '').includes('view-transition')));
+        await page.waitForTimeout(900);
+        await settled(page).catch(() => {});
+        const v = await page.evaluate(() => {
+          const box = document.getElementById('lightbox');
+          const img = document.querySelector('#lightbox-stage img');
+          const vis = (id) => { const el = document.getElementById(id); return el.offsetParent !== null && getComputedStyle(el).display !== 'none'; };
+          return { open: box.open, single: box.classList.contains('is-single'), alt: img?.alt, src: img?.currentSrc || img?.src, prev: vis('lightbox-prev'), next: vis('lightbox-next'), cap: document.getElementById('lightbox-cap').textContent, focus: document.activeElement?.id };
+        });
+        check(`${width} ${key} photo (${label}): opens full screen on its own, no previous/next, a description, close focused`, v.open && v.single && v.alt && !v.prev && !v.next && !/ of \d+/.test(v.cap) && v.focus === 'lightbox-close', JSON.stringify(v));
+        if (width === 1280) check(`${width} ${key} photo: opens with the view transition`, midVt);
+        await page.screenshot({ path: path.join(out, `r14-card-photo-${key}-${width}.png`) });
+        // No swiping or arrow keys to another photo.
+        await page.keyboard.press('ArrowRight');
+        const mb = await page.locator('#lightbox-stage .lightbox__item > *').boundingBox();
+        await page.mouse.move(mb.x + mb.width / 2, mb.y + mb.height / 2);
+        await page.mouse.down();
+        for (let k = 1; k <= 10; k++) { await page.mouse.move(mb.x + mb.width / 2 - k * 20, mb.y + mb.height / 2); await page.waitForTimeout(16); }
+        await page.mouse.up();
+        await page.waitForTimeout(800);
+        const still = await page.evaluate(() => ({ n: document.querySelectorAll('#lightbox-stage .lightbox__item').length, cap: document.getElementById('lightbox-cap').textContent, open: document.getElementById('lightbox').open }));
+        check(`${width} ${key} photo: arrow keys and dragging do not move to another photo`, still.open && still.n === 1 && still.cap === v.cap, JSON.stringify(still));
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(1100);
+        const closed = await page.evaluate(() => ({ open: document.getElementById('lightbox').open, focus: document.activeElement?.classList.contains('card__open') }));
+        check(`${width} ${key} photo: Esc closes it and focus returns to the card photo`, !closed.open && closed.focus, JSON.stringify(closed));
+      }
+      // The gallery still opens as a set afterwards.
+      await page.locator('.car__item.is-active .car__btn').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(800);
+      await page.click('.car__item.is-active .car__btn');
+      await page.waitForTimeout(1000);
+      const g = await page.evaluate(() => ({ single: document.getElementById('lightbox').classList.contains('is-single'), cap: document.getElementById('lightbox-cap').textContent }));
+      check(`${width} gallery after a card photo: opens as a set again (position in the caption)`, !g.single && / of \d+/.test(g.cap), JSON.stringify(g));
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(1000);
+      done();
+      await ctx.close();
+    }
+
+    // 25b. Gallery depth slide: half-way through a move the outgoing item is smaller and fading.
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+      const page = await ctx.newPage();
+      const done = watch(page, 'Round 14 depth slide');
+      await page.goto(`${SITE}#gallery`);
+      await enter(page);
+      await page.waitForTimeout(900);
+      await page.locator('.car__item.is-active .car__btn').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(900);
+      await page.click('.car__item.is-active .car__btn');
+      await page.waitForTimeout(1000);
+      await settled(page).catch(() => {});
+      await page.click('#lightbox-next');
+      await page.waitForTimeout(330);
+      const mid = await page.evaluate(() => [...document.querySelectorAll('#lightbox-stage .lightbox__item')].map((el) => { const m = new DOMMatrix(getComputedStyle(el).transform); return { leaving: el.classList.contains('is-leaving'), x: Math.round(m.m41), scale: Math.round(Math.hypot(m.a, m.b) * 1000) / 1000 }; }));
+      const o = mid.find((m) => m.leaving);
+      const n = mid.find((m) => !m.leaving);
+      check('Depth slide: the outgoing item shrinks (between 86% and 100%) and drifts a little, the incoming slides in at full size', mid.length === 2 && o.scale < 0.99 && o.scale > 0.85 && Math.abs(o.x) < Math.abs(n.x) + 400 && n.scale === 1, JSON.stringify(mid));
+      await page.screenshot({ path: path.join(out, 'r14-depth-slide-1280.png') });
+      await page.waitForTimeout(800);
+      const end = await page.evaluate(() => [...document.querySelectorAll('#lightbox-stage .lightbox__item')].map((el) => getComputedStyle(el).transform));
+      check('Depth slide: ends with one item at full size, no transform left', end.length === 1 && end[0] === 'none', JSON.stringify(end));
+      done();
+      await ctx.close();
+    }
+
+    // 25c. Phone menu: closing is the reverse of opening (rolls up), for the close button,
+    // Esc and a link; Register closes it at once; reduced motion closes without a slide.
+    {
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+      const page = await ctx.newPage();
+      const done = watch(page, 'Round 14 menu close');
+      await page.goto(SITE);
+      await enter(page);
+      await page.waitForTimeout(800);
+      const clipBottom = () => page.evaluate(() => { const c = getComputedStyle(document.getElementById('menu')).clipPath; const m = c.match(/inset\(([\d.]+)%? ([\d.]+)%? ([\d.]+)%?/); return { c, bottom: m ? Number(m[3]) : (c === 'none' ? 0 : -1), open: document.getElementById('menu').open }; });
+      for (const [how, act] of [['close button', () => page.click('#menu-close')], ['Esc', () => page.keyboard.press('Escape')], ['a link', () => page.click('#menu .menu__link[href="#faq"]')]]) {
+        await page.click('#menu-open');
+        await page.waitForTimeout(400);
+        const opening = await clipBottom();
+        await page.waitForTimeout(1200);
+        await act();
+        const samples = [];
+        for (let k = 0; k < 9; k++) { await page.waitForTimeout(100); samples.push(await clipBottom()); }
+        const rising = samples.filter((x) => x.open).map((x) => x.bottom);
+        const grows = rising.length >= 3 && rising.every((b, i) => i === 0 || b >= rising[i - 1] - 0.5) && Math.max(...rising) > 50;
+        check(`Phone menu, ${how}: closes by rolling up (the reverse of opening down), then shuts`, opening.bottom > 0 && grows && !samples[samples.length - 1].open, JSON.stringify({ opening, rising, last: samples[samples.length - 1] }));
+        if (how === 'close button') {
+          await page.click('#menu-open');
+          await page.waitForTimeout(1200);
+          await page.click('#menu-close');
+          await page.waitForTimeout(450);
+          await page.screenshot({ path: path.join(out, 'r14-menu-closing-390.png') });
+          await page.waitForTimeout(900);
+        }
+        await page.waitForTimeout(600);
+      }
+      await page.click('#menu-open');
+      await page.waitForTimeout(1200);
+      await page.click('#menu [data-open-register]');
+      await page.waitForTimeout(60);
+      check('Phone menu, Register: the menu closes at once and the registration opens', !(await page.evaluate(() => document.getElementById('menu').open)) && await page.evaluate(() => document.getElementById('register').open));
+      done();
+      await ctx.close();
+      const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: 'reduce' });
+      const p2 = await ctx2.newPage();
+      await p2.goto(SITE);
+      await enter(p2);
+      await p2.waitForTimeout(600);
+      await p2.click('#menu-open');
+      await p2.waitForTimeout(300);
+      await p2.click('#menu-close');
+      await p2.waitForTimeout(60);
+      check('Phone menu, reduced motion: closes at once, no slide', !(await p2.evaluate(() => document.getElementById('menu').open)));
+      await ctx2.close();
+    }
+
+    // 25d. Footer, Kids icon, privacy notice.
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+      const page = await ctx.newPage();
+      await page.goto(SITE);
+      await enter(page);
+      const r = await page.evaluate(() => ({ rights: document.querySelector('.footer__rights').textContent, kids: document.querySelector('.cat[data-cat="kids"] .cat__icon svg').innerHTML }));
+      check('Footer: "© Kid\'s Happy Club" (no year)', r.rights === "© Kid's Happy Club", r.rights);
+      check('Kids icon: a child holding a balloon (no lines on the head)', r.kids.includes('<ellipse') && !r.kids.includes('M9 4.500l-1.500-2'), r.kids);
+      await page.click('.hero__cta [data-open-register]');
+      await page.waitForTimeout(1200);
+      await page.locator('.cat[data-cat="kids"]').screenshot({ path: path.join(out, 'r14-kids-icon.png') });
+      await page.goto(`${SITE}privacy/`);
+      const pv = await page.textContent('main');
+      check('Privacy notice: says the WhatsApp message is sent only if the family taps the button', /a button opens WhatsApp with a message to Achui/.test(pv) && /only if you tap the button/.test(pv));
       await ctx.close();
     }
   } finally {

@@ -59,6 +59,7 @@
     }
   },
   "activities": {
+    "openPhoto": "Open photo: {name}",
     "eyebrow": "Activities",
     "title": "Three days of fun",
     "lead": "Each camp runs for three days. Here is what your child will be doing.",
@@ -114,6 +115,7 @@
     "play": "Play video",
     "empty": "Photos and videos from camp will appear here soon.",
     "lightbox": "Gallery item, larger view",
+    "photoView": "Photo, larger view",
     "cursorDrag": "Drag",
     "cursorView": "View",
     "cursorPlay": "Play"
@@ -165,7 +167,7 @@
     "venueTitle": "Venue",
     "contactTitle": "Contact",
     "privacy": "Privacy notice",
-    "rights": "© 2027 Kid's Happy Club"
+    "rights": "© Kid's Happy Club"
   },
   "reg": {
     "title": "Register for Winter Camp 2027",
@@ -275,8 +277,20 @@
       "refHelp": "The 12-digit number in your UPI app's payment details. It helps the organisers find your payment.",
       "qrHelp": "Scan this QR code with any UPI app and pay ₹500. On this phone? Take a screenshot of the QR code and choose it from your gallery in your UPI app's scanner, or copy the UPI ID or phone number below.",
       "phoneCopyTip": "Copy the phone number",
-      "whatsapp": "Send the screenshot to Achui",
-      "whatsappHelp": "Please also upload it above to finish registering."
+      "whatsapp": "Click here to send payment confirmation details to Achui",
+      "whatsappHelp": "This opens WhatsApp with your payment details already typed. Send the message, then come back here and submit your registration.",
+      "whatsappDone": "WhatsApp opened. If the message did not send, tap the button again.",
+      "submitNeedWa": "Tap the pink button above to send your payment details to Achui on WhatsApp, then submit.",
+      "waMsg": {
+        "title": "Winter Camp 2027 – payment confirmation",
+        "child": "Child: {v}",
+        "parent": "Parent/guardian: {v}",
+        "group": "Group: {v}",
+        "amount": "Amount: {amount} by UPI to {payee} ({upiId})",
+        "code": "Registration code: {v}",
+        "ref": "UTR: {v}",
+        "shot": "Screenshot attached in the registration form."
+      }
     },
     "err": {
       "summary": "Please fix the following:",
@@ -288,7 +302,7 @@
       "dobYouthYoung": "Youth must be 11 or over on 4 January 2027. For this date of birth, please choose Kids.",
       "parent": "Enter the parent's or guardian's name.",
       "address": "Enter the address.",
-      "phone": "Enter a phone number of up to 10 digits, numbers only (for example 9876543210).",
+      "phone": "Phone numbers up to 10 digits only.",
       "consent": "Choose YES or NO.",
       "agree": "Tick this box to continue.",
       "signature": "Draw your signature in the box, or type your name instead.",
@@ -303,7 +317,7 @@
       "duplicate": "This child is already registered for this group. For help, call {phone}.",
       "busy": "Too many registrations are arriving at once. Please wait a minute and try again.",
       "phoneDigits": "Only numbers 0 to 9 can be used. Other characters were removed.",
-      "phoneMax": "Phone numbers have 10 digits. Extra digits were removed.",
+      "phoneMax": "Phone numbers up to 10 digits only.",
       "signTyped": "Type your full name to sign.",
       "refund": "Please tick the box to confirm you understand the fee is non-refundable.",
       "consentYes": "Medical emergency consent must be YES for your child to take part in Winter Camp 2027.",
@@ -431,7 +445,8 @@
       {
         "h": "Who sees it",
         "p": [
-          "Only the camp organisers. The information is kept in a private Google Sheet and private Google Drive folders (including a PDF copy of each registration) that are shared with named organisers only. We do not sell it, publish it or share it with advertisers. It may be shared with medical staff if your child needs treatment."
+          "Only the camp organisers. The information is kept in a private Google Sheet and private Google Drive folders (including a PDF copy of each registration) that are shared with named organisers only. We do not sell it, publish it or share it with advertisers. It may be shared with medical staff if your child needs treatment.",
+          "On the payment step, a button opens WhatsApp with a message to Achui (+91-8219012669) that holds your child's name, your name, the group, the registration code and, if you typed it, the transaction reference. It is sent only if you tap the button and send the message in WhatsApp, and then WhatsApp's own privacy policy applies to it."
         ]
       },
       {

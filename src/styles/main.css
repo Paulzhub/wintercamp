@@ -312,11 +312,11 @@ html.wc-framed body { overflow: auto; }
 .card__in {
   --pad: var(--s4);
   position: relative; height: 100%; display: flex; flex-direction: column; gap: var(--s2);
-  padding: var(--pad); border-radius: var(--r-lg); background: var(--t-dark); box-shadow: var(--sh1);
+  padding: var(--pad); border-radius: var(--r-lg); background: var(--c-dark); box-shadow: var(--sh1); /* round 14: indigo cards (class .dark) */
   transform-style: preserve-3d; transition: box-shadow var(--d-ui) var(--ease), transform var(--d-ui) var(--ease);
 }
 .card__in:hover { box-shadow: var(--sh3); }
-.card__icon { width: 72px; height: 72px; display: grid; place-items: center; border-radius: calc(var(--r-lg) - var(--s3)); background: var(--c-light); color: var(--c-accent); transform: translateZ(32px); }
+.card__icon { width: 72px; height: 72px; display: grid; place-items: center; border-radius: calc(var(--r-lg) - var(--s3)); background: var(--surface-2, #2E2565); color: var(--accent-ink); transform: translateZ(32px); } /* solid lighter indigo; icon 5.2:1 */
 .card__icon svg { width: 48px; height: 48px; overflow: visible; }
 .card__title { font-family: var(--font-display); font-weight: 400; text-transform: uppercase; font-size: 32px; line-height: 1.1; transform: translateZ(24px); }
 .card__text { color: var(--muted); transform: translateZ(16px); }
@@ -336,9 +336,17 @@ html.wc-framed body { overflow: auto; }
    dark on the light card, so its contrast does not depend on the photo. Concentric:
    card radius 32 minus the 8 px inset = 24. The icon overlaps the strip's bottom edge. */
 .card__in.has-media { padding-top: var(--s1); }
-.card__media { margin: 0 calc(var(--s1) - var(--pad)); aspect-ratio: 16 / 9; border-radius: calc(var(--r-lg) - var(--s1)); overflow: hidden; background: var(--c-light); transform: translateZ(8px); pointer-events: none; }
+.card__media { display: block; width: auto; padding: 0; border: 0; margin: 0 calc(var(--s1) - var(--pad)); aspect-ratio: 16 / 9; border-radius: calc(var(--r-lg) - var(--s1)); overflow: hidden; background: var(--surface); transform: translateZ(8px); }
+/* Round 14: the card photos open full screen on click or tap, one at a time. */
+.lightbox.is-single .lightbox__nav { display: none; }
+.card__open { cursor: zoom-in; -webkit-tap-highlight-color: transparent; }
+.card__open:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+.card__photo-btn { position: absolute; inset: 0; z-index: -2; padding: 0; border: 0; background: none; border-radius: inherit; overflow: hidden; }
+.card__photo-btn .card__photo { position: static; z-index: auto; }
+.card__in.has-photo .card__body, .card__in.has-photo .card__rail { pointer-events: none; }
+.card__photo-btn:focus-visible { outline: 3px solid var(--focus); outline-offset: -6px; }
 .card__img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 40%; }
-.has-media .card__icon { margin-top: calc(-1 * var(--s6)); box-shadow: 0 0 0 var(--s1) var(--t-dark); }
+.has-media .card__icon { margin-top: calc(-1 * var(--s6)); box-shadow: 0 0 0 var(--s1) var(--c-dark); }
 .card__rail { position: relative; }
 .card__badge { position: sticky; top: calc(var(--nav-h) + var(--s2)); display: inline-block; white-space: nowrap; padding: var(--s1) var(--s2); border-radius: var(--r-pill); background: var(--c-accent); color: #FFFFFF; font-weight: 600; font-size: 14px; letter-spacing: 0.08em; text-transform: uppercase; box-shadow: 0 8px 24px rgb(230 30 123 / 0.4); z-index: 2; }
 
@@ -592,6 +600,8 @@ select.input { appearance: none; padding-right: var(--s6); background-image: lin
 .pay__wa { display: grid; gap: var(--s1); }
 .pay__wa-btn { width: 100%; justify-content: center; text-align: center; text-transform: uppercase; letter-spacing: 0.04em; }
 .pay__wa .field__help { margin: 0; }
+.pay__wa-status { margin: 0; font-size: 14px; font-weight: 600; color: var(--text); }
+.pay__wa-status:empty { display: none; }
 .pay__wa-btn .btn__icon { flex: 0 0 24px; width: 24px; height: 24px; }
 .shot { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: flex-start; }
 .shot__choose { cursor: pointer; }
@@ -694,7 +704,7 @@ select.input { appearance: none; padding-right: var(--s6); background-image: lin
 /* A. Spotlight: a soft light follows the mouse across cards and questions. */
 .qa.has-spot { position: relative; }
 .has-spot::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; background: radial-gradient(280px circle at var(--mx, 50%) var(--my, 50%), rgb(230 30 123 / 0.1), transparent 70%); transition: opacity var(--d-ui) var(--ease); }
-.card--wide .has-spot::after, .card--wide.has-spot::after { background: radial-gradient(320px circle at var(--mx, 50%) var(--my, 50%), rgb(250 246 255 / 0.14), transparent 70%); }
+.card .has-spot::after, .card.has-spot::after { background: radial-gradient(320px circle at var(--mx, 50%) var(--my, 50%), rgb(250 246 255 / 0.14), transparent 70%); }
 .has-spot:hover::after { opacity: 1; }
 
 /* B. Countdown to camp, in the hero. */

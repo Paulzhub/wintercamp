@@ -9,6 +9,11 @@
 // - Corners stay rounded through the open and close (round 10): the rounded thumbnail
 //   wrapper is the shared element, and the moving box is clipped with an easing radius.
 // - Pinch to zoom photos and videos (eases back on release).
+// - Round 14: depth slide. The item moving out drifts a quarter of the way, shrinks to
+//   86% and fades, while the one moving in slides over it at full size.
+// - Round 14: one view serves two sources. The gallery opens its items as a set (swipe,
+//   arrows); the activity card photos open one at a time (no previous or next).
+//   The shared element is the thumbnail's rounded wrapper, whichever source it is.
 import { gsap, reduced } from './motion.js';
 import { T, $, fill } from './i18n.js';
 import { openModal } from './modal.js';
@@ -16,10 +21,33 @@ import { openModal } from './modal.js';
 const DUR = 0.7;
 const MAX_ZOOM = 4;
 const GAP = 32; // space between neighbouring items while sliding
+const DEPTH = { scale: 0.86, drift: 0.25 }; // round 14: the item moving out
 // Corner radii: the carousel thumbnail (--r-lg) and the media in the view (--r-md).
 const radius = (name, px) => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name)) || px;
 
+// One view for the whole page, created on first use.
+let instance = null;
+export function getLightbox(audio) {
+  if (!instance && $('#lightbox')) instance = createLightbox(audio);
+  return instance;
+}
+// The gallery: its items as a set.
 export function initLightbox({ items, onIndex, audio }) {
+  const lb = getLightbox(audio);
+  return { open: (i, trigger) => lb.open(i, trigger, { items, onIndex }), close: () => lb.close() };
+}
+
+// Round 14: the activity card photos, each opened on its own (Paul: not a gallery).
+export function initCardPhotos(audio) {
+  document.querySelectorAll('.card__open').forEach((btn) => {
+    btn.addEventListener('click', () => getLightbox(audio)?.open(0, btn, { items: [btn], single: true }));
+  });
+}
+
+function createLightbox(audio) {
+  let items = [];
+  let onIndex = () => {};
+  let single = false; // one photo on its own: no previous or next
   const box = $('#lightbox');
   const stage = $('#lightbox-stage');
   const cap = $('#lightbox-cap');
@@ -48,7 +76,7 @@ export function initLightbox({ items, onIndex, audio }) {
   function media(i, { autoplay = true } = {}) {
     const it = items[i];
     const thumb = it.querySelector('img');
-    const alt = thumb?.getAttribute('alt') || it.querySelector('[role=img]')?.getAttribute('aria-label') || '';
+    const alt = it.dataset.alt || thumb?.getAttribute('alt') || it.querySelector('[role=img]')?.getAttribute('aria-label') || '';
     let el;
     if (it.dataset.type === 'video') {
       el = document.createElement('video');
@@ -96,14 +124,16 @@ export function initLightbox({ items, onIndex, audio }) {
   const currentMedia = () => current()?.firstElementChild || null;
   // The rounded, clipped wrapper (not the image inside it, which has no corners of its
   // own and is scaled by the slow pan): its snapshot keeps the thumbnail's corners.
-  const thumbOf = (i) => items[i]?.querySelector('.car__media') || null;
+  // An activity photo's button is itself the rounded wrapper.
+  const thumbOf = (i) => (items[i]?.classList.contains('card__open') ? items[i] : items[i]?.querySelector('.car__media')) || null;
+  const radiusOf = (el, px) => parseFloat(el ? getComputedStyle(el).borderTopLeftRadius : '') || px;
 
   function captionOf(i) {
     const it = items[i];
-    return it.querySelector('.car__caption')?.textContent || it.querySelector('img')?.getAttribute('alt') || it.querySelector('[role=img]')?.getAttribute('aria-label') || '';
+    return it.dataset.caption || it.querySelector('.car__caption')?.textContent || it.dataset.alt || it.querySelector('img')?.getAttribute('alt') || it.querySelector('[role=img]')?.getAttribute('aria-label') || '';
   }
   function setCaption(caption) {
-    cap.textContent = `${caption} · ${fill(T.gallery.position, { n: index + 1, total: items.length })}`;
+    cap.textContent = single ? caption : `${caption} · ${fill(T.gallery.position, { n: index + 1, total: items.length })}`;
   }
 
   // ---------- Moving between items ----------
@@ -129,7 +159,7 @@ export function initLightbox({ items, onIndex, audio }) {
     // Side by side: the current item slides a full width out while the next slides in.
     const d = span(from, index);
     slide = gsap.timeline({ defaults: { duration: DUR, ease: 'std' }, onComplete: () => { out.remove(); slide = null; } })
-      .to(out, { x: -dir * d, opacity: 0 }, 0)
+      .to(out, { x: -dir * d * DEPTH.drift, scale: DEPTH.scale, opacity: 0 }, 0)
       .fromTo(wrap, { x: dir * d, opacity: 0 }, { x: 0, opacity: 1, clearProps: 'transform,opacity' }, 0);
   }
 
@@ -150,7 +180,8 @@ export function initLightbox({ items, onIndex, audio }) {
     }
     // Opacity follows the distance moved: the current item fades out as the next fades in.
     const p = drag ? Math.min(1, Math.abs(dx) / drag.d) : 0;
-    gsap.set(cur, { x: dx, opacity: 1 - p });
+    // Depth (round 14): the current item moves a quarter as far and shrinks back.
+    gsap.set(cur, { x: dx * DEPTH.drift, scale: 1 - (1 - DEPTH.scale) * p, opacity: 1 - p });
     if (drag) gsap.set(drag.side, { x: drag.dir * drag.d + dx, opacity: p });
   }
   function cancelDrag() {
@@ -174,7 +205,7 @@ export function initLightbox({ items, onIndex, audio }) {
     const duration = Math.max(0.24, DUR * Math.min(1, left));
     if (!commit) {
       slide = gsap.timeline({ defaults: { duration, ease: 'std' }, onComplete: () => { dg.side.remove(); gsap.set(cur, { clearProps: 'transform,opacity' }); slide = null; } })
-        .to(cur, { x: 0, opacity: 1 }, 0)
+        .to(cur, { x: 0, scale: 1, opacity: 1 }, 0)
         .to(dg.side, { x: dg.dir * dg.d, opacity: 0 }, 0);
       return;
     }
@@ -189,10 +220,10 @@ export function initLightbox({ items, onIndex, audio }) {
     const v = dg.side.querySelector('video');
     if (v && !reduced()) v.play().catch(() => {});
     slide = gsap.timeline({ defaults: { duration, ease: 'std' }, onComplete: () => { cur.remove(); gsap.set(dg.side, { clearProps: 'transform,opacity' }); slide = null; } })
-      .to(cur, { x: towards, opacity: 0 }, 0)
+      .to(cur, { x: towards * DEPTH.drift, scale: DEPTH.scale, opacity: 0 }, 0)
       .to(dg.side, { x: 0, opacity: 1 }, 0);
   }
-  const step = (dir) => { show(index + dir, dir); audio.play('whoosh'); };
+  const step = (dir) => { if (single) return; show(index + dir, dir); audio.play('whoosh'); };
 
   // ---------- Pinch to zoom ----------
   const pointers = new Map();
@@ -268,7 +299,7 @@ export function initLightbox({ items, onIndex, audio }) {
     swipe.lastX = e.clientX; swipe.lastT = now;
     if (!swipe.axis) {
       if (Math.max(Math.abs(dx), Math.abs(dy)) < 8) return;
-      swipe.axis = Math.abs(dx) > Math.abs(dy) && !zoomed() ? 'x' : 'y';
+      swipe.axis = Math.abs(dx) > Math.abs(dy) && !zoomed() && !single ? 'x' : 'y';
       if (swipe.axis === 'x') {
         suppressClick = true;
         if (reduced()) return;
@@ -308,8 +339,16 @@ export function initLightbox({ items, onIndex, audio }) {
 
   // ---------- Open and close ----------
   let animating = false;
-  function open(i, trigger) {
+  function open(i, trigger, set) {
+    if (set) {
+      items = set.items;
+      onIndex = set.onIndex || (() => {});
+      single = Boolean(set.single);
+      box.classList.toggle('is-single', single);
+      box.setAttribute('aria-label', single ? T.gallery.photoView || T.gallery.lightbox : T.gallery.lightbox);
+    }
     const thumb = thumbOf(i);
+    const r0 = radiusOf(thumb, radius('--r-lg', 32));
     const doOpen = () => {
       document.documentElement.classList.add('wc-gutter'); // same moment as the page stops scrolling
       show(i);
@@ -329,7 +368,7 @@ export function initLightbox({ items, onIndex, audio }) {
       const unshadow = () => document.documentElement.classList.remove('wc-vt');
       vt.finished.then(unshadow, unshadow);
       // A transition can be skipped (e.g. the page is hidden); the view still opens.
-      vt.ready.then(() => { const a = corners(radius('--r-lg', 32), radius('--r-md', 24)); const stop = () => a?.cancel(); vt.finished.then(stop, stop); }, () => {});
+      vt.ready.then(() => { const a = corners(r0, radius('--r-md', 24)); const stop = () => a?.cancel(); vt.finished.then(stop, stop); }, () => {});
       vt.finished.catch(() => {});
       return;
     }
@@ -362,7 +401,7 @@ export function initLightbox({ items, onIndex, audio }) {
     const scale = t.width / r.width;
     return {
       // Scaled down, the corners must still look like the thumbnail's.
-      borderRadius: radius('--r-lg', 32) / Math.max(0.05, scale),
+      borderRadius: radiusOf(thumb, radius('--r-lg', 32)) / Math.max(0.05, scale),
       x: t.left + t.width / 2 - (r.left + r.width / 2),
       y: t.top + t.height / 2 - (r.top + r.height / 2),
       scale,
@@ -394,7 +433,7 @@ export function initLightbox({ items, onIndex, audio }) {
       });
       const clean = () => { thumb.style.removeProperty('view-transition-name'); animating = false; document.documentElement.classList.remove('wc-gutter', 'wc-vt'); };
       vt.finished.then(clean, clean);
-      vt.ready.then(() => { const a = corners(radius('--r-md', 24), radius('--r-lg', 32)); const stop = () => a?.cancel(); vt.finished.then(stop, stop); }, () => {});
+      vt.ready.then(() => { const a = corners(radius('--r-md', 24), radiusOf(thumb, radius('--r-lg', 32))); const stop = () => a?.cancel(); vt.finished.then(stop, stop); }, () => {});
       return;
     }
     animating = true;

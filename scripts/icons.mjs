@@ -23,7 +23,8 @@ export const icons = {
   image: s('<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.500"/><path d="M21 16l-5-5-8 8"/>'),
   soundOn: s('<path d="M4 10v4h3l5 4V6L7 10z"/><path class="wave wave--1" d="M15.500 9.500a3.500 3.500 0 0 1 0 5"/><path class="wave wave--2" d="M18 7a7 7 0 0 1 0 10"/>'),
   soundOff: s('<path d="M4 10v4h3l5 4V6L7 10z"/><path d="M16 9.500l5 5M21 9.500l-5 5"/>'),
-  kids: s('<circle cx="12" cy="7" r="3"/><path d="M6 21v-3a6 6 0 0 1 12 0v3"/><path d="M9 4.500l-1.500-2M15 4.500l1.500-2"/>'),
+  // Round 14: a child holding a balloon (the old figure's two head lines read as horns).
+  kids: s('<circle cx="8" cy="9.500" r="2.500"/><path d="M3.500 21v-2a4.500 4.500 0 0 1 9 0v2"/><path d="M11.500 15.500l2.500-3"/><path d="M14 12.500c2-.500 4-1.500 4-3.500"/><ellipse cx="18" cy="5.500" rx="3" ry="3.500"/>'),
   youth: s('<circle cx="8" cy="8" r="3"/><circle cx="17" cy="9" r="2.500"/><path d="M2.500 21v-2a5.500 5.500 0 0 1 11 0v2M15 21v-1.500a4 4 0 0 1 6.500-3"/>'),
 
   // Activity icons (48 box). Parts with classes are animated in CSS.
