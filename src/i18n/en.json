@@ -307,7 +307,7 @@
       "agree": "Tick this box to continue.",
       "signature": "Draw your signature in the box, or type your name instead.",
       "signDate": "Enter the date of signing.",
-      "signDateFuture": "The date of signing cannot be in the future.",
+      "signDateFuture": "The date of signing cannot be a future date. Choose today or an earlier date.",
       "shot": "Attach a screenshot of your payment.",
       "shotType": "The screenshot must be a JPG, PNG or WebP image.",
       "shotRead": "We could not read that image. Please choose another.",
@@ -390,6 +390,7 @@
       "consent": "choose YES for medical emergency consent",
       "agree": "tick the box to agree",
       "sign": "sign in the box or type your name instead",
+      "date": "choose a date of signing that is today or earlier",
       "and": "and"
     },
     "draftRestored": "We kept the details you were filling in. Please check them before you continue.",
