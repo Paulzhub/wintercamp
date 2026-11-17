@@ -125,6 +125,12 @@ export function initParticles(root = document) {
     let any = false;
     for (const f of fields) {
       if (!f.visible) continue;
+      // Round 16: dark sections marked data-world-off leave the snow to the 3D scene.
+      if (f.host.hasAttribute('data-world-off') && document.documentElement.classList.contains('has-world')) {
+        if (!f.off) { f.ctx.clearRect(0, 0, f.canvas.width, f.canvas.height); f.off = true; }
+        continue;
+      }
+      f.off = false;
       any = true;
       draw(f, dt, now / 1000);
     }

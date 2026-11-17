@@ -13,6 +13,7 @@ import { initLoader } from './loader.js';
 import { initParticles } from './particles.js';
 import { initEffects } from './effects.js';
 import { initMarquee } from './marquee.js';
+import { initExplore } from './explore.js';
 
 export function boot() {
   const html = document.documentElement;
@@ -32,6 +33,7 @@ export function boot() {
     initRegistration({ audio, motion });
     initSeatLine();
     initMarquee();
+    initExplore();
     const fx = initEffects({ audio, hero, motion });
     const intro = motion.heroIntro;
     motion.heroIntro = () => { intro(); fx.countdown.play(); };
