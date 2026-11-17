@@ -478,5 +478,41 @@
         ]
       }
     ]
+  },
+  "explore": {
+    "eyebrow": "Explore",
+    "title": "Find your way around",
+    "lead": "Snow View Residency in McLeodganj, with this year's lantern shining over it. Turn it round and tap a number to learn more.",
+    "hint": "Drag sideways to turn it. Tap a number for details.",
+    "label": "3D model of the camp: the ridge, Snow View Residency and a lantern above them",
+    "tilt": "Tilt to turn",
+    "close": "Close",
+    "spots": [
+      {
+        "key": "theme",
+        "title": "Illuminate",
+        "text": "This year's theme is Illuminate: Light of the World."
+      },
+      {
+        "key": "dates",
+        "title": "Dates",
+        "text": "Youth (11 and over): 4 to 6 January 2027. Kids (11 and under): 11 to 13 January 2027."
+      },
+      {
+        "key": "venue",
+        "title": "Venue",
+        "text": "Snow View Residency, Jogiwara Road, McLeodganj, Dharamshala."
+      },
+      {
+        "key": "picnic",
+        "title": "Day 3 picnic",
+        "text": "A day out with a treasure hunt, team challenges and prizes to win."
+      },
+      {
+        "key": "fee",
+        "title": "Fee and seats",
+        "text": "₹500 per child by UPI, non-refundable. 30 seats in each group, first come, first served."
+      }
+    ]
   }
 }

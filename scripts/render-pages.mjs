@@ -581,6 +581,8 @@ ${framed(lang, t, 'home')}
 
 ${siteHeader(lang, t, 'home')}
 
+<div class="world" aria-hidden="true"><canvas class="hero__canvas world__canvas" id="scene"></canvas></div>
+
 <main id="main" tabindex="-1">
 
 <section class="hero dark" id="home" data-section>
@@ -591,7 +593,6 @@ ${siteHeader(lang, t, 'home')}
       <path class="ridge ridge--2" d="M0 450 L100 410 L210 452 L330 372 L420 424 L540 350 L660 430 L770 366 L900 440 L1010 384 L1130 446 L1260 392 L1360 436 L1440 404 L1440 600 L0 600Z"/>
       <path class="ridge ridge--1" d="M0 520 L140 478 L260 516 L380 462 L520 512 L640 470 L780 522 L920 474 L1060 520 L1200 480 L1320 516 L1440 488 L1440 600 L0 600Z"/>
     </svg>
-    <canvas class="hero__canvas" id="scene"></canvas>
   </div>
   <div class="hero__content">
     <h1 class="hero__h1">
@@ -635,11 +636,34 @@ ${siteHeader(lang, t, 'home')}
   </div>
 </section>
 
-<section class="section dark gallery" id="gallery" data-particles="secondary" data-section aria-labelledby="gallery-title">
+<section class="section dark explore" id="explore" aria-labelledby="explore-title">
   <div class="wrap">
+    <div class="glass-head">
+      <p class="eyebrow" data-reveal>${esc(t.explore.eyebrow)}</p>
+      <h2 class="title" id="explore-title" data-title>${esc(t.explore.title)}</h2>
+      <p class="lead" data-reveal>${esc(t.explore.lead)}</p>
+    </div>
+    <div class="explore__frame" data-reveal>
+      <canvas class="explore__canvas" id="explore-canvas" role="img" aria-label="${esc(t.explore.label)}" data-cursor="${esc(t.gallery.cursorDrag)}"></canvas>
+      <ol class="explore__spots">
+        ${t.explore.spots.map((sp, i) => `<li class="spot" data-spot="${sp.key}">
+          <button type="button" class="spot__pin" aria-expanded="false" aria-controls="spot-${sp.key}"><span aria-hidden="true">${i + 1}</span><span class="sr-only">${esc(sp.title)}</span></button>
+          <div class="spot__card" id="spot-${sp.key}"><h3 class="spot__title"><span class="spot__n" aria-hidden="true">${i + 1}</span>${esc(sp.title)}</h3><p>${esc(sp.text)}</p><button type="button" class="spot__close" aria-label="${esc(t.explore.close)}: ${esc(sp.title)}">${icons.close}</button></div>
+        </li>`).join('\n        ')}
+      </ol>
+      <p class="explore__hint" aria-hidden="true">${esc(t.explore.hint)}</p>
+      <button type="button" class="btn btn--outline btn--sm explore__tilt" id="explore-tilt" aria-pressed="false" hidden><span class="btn__label">${esc(t.explore.tilt)}</span></button>
+    </div>
+  </div>
+</section>
+
+<section class="section dark gallery" id="gallery" data-particles="secondary" data-world-off data-section aria-labelledby="gallery-title">
+  <div class="wrap">
+    <div class="glass-head">
     <p class="eyebrow" data-reveal>${esc(t.gallery.eyebrow)}</p>
     <h2 class="title" id="gallery-title" data-title>${esc(t.gallery.title)}</h2>
     <p class="lead" data-reveal>${esc(t.gallery.lead)}</p>
+    </div>
   </div>
   ${
     gallery.length
@@ -680,7 +704,7 @@ ${galleryItems(lang, t)}
 
 </main>
 
-<footer class="footer dark" id="contact" data-particles="secondary" data-section>
+<footer class="footer dark" id="contact" data-particles="secondary" data-world-off data-section>
   <div class="wrap">
     <div class="footer__grid">
       <div data-reveal>
