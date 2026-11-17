@@ -1,9 +1,14 @@
 // Hero: the pointer (device tilt or scroll on phones) is a light source that
 // brightens the headline letters and moves the light in the 3D scene.
+// Round 16 (B): the 3D scene is one continuous world behind the whole home page
+// (world3d.js, a fixed canvas). The page scroll scrubs it through four scenes;
+// it pauses while a dialog is open, the tab is hidden or the 3D model panel
+// covers the screen. Activities and FAQ turn into frosted lavender panels over it
+// (html.has-world). Reduced motion or no WebGL: a still frame and today's page.
 import { $, $$ } from './i18n.js';
 import { reduced } from './motion.js';
 
-function webglAvailable() {
+export function webglAvailable() {
   try {
     const c = document.createElement('canvas');
     return Boolean(window.WebGLRenderingContext && (c.getContext('webgl2') || c.getContext('webgl')));
@@ -77,23 +82,75 @@ export function initHero() {
     }, { passive: true });
   }
 
+  // Scroll position -> scene progress. Anchors: the top (hero), the middle of
+  // Activities, the middle of the Gallery, the bottom (footer). Between anchors the
+  // camera eases in and out (smoothstep), so it lingers on each scene.
+  const html = document.documentElement;
+  let anchors = [0, 1, 2, 3];
+  const layout = () => {
+    const max = Math.max(1, html.scrollHeight - window.innerHeight);
+    const mid = (id) => {
+      const el = document.getElementById(id);
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return Math.min(max, Math.max(0, r.top + window.scrollY + r.height / 2 - window.innerHeight / 2));
+    };
+    const a = [0, mid('activities') ?? max / 3, mid('gallery') ?? (2 * max) / 3, max];
+    for (let i = 1; i < a.length; i++) a[i] = Math.max(a[i], a[i - 1] + 1);
+    anchors = a;
+  };
+  const progressAt = (y) => {
+    const a = anchors;
+    if (y <= a[0]) return 0;
+    for (let i = 0; i < a.length - 1; i++) {
+      if (y <= a[i + 1]) {
+        const t = (y - a[i]) / (a[i + 1] - a[i]);
+        return (i + t * t * (3 - 2 * t)) / (a.length - 1);
+      }
+    }
+    return 1;
+  };
+  hero.wcProgressAt = progressAt; // read by the end-to-end checks
+  const lite = () => {
+    const nav = navigator;
+    const small = window.innerWidth < 768;
+    return Boolean(nav.connection?.saveData) || (small && ((nav.hardwareConcurrency || 8) <= 4 || (nav.deviceMemory || 8) <= 4));
+  };
+
   const ready = (canvas && webglAvailable()
-    ? import('./hero3d.js')
-      .then((m) => m.createScene(canvas, { reduced: reduced() }))
+    ? import('./world3d.js')
+      .then((m) => m.createWorld(canvas, { reduced: reduced(), lite: lite() }))
       .then((s) => {
         scene = s;
         s.settle(settleP);
-        document.documentElement.classList.add('has-webgl');
-        if ('IntersectionObserver' in window) {
-          new IntersectionObserver(([e]) => s.setActive(e.isIntersecting)).observe(hero);
-        }
-        document.addEventListener('visibilitychange', () => s.setActive(!document.hidden));
+        html.classList.add('has-webgl');
+        if (!reduced()) html.classList.add('has-world');
+        // Pause while a dialog is open (is-modal), the tab is hidden, or the 3D model panel covers the screen.
+        let covered = false;
+        const sync = () => s.setActive(!document.hidden && !html.classList.contains('is-modal') && !html.classList.contains('wc-vt') && !covered);
+        document.addEventListener('visibilitychange', sync);
+        document.addEventListener('wc:explore', (e) => { covered = Boolean(e.detail?.covering); sync(); });
+        new MutationObserver(sync).observe(html, { attributes: true, attributeFilter: ['class'] });
+        sync();
+        // Scrub with the scroll (not with reduced motion: the scene stays on scene 1).
+        let raf = 0;
+        const update = () => { raf = 0; if (!reduced()) s.setProgress(progressAt(window.scrollY)); };
+        window.addEventListener('scroll', () => { if (!raf) raf = requestAnimationFrame(update); }, { passive: true });
+        const relayout = () => { layout(); update(); };
+        window.addEventListener('resize', relayout);
+        window.addEventListener('load', relayout);
+        if ('ResizeObserver' in window) new ResizeObserver(relayout).observe(document.getElementById('main') || document.body);
+        relayout();
+        window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener?.('change', (e) => {
+          html.classList.toggle('has-world', !e.matches);
+          s.setProgress(e.matches ? 0 : progressAt(window.scrollY));
+        });
         return s.firstFrame;
       })
     : Promise.resolve()
   ).catch((err) => {
     console.warn('3D scene unavailable, showing the still image instead.', err);
-    document.documentElement.classList.remove('has-webgl');
+    html.classList.remove('has-webgl', 'has-world');
   });
 
   hero.wcScene = () => scene?.state || null; // read by the end-to-end checks

@@ -182,33 +182,60 @@ async function axe(page, label, context) {
 async function drawSignature(page) {
   await page.locator('#f-sign').scrollIntoViewIfNeeded();
   await page.waitForTimeout(400);
-  const box = await page.locator('#f-sign').boundingBox();
+  // The registration view scrolls smoothly (its own Lenis), which can now and then undo a jump
+  // made from outside: make sure the pad is on screen and has stopped moving before drawing.
+  let box = await page.locator('#f-sign').boundingBox();
+  const vh = page.viewportSize().height;
+  for (let k = 0; k < 20; k++) {
+    if (box.y < 0 || box.y + box.height > vh) await page.evaluate(() => document.getElementById('f-sign').scrollIntoView({ block: 'center' }));
+    await page.waitForTimeout(150);
+    const b2 = await page.locator('#f-sign').boundingBox();
+    const still = Math.abs(b2.y - box.y) < 0.5;
+    box = b2;
+    if (still && box.y >= 0 && box.y + box.height <= vh) break;
+  }
   await page.mouse.move(box.x + 40, box.y + box.height * 0.6);
   await page.mouse.down();
   for (let i = 0; i <= 24; i++) await page.mouse.move(box.x + 40 + i * 12, box.y + box.height * (0.6 + Math.sin(i / 3) * 0.15));
   await page.mouse.up();
+  await page.waitForTimeout(100);
+  const gate = await page.evaluate(() => ({ next: document.getElementById('reg-next').disabled, gate: document.getElementById('step-gate')?.textContent.trim(), consent: document.querySelector('input[name="consent"]:checked')?.value, agree: document.getElementById('f-agree').checked, mode: document.querySelector('.sign')?.className }));
+  if (gate.next) { console.log('DEBUG sign', JSON.stringify(gate), JSON.stringify(box)); await page.screenshot({ path: path.join(out, 'debug-sign.png') }); }
 }
 
+// Each step focuses its first field 80 ms after Next; the checks wait 150 ms after Next so
+// their own typing is not interrupted by that (a fast run could otherwise type into the wrong field).
 async function fillToPayment(page, { cat, dob }) {
   await page.waitForSelector(`.cat[data-cat="${cat}"] [data-choose]:not([disabled])`, { timeout: 8000 });
   await page.click(`.cat[data-cat="${cat}"] [data-choose]`);
+  const chosenAt = Date.now();
   await page.fill('#f-name', cat === 'kids' ? 'Tenzin Norbu' : 'Pema Dolkar');
   const [y, m, d] = dob.split('-').map(Number);
   await page.selectOption('#f-dob-d', String(d));
   await page.selectOption('#f-dob-m', String(m));
   await page.selectOption('#f-dob-y', String(y));
-  await page.click('#reg-next');
+  await page.click('#reg-next'); await page.waitForTimeout(150);
   await page.fill('#f-parent', 'Dolma Tsering');
   await page.fill('#f-address', 'Jogiwara Road, McLeodganj, Dharamshala');
   await page.fill('#f-phone-1', '98765 43210');
-  await page.click('#reg-next');
+  await page.click('#reg-next'); await page.waitForTimeout(150);
   await page.click('label.choice:has(input[name="consent"][value="yes"])');
   await page.click('label.choice:has(#f-agree)');
   await drawSignature(page);
-  await page.click('#reg-next');
+  try {
+    await page.waitForSelector('#reg-next:not([disabled])', { timeout: 8000 });
+  } catch (err) {
+    await page.screenshot({ path: path.join(out, `debug-gate-${cat}.png`) });
+    console.log('DEBUG gate', await page.evaluate(() => ({ gate: document.getElementById('step-gate')?.textContent.trim(), consent: document.querySelector('input[name="consent"]:checked')?.value, agree: document.getElementById('f-agree').checked })));
+    throw err;
+  }
+  await page.click('#reg-next'); await page.waitForTimeout(150);
   try {
     await page.waitForSelector('#pay-panel:not([hidden]), #pay-full:not([hidden])', { timeout: 8000 });
     if (await page.isVisible('#pay-panel')) await page.click('label.choice:has(#f-refund)');
+    // The server refuses a form sent within 5 s of choosing the group (a bot). Faster runs
+    // (round 16 made the page lighter in headless Chrome) can be quicker than that.
+    await page.waitForTimeout(Math.max(0, 5400 - (Date.now() - chosenAt)));
   } catch (err) {
     await page.screenshot({ path: path.join(out, `debug-${cat}.png`) });
     console.log('DEBUG', await page.evaluate(() => ({ step: [...document.querySelectorAll('.step')].findIndex((s) => !s.hidden), summary: document.getElementById('form-summary').innerText, send: document.getElementById('send-error').innerText, checking: !document.getElementById('pay-checking').hidden, name: document.getElementById('f-name').value })));
@@ -338,7 +365,7 @@ async function main() {
       await page.screenshot({ path: path.join(out, 'reg-pick-390.png') });
       await axe(page, 'Registration: choose category', '#register');
       await page.click('.cat[data-cat="kids"] [data-choose]');
-      await page.click('#reg-next');
+      await page.click('#reg-next'); await page.waitForTimeout(150);
       check('Inline errors and an error summary on an empty step', await page.isVisible('#form-summary') && await page.isVisible('#err-name'));
       check('Errors are linked to fields', (await page.getAttribute('#f-name', 'aria-invalid')) === 'true' && (await page.getAttribute('#f-name', 'aria-describedby')).includes('err-name'));
       await page.screenshot({ path: path.join(out, 'reg-errors-390.png'), fullPage: false });
@@ -441,14 +468,14 @@ async function main() {
       await page.click('.cat[data-cat="kids"] [data-choose]');
       await page.fill('#f-name', 'Late Child');
       await page.selectOption('#f-dob-d', '2'); await page.selectOption('#f-dob-m', '2'); await page.selectOption('#f-dob-y', '2020');
-      await page.click('#reg-next');
+      await page.click('#reg-next'); await page.waitForTimeout(150);
       await page.fill('#f-parent', 'Parent'); await page.fill('#f-address', 'Address'); await page.fill('#f-phone-1', '9876543210');
-      await page.click('#reg-next');
+      await page.click('#reg-next'); await page.waitForTimeout(150);
       await page.click('label.choice:has(input[name="consent"][value="yes"])');
       await page.click('label.choice:has(#f-agree)');
       await drawSignature(page);
       await api('/__seed', { category: 'kids', count: 1 });
-      await page.click('#reg-next');
+      await page.click('#reg-next'); await page.waitForTimeout(150);
       await page.waitForSelector('#pay-full:not([hidden])', { timeout: 8000 });
       check('Seats re-checked before payment: full message instead of payment details', await page.isHidden('#pay-panel'));
       done();
@@ -665,16 +692,16 @@ async function main() {
       await page.click('.hero__cta [data-open-register]');
       await page.waitForSelector('.cat[data-cat="youth"] [data-choose]:not([disabled])');
       await page.click('.cat[data-cat="youth"] [data-choose]');
-      await page.click('#reg-next');
+      await page.click('#reg-next'); await page.waitForTimeout(150);
       await page.waitForTimeout(500);
       const block1 = await page.evaluate(() => ({ blocked: !document.getElementById('step-blocked').hidden, focus: document.activeElement?.id, step: [...document.querySelectorAll('.step')].findIndex((x) => !x.hidden) }));
       check('Empty required fields block "Next": warning shown, stays on step 1, focus on the first field', block1.blocked && block1.step === 0 && block1.focus === 'f-name', JSON.stringify(block1));
       await page.fill('#f-name', 'Pema Dolkar');
-      await page.click('#reg-next');
+      await page.click('#reg-next'); await page.waitForTimeout(150);
       await page.waitForTimeout(400);
       check('Still blocked until the date of birth is filled', await page.evaluate(() => [...document.querySelectorAll('.step')].findIndex((x) => !x.hidden)) === 0 && await page.isVisible('#err-dob'));
       await page.selectOption('#f-dob-d', '1'); await page.selectOption('#f-dob-m', '6'); await page.selectOption('#f-dob-y', '2012');
-      await page.click('#reg-next');
+      await page.click('#reg-next'); await page.waitForTimeout(150);
       await page.fill('#f-parent', 'Dolma');
       await page.fill('#f-address', 'McLeodganj');
       await page.focus('#f-phone-1');
@@ -686,11 +713,11 @@ async function main() {
       check('Phone field stops at 10 digits and warns', ph2.v === '9876543210' && /10 digits/.test(ph2.warn), JSON.stringify(ph2));
       await page.click('#phone-add');
       await page.fill('#f-phone-2', '12345');
-      await page.click('#reg-next');
+      await page.click('#reg-next'); await page.waitForTimeout(150);
       await page.waitForTimeout(400);
       check('A 5-digit phone number blocks "Next" with "Phone numbers up to 10 digits only." (round 14)', (await page.textContent('#err-phones')).trim() === 'Phone numbers up to 10 digits only.' && await page.evaluate(() => [...document.querySelectorAll('.step')].findIndex((x) => !x.hidden)) === 1);
       await page.fill('#f-phone-2', '');
-      await page.click('#reg-next');
+      await page.click('#reg-next'); await page.waitForTimeout(150);
       await page.click('label.choice:has(input[name="consent"][value="yes"])');
       await page.click('label.choice:has(#f-agree)');
       await page.waitForTimeout(400);
@@ -699,7 +726,7 @@ async function main() {
       check('"Type your name instead" shows a name field and hides the drawing box', await page.isVisible('#f-sign-typed') && await page.isHidden('#sign-wrap'));
       await page.fill('#f-sign-typed', 'Dolma Tsering');
       await page.screenshot({ path: path.join(out, 'reg-typed-signature-1280.png') });
-      await page.click('#reg-next');
+      await page.click('#reg-next'); await page.waitForTimeout(150);
       await page.waitForSelector('#pay-panel:not([hidden])');
       if (!(await page.isChecked('#f-refund'))) await page.click('label.choice:has(#f-refund)');
       // A dismissed file picker fires a bubbling "cancel" in Chrome: it must not close the view.
@@ -1250,9 +1277,9 @@ async function main() {
       await page.click('.cat[data-cat="kids"] [data-choose]');
       await page.fill('#f-name', 'Sonam Wangmo');
       await page.selectOption('#f-dob-d', '3'); await page.selectOption('#f-dob-m', '4'); await page.selectOption('#f-dob-y', '2018');
-      await page.click('#reg-next');
+      await page.click('#reg-next'); await page.waitForTimeout(150);
       await page.fill('#f-parent', 'Lhamo Tsering'); await page.fill('#f-address', 'Bhagsu Road, McLeodganj'); await page.fill('#f-phone-1', '9876501234');
-      await page.click('#reg-next');
+      await page.click('#reg-next'); await page.waitForTimeout(150);
       await page.waitForTimeout(300);
       check('Consent step: Next is disabled until YES and the agreement are chosen', await page.isDisabled('#reg-next') && await page.isVisible('#step-gate'));
       await page.click('label.choice:has(input[name="consent"][value="no"])');
@@ -1266,7 +1293,7 @@ async function main() {
       await page.click('label.choice:has(#f-agree)'); // untick
       check('Unticking the agreement disables Next again', await page.isDisabled('#reg-next'));
       await page.click('label.choice:has(#f-agree)');
-      await page.click('#reg-next');
+      await page.click('#reg-next'); await page.waitForTimeout(150);
       await page.waitForSelector('#pay-panel:not([hidden])', { timeout: 8000 });
       // Hold and countdown.
       await page.waitForSelector('#hold:not([hidden])');
@@ -1383,13 +1410,13 @@ async function main() {
       await page.click('.cat[data-cat="kids"] [data-choose]');
       await page.fill('#f-name', 'Tenzin Norbu');
       await page.selectOption('#f-dob-d', '15'); await page.selectOption('#f-dob-m', '3'); await page.selectOption('#f-dob-y', '2019');
-      await page.click('#reg-next');
+      await page.click('#reg-next'); await page.waitForTimeout(150);
       await page.fill('#f-parent', 'Dolma'); await page.fill('#f-address', 'McLeodganj'); await page.fill('#f-phone-1', '9876543210');
-      await page.click('#reg-next');
+      await page.click('#reg-next'); await page.waitForTimeout(150);
       await page.click('label.choice:has(input[name="consent"][value="yes"])');
       await page.click('label.choice:has(#f-agree)');
       await drawSignature(page);
-      await page.click('#reg-next');
+      await page.click('#reg-next'); await page.waitForTimeout(150);
       await page.waitForSelector('#pay-panel:not([hidden])', { timeout: 8000 });
       check('Already registered child: no answer before paying (names and birth dates cannot be tested); payment details shown', (await page.$('#pay-dup')) === null && await page.isVisible('#pay-panel'));
       await page.screenshot({ path: path.join(out, 'r12-no-dup-before-390.png') });
@@ -1398,7 +1425,7 @@ async function main() {
       await page.click('#reg-back');
       await page.click('#reg-back');
       await page.fill('#f-name', 'Karma Yangchen');
-      await page.click('#reg-next'); await page.click('#reg-next'); await page.click('#reg-next');
+      await page.click('#reg-next'); await page.waitForTimeout(150); await page.click('#reg-next'); await page.waitForTimeout(150); await page.click('#reg-next'); await page.waitForTimeout(150);
       await page.waitForSelector('#pay-panel:not([hidden])', { timeout: 8000 });
       if (!(await page.isChecked('#f-refund'))) await page.click('label.choice:has(#f-refund)');
       await page.setInputFiles('#f-shot', shotPng);
@@ -1611,9 +1638,9 @@ async function main() {
       await page.click('.cat[data-cat="youth"] [data-choose]');
       await page.fill('#f-name', 'Karma Yangzom');
       await page.selectOption('#f-dob-d', '9'); await page.selectOption('#f-dob-m', '9'); await page.selectOption('#f-dob-y', '2012');
-      await page.click('#reg-next');
+      await page.click('#reg-next'); await page.waitForTimeout(150);
       await page.fill('#f-parent', 'Pasang Lhamo'); await page.fill('#f-address', 'Temple Road, McLeodganj'); await page.fill('#f-phone-1', '9876512345');
-      await page.click('#reg-next');
+      await page.click('#reg-next'); await page.waitForTimeout(150);
       await page.waitForTimeout(300);
       const gate = async () => ((await page.isHidden('#step-gate')) ? '' : (await page.textContent('#step-gate')).trim());
       check('Signature gate: with nothing done, the note lists all three things', await page.isDisabled('#reg-next') && (await gate()) === 'To continue, choose YES for medical emergency consent, tick the box to agree and sign in the box or type your name instead.', await gate());
@@ -2416,11 +2443,11 @@ async function main() {
       await page.selectOption('#f-dob-d', '8');
       await page.selectOption('#f-dob-m', '8');
       await page.selectOption('#f-dob-y', '2018');
-      await page.click('#reg-next');
+      await page.click('#reg-next'); await page.waitForTimeout(150);
       await page.fill('#f-parent', 'Dolma Tsering');
       await page.fill('#f-address', 'Jogiwara Road, McLeodganj, Dharamshala');
       await page.fill('#f-phone-1', '98765 43210');
-      await page.click('#reg-next');
+      await page.click('#reg-next'); await page.waitForTimeout(150);
       await page.click('label.choice:has(input[name="consent"][value="yes"])');
       await page.click('label.choice:has(#f-agree)');
       await drawSignature(page);
@@ -2442,7 +2469,7 @@ async function main() {
       await page.waitForTimeout(200);
       const r2 = await page.evaluate(() => ({ errShown: !document.getElementById('err-signDate').hidden, next: document.getElementById('reg-next').disabled }));
       check(`${width} Date of signing: today clears the message and enables Next`, !r2.errShown && !r2.next, JSON.stringify(r2));
-      await page.click('#reg-next');
+      await page.click('#reg-next'); await page.waitForTimeout(150);
       await page.waitForSelector('#pay-panel:not([hidden])', { timeout: 8000 });
       check(`${width} Date of signing: with today's date the family reaches payment`, await page.isVisible('#pay-panel'));
       if (width === 390) {
@@ -2787,6 +2814,171 @@ async function main() {
       const r = await page.evaluate(() => ({ sw: document.scrollingElement.scrollWidth, wrap: document.querySelector('#contact .wrap').getBoundingClientRect().width, track: document.querySelector('#marquee .marquee__track').getBoundingClientRect().width }));
       check(`${width}px: no sideways scroll, content column stays readable, marquee covers the width`, r.sw <= width && r.wrap <= 1240 && r.track >= width, JSON.stringify(r));
       if (width === 2560) await page.screenshot({ path: path.join(out, 'r16-footer-2560.png') });
+      await ctx.close();
+    }
+
+    // 28. Round 16 (B): one 3D world behind the page (Lantern Star), frosted lavender sections, the Explore model.
+    // 28a. The world: scrubbed by the scroll through four scenes, paused when hidden, still with reduced motion.
+    for (const width of [1280, 390]) {
+      const phone = width < 768;
+      const ctx = await browser.newContext({ viewport: { width, height: phone ? 844 : 900 }, ...(phone ? { isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : {}) });
+      const page = await ctx.newPage();
+      const done = watch(page, `Round 16 world ${width}`);
+      await page.goto(SITE);
+      await enter(page, '#enter-silent', phone);
+      await page.waitForTimeout(2500);
+      const st = () => page.evaluate(() => document.getElementById('home').wcScene());
+      const base = await page.evaluate(() => {
+        const w = document.querySelector('.world');
+        return { cls: document.documentElement.className, pos: getComputedStyle(w).position, z: getComputedStyle(w).zIndex, mainZ: getComputedStyle(document.getElementById('main')).zIndex, hero: getComputedStyle(document.getElementById('home')).backgroundColor };
+      });
+      check(`World ${width}: one fixed 3D layer behind the page; the hero is see-through`, /has-world/.test(base.cls) && base.pos === 'fixed' && base.z === '0' && base.mainZ === '1' && base.hero === 'rgba(0, 0, 0, 0)', JSON.stringify(base));
+      await page.screenshot({ path: path.join(out, `r16b-scene1-hero-${width}.png`) });
+      const at = [];
+      for (const [id, want, name] of [['activities', 1 / 3, 'scene2-activities'], ['gallery', 2 / 3, 'scene3-gallery'], [null, 1, 'scene4-footer']]) {
+        await page.evaluate((i) => {
+          if (!i) { window.scrollTo(0, document.documentElement.scrollHeight); return; }
+          const e = document.getElementById(i);
+          window.scrollTo(0, e.getBoundingClientRect().top + scrollY + e.offsetHeight / 2 - innerHeight / 2);
+        }, id);
+        await page.waitForTimeout(phone ? 4500 : 3000);
+        const s = await st();
+        at.push({ id, want: want.toFixed(3), got: s.progress.toFixed(3), target: s.target.toFixed(3) });
+        await page.screenshot({ path: path.join(out, `r16b-${name}-${width}.png`) });
+      }
+      check(`World ${width}: scrolling scrubs the scene (Activities 1/3, Gallery 2/3, footer 1)`, at.every((a) => Math.abs(a.target - a.want) < 0.02 && Math.abs(a.got - a.want) < 0.06), JSON.stringify(at));
+      const ease = await page.evaluate(() => {
+        const h = document.getElementById('home');
+        const a = document.getElementById('activities');
+        const y1 = a.getBoundingClientRect().top + scrollY + a.offsetHeight / 2 - innerHeight / 2;
+        return { q: h.wcProgressAt(y1 * 0.25), mid: h.wcProgressAt(y1 * 0.5), end: h.wcProgressAt(y1) };
+      });
+      check(`World ${width}: the camera eases in and out between scenes (lingers on each)`, ease.q < 0.25 / 3 - 0.01 && Math.abs(ease.mid - 0.5 / 3) < 0.01 && Math.abs(ease.end - 1 / 3) < 0.01, JSON.stringify(ease));
+      // Frosted lavender: text keeps 4.5:1 whatever is behind (worst cases: black, indigo, white, the poster's pink, orange).
+      const frost = await page.evaluate(() => {
+        const cs = getComputedStyle(document.getElementById('activities'));
+        const [r, g, b, a = 1] = cs.backgroundColor.match(/[\d.]+/g).map(Number);
+        const lum = ([R, G, B]) => [R, G, B].map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }).reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0);
+        const ratio = (x, y) => { const [L1, L2] = [lum(x), lum(y)].sort((m, n) => n - m); return (L1 + 0.05) / (L2 + 0.05); };
+        const behind = [[0, 0, 0], [24, 14, 85], [255, 255, 255], [230, 30, 123], [248, 156, 56]];
+        const texts = [[24, 14, 85], [74, 66, 112]];
+        let min = 99;
+        for (const k of behind) { const mix = [r, g, b].map((v, i) => v * a + k[i] * (1 - a)); for (const t of texts) min = Math.min(min, ratio(t, mix)); }
+        return { bg: cs.backgroundColor, blur: cs.backdropFilter || cs.webkitBackdropFilter, min: Number(min.toFixed(2)), faq: getComputedStyle(document.getElementById('faq')).backgroundColor, lite: document.documentElement.classList.contains('world-lite') };
+      });
+      // Blurred on tablets and desktops, unless slow frames switched to the lighter mode (no blur, more lavender);
+      // headless Chrome draws WebGL in software, so it often does.
+      check(`World ${width}: Activities and FAQ are frosted lavender (${phone ? 'no blur on phones' : 'blurred, or no blur in the lighter mode'}), text 4.5:1+ whatever glows behind`, frost.bg === frost.faq && /244, 241, 251, 0\.[89]/.test(frost.bg) && (phone || frost.lite ? frost.blur === 'none' : /blur/.test(frost.blur)) && frost.min >= 4.5, JSON.stringify(frost));
+      const parts = await page.evaluate(() => { const g = document.getElementById('gallery'); g.scrollIntoView(); return null; });
+      await page.waitForTimeout(800);
+      const off = await page.evaluate(() => document.getElementById('gallery').wcParticles?.off);
+      check(`World ${width}: the gallery's 2D snow steps aside for the 3D scene`, off === true, String(off) + String(parts));
+      // Paused while a dialog is open, and while the Explore panel covers the screen.
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.waitForTimeout(900);
+      await page.click('.hero__cta [data-open-register]');
+      await page.waitForTimeout(900);
+      const inDialog = (await st()).running;
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(1000);
+      const afterDialog = (await st()).running;
+      await page.evaluate(() => { const e = document.getElementById('explore'); window.scrollTo(0, e.getBoundingClientRect().top + scrollY + Math.max(0, (e.offsetHeight - innerHeight) / 2)); });
+      await page.waitForTimeout(900);
+      const cover = await page.evaluate(() => { const r = document.getElementById('explore').getBoundingClientRect(); return r.top <= 0 && r.bottom >= innerHeight; });
+      const underExplore = (await st()).running;
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.waitForTimeout(900);
+      const back = (await st()).running;
+      check(`World ${width}: paused behind the registration view and under the Explore panel, running again after`, !inDialog && afterDialog && (!cover || !underExplore) && back, JSON.stringify({ inDialog, afterDialog, cover, underExplore, back }));
+      check(`World ${width}: quality steps down by itself when frames are slow`, (await st()).quality >= 0, JSON.stringify(await st()));
+      done();
+      await ctx.close();
+    }
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+      const page = await ctx.newPage();
+      await page.goto(SITE);
+      await enter(page);
+      await page.waitForTimeout(1500);
+      await page.evaluate(() => document.getElementById('gallery').scrollIntoView());
+      await page.waitForTimeout(1200);
+      const r = await page.evaluate(() => ({ cls: document.documentElement.className, act: getComputedStyle(document.getElementById('activities')).backgroundColor, scene: document.getElementById('home').wcScene(), explore: document.getElementById('explore').className }));
+      check('World, reduced motion: a still scene 1, solid sections as before, the model as a list', !/has-world/.test(r.cls) && r.act === 'rgb(244, 241, 251)' && r.scene && r.scene.progress === 0 && !r.scene.running && /is-list/.test(r.explore), JSON.stringify(r));
+      await ctx.close();
+    }
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+      const page = await ctx.newPage();
+      await page.addInitScript(() => { const g = HTMLCanvasElement.prototype.getContext; HTMLCanvasElement.prototype.getContext = function (type, ...rest) { return /webgl/.test(type) ? null : g.call(this, type, ...rest); }; });
+      const done = watch(page, 'Round 16 no WebGL');
+      await page.goto(SITE);
+      await enter(page);
+      await page.waitForTimeout(1500);
+      await page.locator('#explore').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(1200);
+      const r = await page.evaluate(() => ({ cls: document.documentElement.className, act: getComputedStyle(document.getElementById('activities')).backgroundColor, explore: document.getElementById('explore').className, cards: [...document.querySelectorAll('#explore .spot__card')].filter((c) => c.offsetHeight > 0).length, ridges: getComputedStyle(document.querySelector('.hero__ridges')).opacity }));
+      check('World, no WebGL: the still hero image, solid sections, and the five facts as cards', !/has-world|has-webgl/.test(r.cls) && r.act === 'rgb(244, 241, 251)' && /is-list/.test(r.explore) && r.cards === 5 && r.ridges === '1', JSON.stringify(r));
+      await page.locator('#explore').screenshot({ path: path.join(out, 'r16b-explore-list-1280.png') });
+      await axe(page, 'Explore as a list', '#explore');
+      done();
+      await ctx.close();
+    }
+
+    // 28b. Explore: the ridge with Snow View Residency and the Lantern floating above; turn it, tap the numbers.
+    for (const width of [1280, 390]) {
+      const phone = width < 768;
+      const ctx = await browser.newContext({ viewport: { width, height: phone ? 844 : 900 }, ...(phone ? { isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : {}) });
+      const page = await ctx.newPage();
+      const done = watch(page, `Round 16 explore ${width}`);
+      await page.goto(SITE);
+      await enter(page, '#enter-silent', phone);
+      await page.waitForTimeout(1500);
+      await page.locator('#explore .explore__frame').scrollIntoViewIfNeeded();
+      await page.waitForFunction(() => document.getElementById('explore').wcExplore, null, { timeout: 15000 });
+      await page.waitForTimeout(1800);
+      const ex = () => page.evaluate(() => document.getElementById('explore').wcExplore.state);
+      const pins = await page.evaluate(() => {
+        const f = document.querySelector('#explore .explore__frame').getBoundingClientRect();
+        return [...document.querySelectorAll('#explore .spot')].map((li) => {
+          const r = li.querySelector('.spot__pin').getBoundingClientRect();
+          return { key: li.dataset.spot, w: Math.round(r.width), inside: r.left >= f.left - 4 && r.right <= f.right + 4 && r.top >= f.top - 4 && r.bottom <= f.bottom + 4, behind: li.classList.contains('is-behind'), label: li.querySelector('.spot__pin').textContent.trim() };
+        });
+      });
+      check(`Explore ${width}: five numbered hotspots (48 px) over the model, inside the frame`, pins.length === 5 && pins.every((p) => p.w >= 48 && p.inside) && pins.filter((p) => !p.behind).length >= 3, JSON.stringify(pins));
+      await page.locator('#explore .explore__frame').screenshot({ path: path.join(out, `r16b-explore-${width}.png`) });
+      const front = pins.find((p) => !p.behind && p.key !== 'theme') || pins.find((p) => !p.behind);
+      await page.click(`#explore .spot[data-spot="${front.key}"] .spot__pin`, { force: true });
+      await page.waitForTimeout(400);
+      const opened = await page.evaluate((k) => { const li = document.querySelector(`#explore .spot[data-spot="${k}"]`); const c = li.querySelector('.spot__card'); return { exp: li.querySelector('.spot__pin').getAttribute('aria-expanded'), vis: !c.hidden && c.offsetHeight > 0, text: c.textContent.trim().slice(0, 60), others: [...document.querySelectorAll('#explore .spot__card')].filter((x) => !x.hidden).length }; }, front.key);
+      await page.locator('#explore .explore__frame').screenshot({ path: path.join(out, `r16b-explore-card-${width}.png`) });
+      check(`Explore ${width}: a number opens its tip card (one at a time)`, opened.exp === 'true' && opened.vis && opened.others === 1, JSON.stringify(opened));
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(200);
+      const closed = await page.evaluate((k) => ({ exp: document.querySelector(`#explore .spot[data-spot="${k}"] .spot__pin`).getAttribute('aria-expanded'), focus: document.activeElement?.closest('.spot')?.dataset.spot }), front.key);
+      check(`Explore ${width}: Esc closes the card and focus returns to its number`, closed.exp === 'false' && closed.focus === front.key, JSON.stringify(closed));
+      const box = await page.locator('#explore-canvas').boundingBox();
+      const a0 = (await ex()).azimuth;
+      if (!phone) {
+        await page.mouse.move(box.x + box.width / 2 - 120, box.y + box.height * 0.3);
+        await page.mouse.down();
+        for (let k = 1; k <= 10; k++) await page.mouse.move(box.x + box.width / 2 - 120 + k * 26, box.y + box.height * 0.3);
+        await page.mouse.up();
+        const a1 = (await ex()).azimuth;
+        await page.waitForTimeout(500);
+        const a2 = (await ex()).azimuth;
+        check('Explore: dragging turns the model, and it keeps turning a little after letting go (inertia)', Math.abs(a1 - a0) > 0.2 && Math.abs(a2 - a1) > 0.01, JSON.stringify({ a0, a1, a2 }));
+        await page.mouse.move(10, 10);
+        await page.waitForTimeout(4000);
+        const idle = await ex();
+        await page.waitForTimeout(800);
+        const idle2 = await ex();
+        check('Explore: left alone for 3 s it turns slowly by itself', idle.autoRotate && Math.abs(idle2.azimuth - idle.azimuth) > 0.01, JSON.stringify({ idle, idle2 }));
+      } else {
+        const r = await page.evaluate(() => ({ ta: getComputedStyle(document.getElementById('explore-canvas')).touchAction, tilt: !document.getElementById('explore-tilt').hidden, pressed: document.getElementById('explore-tilt').getAttribute('aria-pressed') }));
+        check('Explore, phone: up-and-down drags still scroll the page (touch-action pan-y); a "Tilt to turn" button, off until tapped', r.ta === 'pan-y' && r.tilt && r.pressed === 'false', JSON.stringify(r));
+      }
+      await axe(page, `Explore ${width}`, '#explore');
+      done();
       await ctx.close();
     }
   } finally {

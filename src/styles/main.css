@@ -842,11 +842,60 @@ select.input { appearance: none; padding-right: var(--s6); background-image: lin
 .marquee__toggle.is-paused .marquee__i-play { display: inline; }
 .marquee__toggle span { display: inline-flex; }
 
-/* Home and privacy page: the new page wipes up over the old one (browsers with cross-page view transitions). */
-@media (prefers-reduced-motion: no-preference) {
-  @view-transition { navigation: auto; types: wc-page; }
-  html:active-view-transition-type(wc-page)::view-transition-old(root) { animation: wc-page-old 640ms cubic-bezier(0.76, 0, 0.24, 1) both; }
-  html:active-view-transition-type(wc-page)::view-transition-new(root) { animation: wc-page-new 640ms cubic-bezier(0.76, 0, 0.24, 1) both; }
-}
-@keyframes wc-page-old { to { opacity: 0.4; } }
-@keyframes wc-page-new { from { clip-path: inset(100% 0 0 0); } to { clip-path: inset(0); } }
+
+/* ---------- Round 16 (B): the 3D world behind the page ---------- */
+/* A fixed layer behind main and the footer. Without WebGL, or with reduced motion,
+   html has no .has-world and every section keeps its solid colour, as before. */
+.world { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+#main, .footer { position: relative; z-index: 1; }
+.has-world .hero.dark { background: transparent; }
+/* Activities and FAQ: frosted lavender over the scene (Paul's choice). Text stays
+   #180E55 (and the muted #4A4270) on at least 80% lavender: 4.5:1 or more whatever glows behind (checked in tests, section 28a). */
+.has-world .activities.light, .has-world .faq.light { background: rgb(244 241 251 / 0.8); -webkit-backdrop-filter: blur(24px) saturate(140%); backdrop-filter: blur(24px) saturate(140%); }
+/* Phones and slow devices: no blur over a moving canvas (it is costly), a little more lavender instead. */
+@media (max-width: 767px) { .has-world .activities.light, .has-world .faq.light { background: rgb(244 241 251 / 0.9); -webkit-backdrop-filter: none; backdrop-filter: none; } }
+.has-world.world-lite .activities.light, .has-world.world-lite .faq.light { background: rgb(244 241 251 / 0.92); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.has-world .gallery.dark { background: rgb(24 14 85 / 0.3); }
+.has-world .footer.dark { background: linear-gradient(rgb(24 14 85 / 0.2), rgb(24 14 85 / 0.72) 70%); }
+/* Headings over the scene sit on a frosted indigo panel. */
+.has-world .glass-head { display: inline-grid; max-width: 100%; padding: var(--s3) var(--s4); border-radius: var(--r-lg); background: rgb(24 14 85 / 0.62); border: 1px solid rgb(245 245 245 / 0.14); -webkit-backdrop-filter: blur(16px) saturate(150%); backdrop-filter: blur(16px) saturate(150%); }
+.has-world .glass-head > .lead { max-width: 60ch; }
+
+/* Explore: the framed 360° model. Solid indigo, so only one 3D scene draws at a time. */
+.explore { background: var(--c-dark); }
+.explore__frame { position: relative; margin-top: var(--s6); border-radius: var(--r-lg); overflow: hidden; background: #120A45; box-shadow: var(--sh3); aspect-ratio: 16 / 10; max-height: 76vh; max-height: 76svh; width: 100%; }
+.explore__frame::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: var(--spectrum); pointer-events: none; }
+@media (max-width: 767px) { .explore__frame { aspect-ratio: 4 / 5; } }
+.explore__canvas { display: block; width: 100%; height: 100%; }
+.explore.has-open .explore__hint { opacity: 0; }
+.explore__hint { transition: opacity var(--d-ui) var(--ease); }
+.explore__hint { position: absolute; left: var(--s3); right: var(--s3); bottom: var(--s3); font-size: 14px; color: var(--muted); pointer-events: none; }
+.explore__tilt { position: absolute; right: var(--s2); top: var(--s2); z-index: 3; background: rgb(24 14 85 / 0.72); }
+.explore__tilt[aria-pressed='true'] { background: var(--c-accent); border-color: var(--c-accent); color: #FFFFFF; }
+.explore__tilt[hidden] { display: none; }
+.spot__pin { position: absolute; left: 0; top: 0; z-index: 2; width: 48px; height: 48px; display: grid; place-items: center; border-radius: 50%; border: 3px solid #FFFFFF; background: var(--c-accent); color: #FFFFFF; font-weight: 600; font-size: 16px; cursor: pointer; box-shadow: 0 0 0 6px rgb(230 30 123 / 0.28), 0 6px 18px rgb(8 4 32 / 0.5); transition: opacity var(--d-ui) var(--ease), background-color var(--d-micro) var(--ease), box-shadow var(--d-ui) var(--ease); }
+.spot__pin:hover, .spot.is-open .spot__pin { background: #B8105F; box-shadow: 0 0 0 8px rgb(230 30 123 / 0.4), 0 6px 18px rgb(8 4 32 / 0.5); }
+.spot.is-behind .spot__pin { opacity: 0.22; }
+.spot.is-behind:not(.is-open) .spot__pin { pointer-events: none; }
+.spot__card { position: absolute; z-index: 4; left: var(--s2); right: var(--s2); bottom: var(--s3); max-width: 400px; padding: var(--s2) var(--s8) var(--s2) var(--s3); border-radius: var(--r-md); background: rgb(244 241 251 / 0.97); color: var(--t-light); box-shadow: var(--sh3); --focus: var(--t-light); }
+.spot__title { display: flex; align-items: center; gap: var(--s1); font-family: var(--font-display); font-weight: 400; font-size: 24px; text-transform: uppercase; line-height: 1.2; }
+.spot__n { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--c-accent); color: #FFFFFF; font-family: var(--font-body); font-size: 14px; font-weight: 600; }
+.spot__card p { margin-top: var(--s1); font-size: 16px; }
+.spot__close { position: absolute; right: var(--s1); top: var(--s1); width: 48px; height: 48px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--t-light); cursor: pointer; }
+.spot__close:hover { background: rgb(24 14 85 / 0.08); }
+.spot__close svg { width: 22px; height: 22px; }
+/* Without the 3D model (no JavaScript, no WebGL, reduced motion): the same facts as cards. */
+.explore:not(.is-3d) .explore__frame { aspect-ratio: auto; max-height: none; overflow: visible; background: none; box-shadow: none; }
+.explore:not(.is-3d) .explore__frame::after, .explore:not(.is-3d) .explore__canvas, .explore:not(.is-3d) .explore__hint, .explore:not(.is-3d) .spot__pin, .explore:not(.is-3d) .spot__close { display: none; }
+.explore:not(.is-3d) .explore__spots { display: grid; gap: var(--s2); grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.explore:not(.is-3d) .spot__card { position: static; max-width: none; padding: var(--s3); }
+.explore:not(.is-3d) .spot__card[hidden] { display: block; }
+.explore__spots { list-style: none; margin: 0; padding: 0; }
+.spot__card.is-top { bottom: auto; top: var(--s2); }
+/* One tip at a time: while a card is open the other numbers step back (not focusable), so nothing hides behind it. */
+.explore.has-open .spot:not(.is-open) .spot__pin { visibility: hidden; }
+/* While a dialog covers the page (registration, menu, full-screen view) the paused 3D layer is not drawn at all.
+   It hides at once (also before the full-screen view's transition snapshot, wc-vt, so both snapshots match)
+   and fades back in afterwards. */
+.world { transition: opacity var(--d-ui) var(--ease); }
+html.is-modal .world, html.wc-vt .world { opacity: 0; transition: none; }
