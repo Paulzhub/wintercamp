@@ -17,6 +17,7 @@ export const icons = {
   download: s('<path d="M12 4v12M7 11l5 5 5-5M5 20h14"/>'),
   share: s('<circle cx="18" cy="5" r="2.500"/><circle cx="6" cy="12" r="2.500"/><circle cx="18" cy="19" r="2.500"/><path d="M8.200 10.800l7.600-4.400M8.200 13.200l7.600 4.400"/>'),
   upload: s('<path d="M12 16V4M7 9l5-5 5 5M5 20h14"/>'),
+  pause: s('<path d="M8 5v14M16 5v14"/>'),
   play: s('<path d="M8 5.500v13l11-6.500z" fill="currentColor"/>'),
   // Speech bubble with a phone handset (WhatsApp-style outline, drawn here).
   whatsapp: s('<path d="M3.500 20.500l1.300-4.200A8.500 8.500 0 1 1 8 19.400z"/><path d="M9 8.500c0 3.500 3 6.500 6.500 6.500l1-1.600-2-1-1 .9a5 5 0 0 1-2.300-2.300l.9-1-1-2z"/>'),

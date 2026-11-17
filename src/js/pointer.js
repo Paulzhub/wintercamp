@@ -1,6 +1,9 @@
 // Contextual cursor with a light trail, magnetic buttons, tilt, ripples, tooltips
 // and UI sounds. Cursor, trail, magnetism and tilt are for mouse users only;
 // touch devices get press feedback (CSS scale + ripple).
+// Round 16: the cursor wraps itself around the button under it (a ring in the
+// button's own shape: "sticky cursor"), and magnetic buttons spring back with an
+// elastic bounce. Both read reduced motion and the pointer type when they run.
 import { gsap, reduced } from './motion.js';
 import { T, $$ } from './i18n.js';
 
@@ -24,7 +27,10 @@ function initCursor() {
     cursor.append(t);
     return t;
   });
-  cursor.append(dot);
+  // Round 16: the ring that wraps around the hovered button.
+  const ring = document.createElement('div');
+  ring.className = 'cursor__ring';
+  cursor.append(dot, ring);
   document.body.append(cursor);
   document.documentElement.classList.add('has-cursor');
 
@@ -77,7 +83,7 @@ function initCursor() {
     dx(e.clientX); dy(e.clientY);
     tq.forEach(([x, y]) => { x(e.clientX); y(e.clientY); });
   }, { passive: true });
-  document.documentElement.addEventListener('pointerleave', () => cursor.classList.add('is-hidden'));
+  document.documentElement.addEventListener('pointerleave', () => { cursor.classList.add('is-hidden'); unstick(); });
   document.addEventListener('pointerover', (e) => {
     setTone(e.target);
     const host = e.target.closest?.('[data-cursor]');
@@ -86,23 +92,142 @@ function initCursor() {
     cursor.classList.toggle('has-label', Boolean(text));
     const field = e.target.closest?.('input, textarea, select');
     cursor.classList.toggle('is-hidden', Boolean(field));
+    const t = e.pointerType === 'mouse' ? stickTarget(e.target) : null;
+    if (t !== stuck) { if (t) stick(t); else unstick(); }
   });
+
+  // ---- Sticky cursor (round 16) ----
+  // Over a button the orb becomes a ring in the button's shape (its size plus 6 px
+  // each side, its own corner radius). The ring follows the button, which may itself
+  // be pulled by the magnet, and leans 8% towards the mouse; it lets go when the
+  // mouse leaves the button. Large targets (photos) keep the orb and its label.
+  const PAD = 6;
+  // The ring follows with a damped glide each frame (time constant 70 ms): calling a
+  // fresh in-out tween every frame would keep restarting its slow start.
+  const rs = { x: 0, y: 0, w: 16, h: 16 };
+  const put = () => gsap.set(ring, { x: rs.x, y: rs.y, width: rs.w, height: rs.h });
+  let stuck = null;
+  let loop = 0;
+  let prev = 0;
+  function stickTarget(el) {
+    if (reduced()) return null;
+    const b = el?.closest?.('.btn, .icon-btn, .nav__link');
+    if (!b || b.disabled || b.getAttribute('aria-disabled') === 'true') return null;
+    const r = b.getBoundingClientRect();
+    return r.width > 420 || r.height > 120 ? null : b;
+  }
+  const radiusOf = (el, h) => {
+    const v = parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0;
+    return v >= h / 2 - 1 ? (h + PAD * 2) / 2 : v + PAD;
+  };
+  const follow = (now) => {
+    loop = 0;
+    if (!stuck) return;
+    if (!stuck.isConnected || stuck.disabled) { unstick(); return; }
+    const dt = Math.min(0.05, prev ? (now - prev) / 1000 : 0.016);
+    prev = now;
+    const k = 1 - Math.exp(-dt / 0.07);
+    const r = stuck.getBoundingClientRect();
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    const tx = cx + ((last?.x ?? cx) - cx) * 0.08;
+    const ty = cy + ((last?.y ?? cy) - cy) * 0.08;
+    rs.x += (tx - rs.x) * k;
+    rs.y += (ty - rs.y) * k;
+    rs.w += (r.width + PAD * 2 - rs.w) * k;
+    rs.h += (r.height + PAD * 2 - rs.h) * k;
+    put();
+    // Scrolled away under a still mouse: let go.
+    if (last && (last.x < r.left - PAD * 4 || last.x > r.right + PAD * 4 || last.y < r.top - PAD * 4 || last.y > r.bottom + PAD * 4)) { unstick(); return; }
+    loop = requestAnimationFrame(follow);
+  };
+  function stick(el) {
+    const r = el.getBoundingClientRect();
+    gsap.killTweensOf(rs);
+    if (!stuck) {
+      // Start from the orb, so the ring grows out of it.
+      Object.assign(rs, { x: last?.x ?? r.left, y: last?.y ?? r.top, w: 16, h: 16 });
+      put();
+    }
+    stuck = el;
+    ring.style.setProperty('border-radius', `${radiusOf(el, r.height)}px`);
+    cursor.classList.add('is-stuck');
+    cursor.wcStuck = el; // read by the end-to-end checks
+    prev = 0;
+    if (!loop) loop = requestAnimationFrame(follow);
+  }
+  function unstick() {
+    if (!stuck) return;
+    stuck = null;
+    cursor.wcStuck = null;
+    cursor.classList.remove('is-stuck');
+    cancelAnimationFrame(loop);
+    loop = 0;
+    // Shrinks back into the orb while it fades.
+    gsap.to(rs, { x: last?.x ?? rs.x, y: last?.y ?? rs.y, w: 16, h: 16, duration: 0.32, ease: 'std', onUpdate: put });
+  }
+  document.addEventListener('pointerdown', (e) => { if (e.pointerType !== 'mouse') unstick(); });
   cursor.dataset.tone = 'dark';
   tone = 'dark';
 }
 
+// Magnetic buttons (round 16). Within 24 px of a button the button leans towards the
+// mouse (32% of the distance from its centre, at most 14 px), following with the
+// standard in-out curve; when the mouse leaves it springs home with an elastic
+// bounce (Paul's choice). The pull is set with the CSS "translate" property, not
+// "transform", so it adds to the press scale and never fights it, and the button's
+// rest position is its box minus the current pull, so measuring never drifts.
+// Mouse only; nothing moves with reduced motion or behind an open dialog.
+export const MAGNET = { pull: 0.32, max: 14, field: 24, follow: 0.48, release: 1.2, ease: 'elastic.out(1, 0.3)' };
 function initMagnetic() {
-  $$('[data-magnetic]').forEach((el) => {
-    const x = gsap.quickTo(el, 'x', { duration: 0.48, ease: 'std' });
-    const y = gsap.quickTo(el, 'y', { duration: 0.48, ease: 'std' });
-    el.addEventListener('pointermove', (e) => {
-      if (e.pointerType !== 'mouse') return;
+  const items = $$('[data-magnetic]').map((el) => ({ el, x: 0, y: 0, on: false, tw: null }));
+  if (!items.length) return;
+  const write = (it) => {
+    if (Math.abs(it.x) < 0.01 && Math.abs(it.y) < 0.01) it.el.style.removeProperty('translate');
+    else it.el.style.setProperty('translate', `${it.x.toFixed(2)}px ${it.y.toFixed(2)}px`);
+  };
+  const to = (it, x, y, release) => {
+    it.tw?.kill();
+    it.tw = gsap.to(it, release
+      ? { x: 0, y: 0, duration: MAGNET.release, ease: MAGNET.ease, onUpdate: () => write(it), onComplete: () => { it.x = 0; it.y = 0; write(it); } }
+      : { x, y, duration: MAGNET.follow, ease: 'std', onUpdate: () => write(it) });
+  };
+  const letGo = (it) => {
+    if (!it.on) return;
+    it.on = false;
+    it.el.classList.remove('is-pulled');
+    if (reduced()) { it.tw?.kill(); it.x = 0; it.y = 0; write(it); return; }
+    to(it, 0, 0, true);
+  };
+  const clamp = (v) => Math.max(-MAGNET.max, Math.min(MAGNET.max, v));
+  let mouse = null;
+  let raf = 0;
+  const frame = () => {
+    raf = 0;
+    const modal = [...document.querySelectorAll('dialog[open]')].filter((d) => d.matches(':modal')).at(-1);
+    for (const it of items) {
+      const el = it.el;
       const r = el.getBoundingClientRect();
-      x((e.clientX - (r.left + r.width / 2)) * 0.32);
-      y((e.clientY - (r.top + r.height / 2)) * 0.32);
-    });
-    el.addEventListener('pointerleave', () => { x(0); y(0); });
-  });
+      const blocked = !mouse || reduced() || el.disabled || !r.width || (modal && !modal.contains(el)) || el.closest('[inert]');
+      // Rest box: where the button sits without the pull.
+      const left = r.left - it.x;
+      const top = r.top - it.y;
+      const near = !blocked && mouse.x > left - MAGNET.field && mouse.x < left + r.width + MAGNET.field
+        && mouse.y > top - MAGNET.field && mouse.y < top + r.height + MAGNET.field;
+      if (!near) { letGo(it); continue; }
+      if (!it.on) { it.on = true; el.classList.add('is-pulled'); }
+      to(it, clamp((mouse.x - (left + r.width / 2)) * MAGNET.pull), clamp((mouse.y - (top + r.height / 2)) * MAGNET.pull), false);
+    }
+  };
+  const queue = () => { if (!raf) raf = requestAnimationFrame(frame); };
+  window.addEventListener('pointermove', (e) => {
+    if (e.pointerType !== 'mouse') { if (mouse) { mouse = null; queue(); } return; }
+    mouse = { x: e.clientX, y: e.clientY };
+    queue();
+  }, { passive: true });
+  document.documentElement.addEventListener('pointerleave', () => { mouse = null; queue(); });
+  window.addEventListener('scroll', queue, { passive: true, capture: true });
+  window.addEventListener('blur', () => { mouse = null; queue(); });
 }
 
 function initTilt() {
@@ -212,7 +337,7 @@ export function initPointer(audio) {
   initSounds(audio);
   if (!finePointer()) return;
   initCursor();
-  if (reduced()) return;
   initMagnetic();
+  if (reduced()) return;
   initTilt();
 }

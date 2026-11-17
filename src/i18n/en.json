@@ -167,7 +167,9 @@
     "venueTitle": "Venue",
     "contactTitle": "Contact",
     "privacy": "Privacy notice",
-    "rights": "© Kid's Happy Club"
+    "rights": "© Kid's Happy Club",
+    "marqueePause": "Pause the moving name",
+    "marqueePlay": "Play the moving name"
   },
   "reg": {
     "title": "Register for Winter Camp 2027",

@@ -506,10 +506,11 @@ function siteHeader(lang, t, pathKey) {
     </ul>
   </nav>
   <div class="nav__actions">
-    <button type="button" class="icon-btn sound" data-sound-toggle aria-pressed="false" aria-label="${esc(t.common.soundTip)}" data-tip="${esc(t.common.soundTip)}"><span class="sound__on" aria-hidden="true">${icons.soundOn}</span><span class="sound__off" aria-hidden="true">${icons.soundOff}</span></button>
-    ${registerBtn('btn btn--red btn--sm nav__register', t.common.register, `data-magnetic data-cursor="${esc(t.common.register)}"`)}
+    <button type="button" class="icon-btn sound" data-sound-toggle data-magnetic aria-pressed="false" aria-label="${esc(t.common.soundTip)}" data-tip="${esc(t.common.soundTip)}"><span class="sound__on" aria-hidden="true">${icons.soundOn}</span><span class="sound__off" aria-hidden="true">${icons.soundOff}</span></button>
+    ${registerBtn('btn btn--red btn--sm nav__register', t.common.register, 'data-magnetic')}
     <button type="button" class="icon-btn nav__burger" id="menu-open" aria-haspopup="dialog" aria-controls="menu" aria-label="${esc(t.common.menuOpen)}"><span class="burger" aria-hidden="true"><span></span><span></span></span></button>
   </div>
+  ${onHome ? `<div class="nav__progress" aria-hidden="true"><span class="nav__progress-fill"></span>${navLinks.map(([href]) => `<span class="nav__tick" data-for="${href.slice(href.indexOf('#') + 1)}"></span>`).join('')}</div>` : ''}
 </header>
 
 <dialog class="menu" id="menu" data-tone="dark" aria-label="${esc(t.common.menu)}">
@@ -604,8 +605,8 @@ ${siteHeader(lang, t, 'home')}
     </dl>
     <p class="hero__venue" data-hero-in><span class="hero__pin" aria-hidden="true">${icons.pin}</span>${esc(t.hero.venue)}</p>
     <div class="hero__cta" data-hero-in>
-      <button type="button" class="btn btn--red btn--lg" data-open-register data-magnetic data-cursor="${esc(t.common.register)}"><span class="btn__label">${esc(t.common.registerNow)}</span><span class="btn__icon" aria-hidden="true">${icons.arrow}</span></button>
-      <a class="btn btn--outline btn--lg" href="#activities"><span class="btn__label">${esc(t.hero.secondary)}</span></a>
+      <button type="button" class="btn btn--red btn--lg" data-open-register data-magnetic><span class="btn__label">${esc(t.common.registerNow)}</span><span class="btn__icon" aria-hidden="true">${icons.arrow}</span></button>
+      <a class="btn btn--outline btn--lg" href="#activities" data-magnetic><span class="btn__label">${esc(t.hero.secondary)}</span></a>
     </div>
     <p class="hero__live" id="hero-live" data-hero-in hidden><span class="hero__live-text"></span> <a class="link hero__live-call" href="${tel}" hidden>${esc(fill(t.common.call, { phone }))}</a></p>
     <p class="hero__count" id="hero-count" data-hero-in hidden><span class="hero__count-vis" aria-hidden="true"><span class="hero__count-b"></span> <span class="hero__count-n"></span> <span class="hero__count-a"></span></span><span class="sr-only hero__count-sr"></span></p>
@@ -629,7 +630,7 @@ ${siteHeader(lang, t, 'home')}
         <div><dt>${esc(a.strip.venue)}</dt><dd>${esc(a.strip.venueValue)}</dd></div>
         <div><dt>${esc(a.strip.fee)}</dt><dd>${esc(a.strip.feeValue)}</dd></div>
       </dl>
-      <button type="button" class="btn btn--red" data-open-register data-magnetic data-cursor="${esc(t.common.register)}"><span class="btn__label">${esc(t.common.registerNow)}</span><span class="btn__icon" aria-hidden="true">${icons.arrow}</span></button>
+      <button type="button" class="btn btn--red" data-open-register data-magnetic><span class="btn__label">${esc(t.common.registerNow)}</span><span class="btn__icon" aria-hidden="true">${icons.arrow}</span></button>
     </div>
   </div>
 </section>
@@ -697,17 +698,22 @@ ${galleryItems(lang, t)}
     </div>
     <p class="footer__line">${esc(t.footer.line)}</p>
   </div>
-  <p class="footer__mark" lang="en" data-clip><span>${esc(config.camp.organiser)}</span></p>
-  <p class="footer__rights wrap" lang="en">${esc(t.footer.rights)}</p>
+  <div class="footer__mark marquee" id="marquee" lang="en">
+    <div class="marquee__clip" data-clip><div class="marquee__track"><span class="marquee__group"><span class="marquee__item">${esc(config.camp.organiser)}</span><span class="marquee__sep" aria-hidden="true"></span></span></div></div>
+  </div>
+  <div class="footer__base wrap">
+    <p class="footer__rights" lang="en">${esc(t.footer.rights)}</p>
+    <button type="button" class="icon-btn marquee__toggle" id="marquee-toggle" aria-label="${esc(t.footer.marqueePause)}" data-tip="${esc(t.footer.marqueePause)}" data-label-pause="${esc(t.footer.marqueePause)}" data-label-play="${esc(t.footer.marqueePlay)}" hidden><span class="marquee__i-pause" aria-hidden="true">${icons.pause}</span><span class="marquee__i-play" aria-hidden="true">${icons.play}</span></button>
+  </div>
 </footer>
 
 ${registration(lang, t)}
 
 <dialog class="lightbox" id="lightbox" data-tone="dark" aria-label="${esc(t.gallery.lightbox)}">
-  <button type="button" class="icon-btn lightbox__close" id="lightbox-close" aria-label="${esc(t.common.close)}">${icons.close}</button>
-  <button type="button" class="icon-btn lightbox__nav lightbox__nav--prev" id="lightbox-prev" aria-label="${esc(t.gallery.prev)}">${icons.left}</button>
+  <button type="button" class="icon-btn lightbox__close" id="lightbox-close" data-magnetic aria-label="${esc(t.common.close)}">${icons.close}</button>
+  <button type="button" class="icon-btn lightbox__nav lightbox__nav--prev" id="lightbox-prev" data-magnetic aria-label="${esc(t.gallery.prev)}">${icons.left}</button>
   <figure class="lightbox__fig" id="lightbox-fig"><div class="lightbox__stage" id="lightbox-stage"></div><figcaption class="lightbox__cap" id="lightbox-cap" aria-live="polite"></figcaption></figure>
-  <button type="button" class="icon-btn lightbox__nav lightbox__nav--next" id="lightbox-next" aria-label="${esc(t.gallery.next)}">${icons.right}</button>
+  <button type="button" class="icon-btn lightbox__nav lightbox__nav--next" id="lightbox-next" data-magnetic aria-label="${esc(t.gallery.next)}">${icons.right}</button>
 </dialog>
 
 <svg class="defs" width="0" height="0" aria-hidden="true" focusable="false">
@@ -742,7 +748,7 @@ ${siteHeader(lang, t, pathKey)}
 <main id="main" class="plain" tabindex="-1">
   <div class="page-hero dark" data-tone="dark" data-particles="secondary">
     <div class="wrap wrap--narrow page-hero__inner">
-      <p class="page-hero__back"><a class="link" href="${urls[lang].home}">← ${esc(t.privacy.back)}</a></p>
+      <p class="page-hero__back"><a class="link" data-magnetic href="${urls[lang].home}">← ${esc(t.privacy.back)}</a></p>
       <h1 class="title page-hero__title">${esc(title)}</h1>
       ${meta ? `<p class="page-hero__meta">${esc(meta)}</p>` : ''}
     </div>
