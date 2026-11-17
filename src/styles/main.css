@@ -466,7 +466,6 @@ html.wc-vt .lightbox__stage img, html.wc-vt .lightbox__stage video { box-shadow:
 .footer__tools { display: flex; align-items: flex-start; gap: var(--s2); }
 .footer__line { margin-top: var(--s6); font-size: 14px; color: var(--muted); }
 .footer__mark { font-family: var(--font-display); font-size: clamp(44px, 12.4vw, 240px); line-height: 1.15; padding-top: 0.06em; text-transform: uppercase; text-align: center; white-space: nowrap; margin-top: var(--s4); letter-spacing: 0.01em; color: var(--t-dark); }
-.footer__mark span { display: inline-block; padding: 0.08em 0.02em 0; }
 .footer__rights { padding-block: var(--s3); font-size: 14px; color: var(--muted); }
 .footer--plain { padding-top: var(--s4); padding-bottom: var(--s4); }
 
@@ -778,3 +777,76 @@ select.input { appearance: none; padding-right: var(--s6); background-image: lin
 .hero__live-call { margin-left: 4px; color: var(--accent-ink); }
 .menu__seats { width: 100%; margin: 0; font-size: 14px; color: var(--muted); }
 @media (prefers-reduced-motion: reduce) { .hold__fill { transition: none; } }
+
+/* ---------- Round 16: interactions ---------- */
+/* Sticky cursor: a ring in the hovered button's shape (size and corners set by pointer.js). */
+.cursor__ring {
+  position: absolute; left: 0; top: 0; width: 16px; height: 16px; translate: -50% -50%;
+  border: 2px solid rgb(252 250 255 / 0.9); border-radius: var(--r-pill);
+  box-shadow: 0 0 16px rgb(246 240 255 / 0.32); opacity: 0;
+  transition: opacity var(--d-ui) var(--ease), border-color var(--d-ui) var(--ease), box-shadow var(--d-ui) var(--ease), border-radius var(--d-ui) var(--ease);
+}
+.cursor[data-tone='light'] .cursor__ring { border-color: var(--c-accent); box-shadow: 0 0 16px rgb(230 30 123 / 0.24); }
+.cursor.is-stuck .cursor__ring { opacity: 1; }
+.cursor.is-stuck .cursor__dot, .cursor.is-stuck .cursor__trail { opacity: 0; }
+.cursor__trail { transition: background-color var(--d-ui) var(--ease), box-shadow var(--d-ui) var(--ease), opacity var(--d-ui) var(--ease); }
+
+/* Curtain between sections (menu jumps): two layers wipe across, the section name in Anton. */
+.curtain {
+  position: fixed; inset: 0; width: 100%; height: 100%; max-width: none; max-height: none;
+  margin: 0; padding: 0; border: 0; background: transparent; overflow: hidden; color: var(--t-dark);
+  display: none; place-items: center; pointer-events: auto;
+}
+.curtain:popover-open { display: grid; }
+.curtain__layer { position: absolute; inset: 0; transform: scaleY(0); }
+.curtain__layer--a { background: linear-gradient(160deg, #2A1A78, var(--c-dark) 70%); }
+/* Pink to purple: white text on it is 5.2:1 at the pink end and higher everywhere else. */
+.curtain__layer--b { background: linear-gradient(160deg, var(--c-accent), var(--sp-purple)); }
+.curtain__name {
+  position: relative; display: grid; justify-items: center; gap: var(--s2); opacity: 0;
+  font-family: var(--font-display); font-size: clamp(56px, 14vw, 200px); line-height: 1; letter-spacing: 0.02em; text-transform: uppercase; color: #FFFFFF;
+}
+.curtain__name::after { content: ''; width: var(--s12); height: 4px; border-radius: 2px; background: var(--spectrum); }
+
+/* Section progress: a spectrum line under the menu bar, with a dot for each section. */
+.nav__progress { position: absolute; left: 0; right: 0; bottom: -1px; height: 3px; pointer-events: none; opacity: 0; transition: opacity var(--d-ui) var(--ease); }
+.nav.is-stuck .nav__progress { opacity: 1; }
+.nav__progress::before { content: ''; position: absolute; inset: 0; background: rgb(245 245 245 / 0.14); }
+.nav__progress-fill { position: absolute; inset: 0; background: var(--spectrum); clip-path: inset(0 calc((1 - var(--p, 0)) * 100%) 0 0); }
+.nav__tick {
+  position: absolute; top: 50%; left: clamp(4px, calc(var(--f, 0) * 100%), calc(100% - 4px)); width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px;
+  border-radius: 50%; background: var(--c-dark); border: 1.5px solid rgb(245 245 245 / 0.6);
+  transition: transform var(--d-ui) var(--ease), background-color var(--d-ui) var(--ease), border-color var(--d-ui) var(--ease), box-shadow var(--d-ui) var(--ease);
+}
+.nav__tick.is-passed { background: var(--t-dark); border-color: var(--t-dark); }
+.nav__tick.is-active { background: #FFFFFF; border-color: #FFFFFF; transform: scale(1.6); box-shadow: 0 0 12px rgb(246 240 255 / 0.8); }
+
+/* Footer marquee: the organiser's name keeps moving; the copies are decorative. */
+.footer__mark.marquee { position: relative; overflow: hidden; }
+.marquee__clip { display: block; }
+.marquee__track { display: inline-block; }
+.marquee__group, .marquee__item { display: inline-block; }
+.marquee__item { padding: 0.08em 0.02em 0; }
+.marquee__sep { display: none; }
+.marquee.is-running .marquee__track { display: flex; width: max-content; will-change: transform; }
+.marquee.is-running .marquee__group { display: inline-flex; align-items: center; flex: none; }
+.marquee.is-running .marquee__sep {
+  display: inline-block; flex: none; width: 0.32em; height: 0.32em; margin: 0 0.36em; translate: 0 -0.06em;
+  background: var(--spectrum); clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+}
+/* The pause button sits on the line under the name, so it never covers the letters. */
+.footer__base { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); padding-block: var(--s2); }
+.footer__base .footer__rights { padding-block: var(--s1); }
+.marquee__toggle[hidden] { display: none; }
+.marquee__toggle .marquee__i-play, .marquee__toggle.is-paused .marquee__i-pause { display: none; }
+.marquee__toggle.is-paused .marquee__i-play { display: inline; }
+.marquee__toggle span { display: inline-flex; }
+
+/* Home and privacy page: the new page wipes up over the old one (browsers with cross-page view transitions). */
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition { navigation: auto; types: wc-page; }
+  html:active-view-transition-type(wc-page)::view-transition-old(root) { animation: wc-page-old 640ms cubic-bezier(0.76, 0, 0.24, 1) both; }
+  html:active-view-transition-type(wc-page)::view-transition-new(root) { animation: wc-page-new 640ms cubic-bezier(0.76, 0, 0.24, 1) both; }
+}
+@keyframes wc-page-old { to { opacity: 0.4; } }
+@keyframes wc-page-new { from { clip-path: inset(100% 0 0 0); } to { clip-path: inset(0); } }

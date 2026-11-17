@@ -651,10 +651,11 @@ async function main() {
       await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
       await page.waitForTimeout(1600);
       const mark = await page.evaluate(() => {
-        const span = document.querySelector('.footer__mark span');
-        const r = span.getBoundingClientRect();
-        const p = span.parentElement.getBoundingClientRect();
-        return { clip: getComputedStyle(span).clipPath, inside: r.top >= p.top - 1 && r.bottom <= p.bottom + 1 };
+        // Round 16: the clip reveal is on the marquee's wrapper; the name is inside it.
+        const clip = document.querySelector('.footer__mark [data-clip]');
+        const r = clip.querySelector('.marquee__item').getBoundingClientRect();
+        const p = document.querySelector('.footer__mark').getBoundingClientRect();
+        return { clip: getComputedStyle(clip).clipPath, inside: r.top >= p.top - 1 && r.bottom <= p.bottom + 1 };
       });
       check('Footer "Kid\'s Happy Club" is not cut off', /inset\(-/.test(mark.clip) && mark.inside, JSON.stringify(mark));
       await page.locator('.footer__mark').screenshot({ path: path.join(out, 'footer-mark-1280.png') });
@@ -2341,7 +2342,8 @@ async function main() {
       await enter(page);
       await page.waitForTimeout(800);
       const clipBottom = () => page.evaluate(() => { const c = getComputedStyle(document.getElementById('menu')).clipPath; const m = c.match(/inset\(([\d.]+)%? ([\d.]+)%? ([\d.]+)%?/); return { c, bottom: m ? Number(m[3]) : (c === 'none' ? 0 : -1), open: document.getElementById('menu').open }; });
-      for (const [how, act] of [['close button', () => page.click('#menu-close')], ['Esc', () => page.keyboard.press('Escape')], ['a link', () => page.click('#menu .menu__link[href="#faq"]')]]) {
+      // Round 16: a link now plays the curtain over the menu, which shuts under it (section 27c).
+      for (const [how, act] of [['close button', () => page.click('#menu-close')], ['Esc', () => page.keyboard.press('Escape')]]) {
         await page.click('#menu-open');
         await page.waitForTimeout(400);
         const opening = await clipBottom();
@@ -2456,6 +2458,335 @@ async function main() {
         check('Date of signing: a future date found on submit goes back to the consent step with the message, nothing sent', r3.step === 2 && r3.err.includes('cannot be a future date') && st.kids.length === 0, JSON.stringify(r3));
       }
       done();
+      await ctx.close();
+    }
+
+    // 27. Round 16: magnetic buttons, sticky cursor, curtain, footer marquee, section progress.
+    // 27a. Magnetic buttons: lean towards the mouse, spring back with an elastic bounce.
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+      const page = await ctx.newPage();
+      const done = watch(page, 'Round 16 magnetic');
+      await page.goto(SITE);
+      await enter(page);
+      await page.waitForTimeout(1600);
+      const magnets = await page.evaluate(() => ['.hero__cta [data-open-register]', '.hero__cta .btn--outline', '#nav .nav__register', '#nav .sound', '#car-prev', '#car-next', '.footer__top', '#lightbox-close', '#lightbox-prev', '#lightbox-next', '.activities [data-open-register]']
+        .filter((q) => !document.querySelector(q)?.hasAttribute('data-magnetic')));
+      check('Magnetic: Register buttons, sound, hero buttons, gallery arrows, back to top and full-screen buttons are magnetic', magnets.length === 0, magnets.join(', '));
+      const sel = '.hero__cta [data-open-register]';
+      const tr = () => page.evaluate((q) => { const v = document.querySelector(q).style.translate; if (!v) return { x: 0, y: 0, raw: '' }; const [x, y = '0'] = v.split(' '); return { x: parseFloat(x), y: parseFloat(y), raw: v }; }, sel);
+      const b = await page.locator(sel).boundingBox();
+      await page.mouse.move(b.x + b.width / 2 + 40, b.y + b.height / 2 + 10, { steps: 4 });
+      await page.waitForTimeout(700);
+      const pulled = await tr();
+      check('Magnetic: the hero Register button leans towards the mouse (at most 14 px)', pulled.x > 4 && pulled.x <= 14 && pulled.y > 0 && pulled.y <= 14, JSON.stringify(pulled));
+      // Just outside the button (within 24 px) still pulls.
+      await page.mouse.move(b.x + b.width + 16, b.y + b.height / 2, { steps: 3 });
+      await page.waitForTimeout(600);
+      const near = await tr();
+      check('Magnetic: the pull starts within 24 px of the button', near.x > 4, JSON.stringify(near));
+      await page.screenshot({ path: path.join(out, 'r16-magnetic-1280.png'), clip: { x: b.x - 80, y: b.y - 60, width: b.width + 200, height: b.height + 120 } });
+      // Away: springs home, overshooting the other way at least once (elastic), then rests with no pull.
+      await page.mouse.move(b.x + b.width / 2 + 40, b.y + b.height / 2 + 10, { steps: 2 });
+      await page.waitForTimeout(600);
+      await page.mouse.move(640, 120);
+      const xs = [];
+      for (let k = 0; k < 28; k++) { await page.waitForTimeout(40); xs.push((await tr()).x); }
+      await page.waitForTimeout(600);
+      const rest = await tr();
+      check('Magnetic: on release it bounces past its place (elastic) and settles back', Math.min(...xs) < -0.3 && rest.raw === '', JSON.stringify({ min: Math.min(...xs), xs: xs.map((v) => v.toFixed(1)).join(','), rest }));
+      // Pressing still shrinks the button while it is pulled (pull uses "translate", press uses "transform").
+      const o = await page.locator('.hero__cta .btn--outline').boundingBox();
+      await page.mouse.move(o.x + o.width / 2 + 20, o.y + o.height / 2, { steps: 3 });
+      await page.waitForTimeout(600);
+      await page.mouse.down();
+      await page.waitForTimeout(300);
+      const press = await page.evaluate(() => { const el = document.querySelector('.hero__cta .btn--outline'); return { tr: el.style.translate, tf: getComputedStyle(el).transform }; });
+      await page.mouse.move(640, 120);
+      await page.mouse.up();
+      check('Magnetic: pressing a pulled button still shrinks it', press.tr !== '' && /matrix\(0\.9/.test(press.tf), JSON.stringify(press));
+      // Behind an open dialog nothing is pulled.
+      await page.click(sel);
+      await page.waitForTimeout(900);
+      await page.mouse.move(b.x + b.width / 2 + 40, b.y + b.height / 2 + 10, { steps: 3 });
+      await page.waitForTimeout(500);
+      check('Magnetic: buttons behind the open registration view stay still', (await tr()).raw === '');
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(900);
+      done();
+      await ctx.close();
+      const ctx2 = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+      const p2 = await ctx2.newPage();
+      await p2.goto(SITE);
+      await enter(p2);
+      await p2.waitForTimeout(800);
+      const b2 = await p2.locator(sel).boundingBox();
+      await p2.mouse.move(b2.x + b2.width / 2 + 40, b2.y + b2.height / 2 + 10, { steps: 4 });
+      await p2.waitForTimeout(500);
+      check('Magnetic, reduced motion: nothing moves', await p2.evaluate((q) => document.querySelector(q).style.translate === '', sel));
+      await ctx2.close();
+    }
+
+    // 27b. Sticky cursor: over a button the cursor becomes a ring in the button's shape.
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+      const page = await ctx.newPage();
+      const done = watch(page, 'Round 16 sticky cursor');
+      await page.goto(SITE);
+      await enter(page);
+      await page.waitForTimeout(1600);
+      const ringOf = (q) => page.evaluate((s) => {
+        const c = document.querySelector('.cursor');
+        const ring = c.querySelector('.cursor__ring').getBoundingClientRect();
+        const el = document.querySelector(s);
+        const r = el.getBoundingClientRect();
+        const cs = getComputedStyle(c.querySelector('.cursor__ring'));
+        return {
+          stuck: c.wcStuck === el, label: c.classList.contains('has-label'),
+          dw: Math.round(ring.width - r.width), dh: Math.round(ring.height - r.height),
+          dx: Math.round((ring.left + ring.width / 2) - (r.left + r.width / 2)), dy: Math.round((ring.top + ring.height / 2) - (r.top + r.height / 2)),
+          radius: parseFloat(cs.borderTopLeftRadius), h: ring.height, ringOpacity: cs.opacity, dot: getComputedStyle(c.querySelector('.cursor__dot')).opacity, border: cs.borderTopColor,
+        };
+      }, q);
+      const centre = async (q) => { const r = await page.locator(q).boundingBox(); await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2, { steps: 6 }); };
+      await page.evaluate(() => window.scrollTo(0, 400));
+      await page.waitForTimeout(900);
+      await centre('#nav .nav__register');
+      await page.waitForTimeout(900);
+      const reg = await ringOf('#nav .nav__register');
+      check('Sticky cursor: over the menu bar Register the cursor wraps it as a pill ring (6 px each side), no label pill', reg.stuck && !reg.label && Math.abs(reg.dw - 12) <= 3 && Math.abs(reg.dh - 12) <= 3 && Math.abs(reg.dx) <= 4 && Math.abs(reg.dy) <= 4 && Math.abs(reg.radius - reg.h / 2) <= 2 && Number(reg.ringOpacity) > 0.9 && Number(reg.dot) < 0.1, JSON.stringify(reg));
+      const nb = await page.locator('#nav .nav__register').boundingBox();
+      await page.screenshot({ path: path.join(out, 'r16-sticky-register-1280.png'), clip: { x: nb.x - 60, y: 0, width: nb.width + 120, height: 96 } });
+      await page.locator('#carousel').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(1200);
+      await centre('#car-next');
+      await page.waitForTimeout(900);
+      const arrow = await ringOf('#car-next');
+      check('Sticky cursor: round gallery arrow gets a round ring', arrow.stuck && Math.abs(arrow.radius - arrow.h / 2) <= 2 && Math.abs(arrow.dw - 12) <= 3, JSON.stringify(arrow));
+      await centre('.car__item.is-active .car__btn');
+      await page.waitForTimeout(800);
+      const photo = await ringOf('.car__item.is-active .car__btn');
+      check('Sticky cursor: a gallery photo keeps the orb with its "View" label (no ring)', !photo.stuck && photo.label && Number(photo.ringOpacity) < 0.1, JSON.stringify(photo));
+      await page.locator('.activities [data-open-register]').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(1200);
+      await centre('.activities [data-open-register]');
+      await page.waitForTimeout(900);
+      const light = await ringOf('.activities [data-open-register]');
+      check('Sticky cursor: on a light section the ring is pink', light.stuck && /rgb\(209, 20, 108/.test(light.border), JSON.stringify(light));
+      const ab = await page.locator('.activities [data-open-register]').boundingBox();
+      await page.mouse.move(ab.x - 200, ab.y - 120, { steps: 6 });
+      await page.waitForTimeout(800);
+      const off = await ringOf('.activities [data-open-register]');
+      check('Sticky cursor: moving off the button lets go (ring fades, orb returns)', !off.stuck && Number(off.ringOpacity) < 0.1 && Number(off.dot) > 0.9, JSON.stringify(off));
+      done();
+      await ctx.close();
+    }
+
+    // 27c. Curtain: menu links wipe two layers across with the section name; the page moves underneath.
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+      const page = await ctx.newPage();
+      const done = watch(page, 'Round 16 curtain');
+      await page.goto(SITE);
+      await enter(page);
+      await page.waitForTimeout(1600);
+      const cstate = () => page.evaluate(() => { const c = document.getElementById('curtain'); return { open: c.matches(':popover-open'), name: c.querySelector('.curtain__name').textContent, state: c.dataset.state, y: Math.round(scrollY) }; });
+      await page.click('#nav .nav__link[href="#gallery"]');
+      await page.waitForTimeout(250);
+      const mid = await cstate();
+      check('Curtain: a menu link plays the curtain with the section name, before the page moves', mid.open && mid.name === 'Gallery' && mid.y < 50, JSON.stringify(mid));
+      const hs = [];
+      for (let k = 0; k < 16; k++) {
+        hs.push(await page.evaluate(() => { const c = document.getElementById('curtain'); const r = (q) => Math.round(c.querySelector(q).getBoundingClientRect().height); return { a: r('.curtain__layer--a'), b: r('.curtain__layer--b'), name: Number(getComputedStyle(c.querySelector('.curtain__name')).opacity), state: c.dataset.state }; }));
+        await page.waitForTimeout(40);
+      }
+      const full = hs.filter((x) => x.a >= 899 && x.b >= 899);
+      check('Curtain: for a moment both layers cover the whole screen and the name is fully shown', full.length > 0 && full.some((x) => x.name > 0.95), JSON.stringify(hs.map((x) => `${x.a}/${x.b}/${x.name.toFixed(2)}/${x.state}`)));
+      await page.click('#nav .nav__link[href="#activities"]');
+      await page.waitForTimeout(700);
+      await page.screenshot({ path: path.join(out, 'r16-curtain-covered-1280.png') });
+      await page.waitForTimeout(1300);
+      await page.click('#nav .nav__link[href="#gallery"]');
+      await page.waitForTimeout(1900);
+      const end = await page.evaluate(() => ({ open: document.getElementById('curtain').matches(':popover-open'), top: Math.round(document.getElementById('gallery').getBoundingClientRect().top), nav: document.getElementById('nav').offsetHeight, hash: location.hash, focus: document.activeElement?.id }));
+      check('Curtain: afterwards it is gone, the gallery is at the top, the address says #gallery and focus is on the gallery', !end.open && Math.abs(end.top - end.nav) <= 8 && end.hash === '#gallery' && end.focus === 'gallery', JSON.stringify(end));
+      // Back up to Home: the curtain comes from the top.
+      await page.click('#nav .nav__brand');
+      await page.waitForTimeout(250);
+      const up = await cstate();
+      await page.waitForTimeout(1700);
+      const home = await page.evaluate(() => ({ y: Math.round(scrollY), hash: location.hash, focusH1: document.activeElement?.classList.contains('hero__h1') }));
+      check('Curtain: the wordmark goes back to Home with the curtain ("Home")', up.open && up.name === 'Home' && home.y === 0 && home.hash === '' && home.focusH1, JSON.stringify({ up, home }));
+      // Clicking twice quickly plays one curtain and still lands.
+      await page.click('#nav .nav__link[href="#faq"]');
+      await page.waitForTimeout(80);
+      await page.click('#nav .nav__link[href="#faq"]', { force: true }).catch(() => {});
+      await page.waitForTimeout(1900);
+      const twice = await page.evaluate(() => ({ open: document.getElementById('curtain').matches(':popover-open'), top: Math.round(document.getElementById('faq').getBoundingClientRect().top), nav: document.getElementById('nav').offsetHeight }));
+      check('Curtain: a second click during the curtain is ignored and the page still lands on the section', !twice.open && Math.abs(twice.top - twice.nav) <= 8, JSON.stringify(twice));
+      // Other in-page links (hero "See the activities") keep the glide, no curtain.
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.waitForTimeout(900);
+      await page.click('.hero__cta .btn--outline');
+      await page.waitForTimeout(250);
+      check('Curtain: the hero\'s activities button glides, without the curtain', !(await cstate()).open);
+      await page.waitForTimeout(1500);
+      done();
+      await ctx.close();
+    }
+    {
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+      const page = await ctx.newPage();
+      const done = watch(page, 'Round 16 curtain phone');
+      await page.goto(SITE);
+      await enter(page, '#enter-silent', true);
+      await page.waitForTimeout(900);
+      await page.tap('#menu-open');
+      await page.waitForTimeout(1200);
+      await page.tap('#menu .menu__link[href="#faq"]');
+      await page.waitForTimeout(350);
+      const mid = await page.evaluate(() => ({ curtain: document.getElementById('curtain').matches(':popover-open'), menu: document.getElementById('menu').open }));
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: path.join(out, 'r16-curtain-390.png') });
+      await page.waitForTimeout(1300);
+      const end = await page.evaluate(() => ({ curtain: document.getElementById('curtain').matches(':popover-open'), menu: document.getElementById('menu').open, top: Math.round(document.getElementById('faq').getBoundingClientRect().top), nav: document.getElementById('nav').offsetHeight, hash: location.hash, focus: document.activeElement?.id, modal: document.documentElement.classList.contains('is-modal') }));
+      check('Curtain, phone menu: the curtain covers the open menu, which shuts under it', mid.curtain && mid.menu, JSON.stringify(mid));
+      check('Curtain, phone menu: afterwards the menu is closed and the FAQ is at the top, with focus', !end.curtain && !end.menu && !end.modal && Math.abs(end.top - end.nav) <= 8 && end.hash === '#faq' && end.focus === 'faq', JSON.stringify(end));
+      done();
+      await ctx.close();
+    }
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+      const page = await ctx.newPage();
+      await page.goto(SITE);
+      await enter(page);
+      await page.waitForTimeout(800);
+      await page.click('#nav .nav__link[href="#gallery"]');
+      await page.waitForTimeout(150);
+      const r = await page.evaluate(() => ({ open: document.getElementById('curtain').matches(':popover-open'), top: Math.round(document.getElementById('gallery').getBoundingClientRect().top) }));
+      await page.waitForTimeout(500);
+      const r2 = await page.evaluate(() => Math.round(document.getElementById('gallery').getBoundingClientRect().top));
+      check('Curtain, reduced motion: no curtain, the page jumps to the section', !r.open && r2 >= 0 && r2 <= 112, JSON.stringify({ r, r2 }));
+      await ctx.close();
+    }
+
+    // 27d. Footer marquee: moves, pauses (button, hover, focus, off screen), still with reduced motion.
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+      const page = await ctx.newPage();
+      const done = watch(page, 'Round 16 marquee');
+      await page.goto(SITE);
+      await enter(page);
+      await page.waitForTimeout(1200);
+      const ms = () => page.evaluate(() => document.getElementById('marquee').wcMarquee.state);
+      const awayState = await ms();
+      check('Marquee: still while off screen', !awayState.view && awayState.speed === 0, JSON.stringify(awayState));
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(1800);
+      const a1 = await ms();
+      await page.waitForTimeout(1000);
+      const a2 = await ms();
+      const names = await page.evaluate(() => ({ visible: [...document.querySelectorAll('#marquee .marquee__group')].filter((g) => !g.closest('[aria-hidden="true"]')).length, copies: document.querySelectorAll('#marquee .marquee__group[aria-hidden="true"]').length, text: document.querySelector('#marquee .marquee__item').textContent }));
+      check('Marquee: on screen the name moves at a steady speed', a1.running && a1.speed === 1 && a2.x < a1.x - 20, JSON.stringify({ a1, a2 }));
+      check('Marquee: the name is read once; the copies are hidden from screen readers', names.visible === 1 && names.copies >= 1 && names.text === "Kid's Happy Club", JSON.stringify(names));
+      await page.locator('#marquee').screenshot({ path: path.join(out, 'r16-marquee-1280.png') });
+      const btn = await page.evaluate(() => { const b = document.getElementById('marquee-toggle'); const r = b.getBoundingClientRect(); return { hidden: b.hidden, w: r.width, h: r.height, label: b.getAttribute('aria-label') }; });
+      check('Marquee: a visible pause button (48 px) labelled "Pause the moving name"', !btn.hidden && btn.w >= 44 && btn.h >= 44 && btn.label === 'Pause the moving name', JSON.stringify(btn));
+      await page.click('#marquee-toggle');
+      await page.mouse.move(10, 10);
+      await page.waitForTimeout(300);
+      const easing = await ms();
+      await page.waitForTimeout(900);
+      const p1 = await ms();
+      await page.waitForTimeout(600);
+      const p2 = await ms();
+      const lab = await page.getAttribute('#marquee-toggle', 'aria-label');
+      check('Marquee: Pause slows it to a stop (eases, not a jump) and the button now says Play', easing.speed > 0 && easing.speed < 1 && p1.speed === 0 && Math.abs(p2.x - p1.x) < 0.5 && lab === 'Play the moving name', JSON.stringify({ easing: easing.speed, p1, p2, lab }));
+      await page.click('#marquee-toggle');
+      await page.mouse.move(10, 10);
+      await page.waitForTimeout(1200);
+      const r1 = await ms();
+      check('Marquee: Play starts it again', r1.speed === 1 && !r1.user, JSON.stringify(r1));
+      const box = await page.locator('#marquee').boundingBox();
+      await page.mouse.move(box.x + box.width / 3, box.y + box.height / 2, { steps: 4 });
+      await page.waitForTimeout(1200);
+      const h = await ms();
+      await page.mouse.move(10, 10, { steps: 4 });
+      await page.waitForTimeout(1200);
+      const h2 = await ms();
+      check('Marquee: it pauses while the mouse is over it, and moves again after', h.hover && h.speed === 0 && !h2.hover && h2.speed === 1, JSON.stringify({ h, h2 }));
+      await page.focus('.footer__top');
+      await page.keyboard.press('Tab');
+      await page.waitForTimeout(1200);
+      const f = await ms();
+      check('Marquee: it pauses while keyboard focus is on its button', f.focus && f.speed === 0, JSON.stringify(f));
+      await page.evaluate(() => document.activeElement.blur());
+      await axe(page, 'Footer with marquee', '#contact');
+      done();
+      await ctx.close();
+    }
+    for (const width of [320, 390]) {
+      const ctx = await browser.newContext({ viewport: { width, height: 740 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+      const page = await ctx.newPage();
+      await page.goto(SITE);
+      await enter(page, '#enter-silent', true);
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(1800);
+      const r = await page.evaluate(() => ({ sw: document.scrollingElement.scrollWidth, toggle: document.getElementById('marquee-toggle').getBoundingClientRect().right, moving: document.getElementById('marquee').wcMarquee.state.speed }));
+      check(`Marquee ${width}px: moving, button on screen, no sideways scroll`, r.sw <= width && r.toggle <= width && r.moving === 1, JSON.stringify(r));
+      if (width === 390) await page.locator('#contact').screenshot({ path: path.join(out, 'r16-footer-390.png') });
+      await ctx.close();
+    }
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+      const page = await ctx.newPage();
+      await page.goto(SITE);
+      await enter(page);
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(1200);
+      const r = await page.evaluate(() => { const m = document.getElementById('marquee'); const t = m.querySelector('.marquee__item').getBoundingClientRect(); return { copies: m.querySelectorAll('[data-clone]').length, toggle: document.getElementById('marquee-toggle').hidden, centred: Math.abs((t.left + t.width / 2) - innerWidth / 2) < 24 }; });
+      check('Marquee, reduced motion: the still, centred name, no copies and no button', r.copies === 0 && r.toggle && r.centred, JSON.stringify(r));
+      await ctx.close();
+    }
+
+    // 27e. Section progress line under the menu bar.
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+      const page = await ctx.newPage();
+      const done = watch(page, 'Round 16 progress');
+      await page.goto(SITE);
+      await enter(page);
+      await page.waitForTimeout(1200);
+      const top = await page.evaluate(() => getComputedStyle(document.querySelector('.nav__progress')).opacity);
+      check('Progress line: hidden at the very top (the menu bar is see-through there)', top === '0', top);
+      await page.evaluate(() => document.getElementById('faq').scrollIntoView());
+      await page.waitForTimeout(1400);
+      const r = await page.evaluate(() => {
+        const bar = document.querySelector('.nav__progress');
+        const p = Number(bar.style.getPropertyValue('--p'));
+        const max = document.documentElement.scrollHeight - innerHeight;
+        const t = (id) => document.querySelector(`.nav__tick[data-for="${id}"]`).className;
+        return { p, want: scrollY / max, opacity: getComputedStyle(bar).opacity, home: t('home'), act: t('activities'), gal: t('gallery'), faq: t('faq'), contact: t('contact'), ticks: document.querySelectorAll('.nav__tick').length };
+      });
+      check('Progress line: fills to the scroll position, five dots, FAQ active, earlier sections passed', r.ticks === 5 && Math.abs(r.p - r.want) < 0.01 && r.opacity === '1' && /is-active/.test(r.faq) && /is-passed/.test(r.home) && /is-passed/.test(r.gal) && !/is-active/.test(r.gal) && !/is-passed/.test(r.contact), JSON.stringify(r));
+      await page.screenshot({ path: path.join(out, 'r16-progress-1280.png'), clip: { x: 0, y: 0, width: 1280, height: 96 } });
+      await page.goto(`${SITE}privacy/`);
+      await page.waitForTimeout(600);
+      check('Progress line: not on the privacy page', await page.evaluate(() => !document.querySelector('.nav__progress')));
+      done();
+      await ctx.close();
+    }
+    for (const width of [2560, 3840]) {
+      const ctx = await browser.newContext({ viewport: { width, height: Math.round(width * 9 / 16) } });
+      const page = await ctx.newPage();
+      await page.goto(SITE);
+      await enter(page);
+      await page.waitForTimeout(1200);
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(1600);
+      const r = await page.evaluate(() => ({ sw: document.scrollingElement.scrollWidth, wrap: document.querySelector('#contact .wrap').getBoundingClientRect().width, track: document.querySelector('#marquee .marquee__track').getBoundingClientRect().width }));
+      check(`${width}px: no sideways scroll, content column stays readable, marquee covers the width`, r.sw <= width && r.wrap <= 1240 && r.track >= width, JSON.stringify(r));
+      if (width === 2560) await page.screenshot({ path: path.join(out, 'r16-footer-2560.png') });
       await ctx.close();
     }
   } finally {

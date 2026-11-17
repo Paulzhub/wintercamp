@@ -81,6 +81,8 @@ Order: loader, hero, activities, gallery, camp facts and FAQ, footer. Registrati
 - Sits over the hero at first. On scroll it sticks to the top and becomes translucent (frosted glass blur, hairline border, soft shadow).
 - Clear active state for the section in view. Hover text interaction on links.
 - Phones: hamburger opens a full-screen menu with staggered links; focus is trapped while open. **Round 14 (Paul's request):** closing is the exact reverse of opening: the links lower and fade out (0.64 s) while the menu rolls back up (0.8 s, `big`), 0.88 s in all, for the close button, Esc and tapping a link. **Register** closes it at once (Paul's decision: the registration view opens over it). Reduced motion: no slide.
+- **Curtain (round 16, Paul's request):** a menu link (menu bar, phone menu, or the wordmark) plays a curtain: an indigo layer and then a pink-to-purple layer wipe across (0.5 s each, `big`, the second 0.1 s behind), the section's name shows in Anton with a spectrum line, the page jumps to the section underneath, and the layers wipe off the other side (about 1.6 s in all). Going down the page they rise from the bottom; going up, from the top. In the phone menu the curtain covers the open menu, which shuts under it. The curtain is a manual popover so it sits above the menu. Not on ordinary scrolling or other in-page links (they glide); none with reduced motion or without popover support (old behaviour). Home ↔ privacy page: a plain wipe with cross-page view transitions where the browser supports them.
+- **Section progress (round 16):** a 3 px spectrum line under the menu bar (home page), shown once the bar is frosted. It fills with the scroll position; each of the five sections has a dot where its top lands: white once passed, larger and glowing for the section in view.
 - **Sub-pages (round 9, Paul's decision):** every page other than the home page (the privacy notice now; any future page, made with `subPage()` in `render-pages.mjs`) starts with an indigo title band, a small hero with the page title. The menu bar is see-through over it, as over the home page's hero, and frosts once the page scrolls. No page starts light under the bar.
 
 ### 5.2 Loading screen
@@ -129,6 +131,7 @@ Plain-text answers to the questions parents and answer engines ask: who is it fo
 
 ### 5.7 Footer (dark)
 - Oversized **Kid's Happy Club** wordmark with clip reveal; small line "Winter Camp 2027 · Illuminate: Light of the World".
+- **Marquee (round 16, Paul's request):** the wordmark moves sideways at a steady speed (about 4% of the screen width per second, at least 40 px/s) with a small spectrum star between copies. The name is read once by screen readers (the copies are `aria-hidden`). Starting, stopping and pausing ease in and out (0.8 s). A visible pause/play button (48 px) sits on the line under it, beside the rights line ("Pause the moving name" / "Play the moving name", WCAG 2.2.2); it also pauses while the mouse is over it or keyboard focus is on its button, and stops off screen or when the tab is hidden. Reduced motion: the still, centred wordmark and no button.
 - Venue, phone +91-8219012669 (tap to call), privacy notice link, language toggle, magnetic back-to-top.
 - Rights line: "© Kid's Happy Club" (round 14: no year).
 
@@ -202,13 +205,13 @@ Statement shown above field 8, word for word:
 |--------|-------|----------------|
 | Loading screen, loading motion | Loader letters lighting up | Same |
 | Headline reveal, clip reveal | Hero, section titles, footer wordmark | Same |
-| Magnetic buttons / magnetic CTA | Register buttons, gallery arrows, back to top | Press-scale feedback |
+| Magnetic buttons / magnetic CTA | Register buttons, hero buttons, sound, gallery arrows, full-screen view's buttons, back to top, sub-page back link. Round 16: within 24 px a button leans towards the mouse (32% of the distance, at most 14 px, 0.48 s `std`) and springs home with a full elastic bounce (`elastic.out(1, 0.3)`, 1.2 s, Paul's choice). Uses the CSS `translate` property so the press scale still works. Never behind an open dialog; none with reduced motion | Press-scale feedback |
 | Button feedback | All buttons: press scale 0.96, ripple, click sound | Same |
 | Staggered scroll, staggered appearance | Activity cards, gallery items, FAQ items, menu links | Same |
 | Scroll reveal, content reveal, fade and lift | Every section | Same |
 | Sticky transform | Menu bar turning translucent; hero headline into wordmark; "Day 3" badge; form progress indicator | Same |
 | Page transitions, smooth page transitions | Loader to hero, opening and closing registration, menu jumps, lightbox, success view | Same |
-| Cursor with context | Glowing cursor with labels: "Register", "Drag", "View", "Play" | Hidden |
+| Cursor with context | Glowing cursor with labels: "Drag", "View", "Play" (photos and the carousel). Round 16, sticky cursor: over a button or menu link the orb becomes a ring in the button's shape (its size plus 6 px each side, its own corner radius), white on dark and pink on light; it follows the button (and the magnet), leans 8% towards the mouse and lets go when the mouse leaves. Replaces the old "Register" label pill | Hidden |
 | Subtle cursor trail | Faint trail of light | Hidden |
 | Micro interactions, interactive icons | Activity icons, toggles, copy button, form fields | Tap-triggered |
 | Hover: image zoom, text interaction, hover preview | Gallery, menu links, category cards | Tap or in-view |

@@ -149,8 +149,9 @@ export function initMotion() {
     });
   });
 
-  // Footer wordmark: clip reveal tied to scroll.
-  const mark = $('[data-clip] span');
+  // Footer wordmark: clip reveal tied to scroll. Round 16: the clip is on the marquee's
+  // wrapper ([data-clip]); the marquee moves the track inside it, so each has its own transform.
+  const mark = $('[data-clip]');
   if (mark) {
     if (reduced()) {
       gsap.from(mark, { opacity: 0, duration: 0.32, scrollTrigger: { trigger: mark, start: 'top 95%', once: true } });
