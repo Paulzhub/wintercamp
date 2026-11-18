@@ -89,13 +89,28 @@ function lantern() {
   const tassel = new Mesh(new ConeGeometry(0.2, 0.7, 6), flat(C.pink));
   tassel.position.y = -H / 2 - 0.75;
   tassel.rotation.x = Math.PI;
-  g.add(topCap, botCap, handle, flame, halo(6, 0.5), tassel);
+  // Round 17: the lantern shines. A warm inner glow and a wide soft halo (both always facing
+  // the camera, added to whatever is behind), which flicker with the flame in tick().
+  // Drawn over the paper panels (no depth test), so the light seems to come through them.
+  const inner = halo(5.2, 1);
+  inner.material.color.set('#FFD9A6');
+  const outer = halo(15, 0.6);
+  outer.material.color.set('#FFB6D9');
+  [inner, outer].forEach((h) => { h.material.depthTest = false; h.renderOrder = 10; });
+  g.add(topCap, botCap, handle, flame, inner, outer, tassel);
   g.userData.flame = flame;
+  g.userData.inner = inner;
+  g.userData.outer = outer;
+  g.userData.panels = g.children.filter((o) => o.isMesh && o.geometry.type === 'PlaneGeometry' && !o.userData.billboard);
   return g;
 }
 
 // Where each hotspot sits (model coordinates), keyed by the page's data-spot.
 const LANTERN_Y = 6.4;
+// Round 17: how the lantern shines. flicker() is a calm, uneven flicker in about 0..1
+// (three slow waves, never the same twice in a row), shared by the flame, its light and the glows.
+export const LAMP = { light: 30, swing: 0.22 };
+export const flicker = (t) => 0.5 + 0.22 * Math.sin(t * 5.3) + 0.16 * Math.sin(t * 9.7 + 1.3) + 0.12 * Math.sin(t * 15.1 + 0.4);
 const LANTERN_S = 0.62;
 const SPOTS = {
   theme: new Vector3(0, LANTERN_Y + 0.4, 1.5 * LANTERN_S),
@@ -111,9 +126,10 @@ export function createExplore(root, { reduced = false } = {}) {
   const spots = [...root.querySelectorAll('.spot')];
   const tiltBtn = root.querySelector('#explore-tilt');
 
-  const renderer = new WebGLRenderer({ canvas, antialias: true });
+  // Round 17: a see-through canvas, so the page's 3D world shows behind the model.
+  const renderer = new WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, window.innerWidth < 768 ? 1.5 : 2));
-  renderer.setClearColor(C.indigo, 1);
+  renderer.setClearColor(C.indigo, 0);
   const scene = new Scene();
   scene.fog = new FogExp2(C.indigo, 0.03);
   scene.add(new HemisphereLight('#B7A8FF', '#0E0838', 1.4));
@@ -127,7 +143,7 @@ export function createExplore(root, { reduced = false } = {}) {
   lamp.scale.setScalar(LANTERN_S);
   lamp.position.y = LANTERN_Y;
   model.add(lamp);
-  const lampLight = new PointLight('#FFE7C4', 22, 16, 1.5);
+  const lampLight = new PointLight('#FFE7C4', LAMP.light, 18, 1.5);
   lampLight.position.y = LANTERN_Y - 1;
   model.add(lampLight);
   scene.add(model);
@@ -159,6 +175,7 @@ export function createExplore(root, { reduced = false } = {}) {
 
   // Hotspots: the buttons and cards are in the HTML; here they are placed and toggled.
   root.classList.add('is-3d');
+  root.classList.remove('is-wait');
   const close = (li, focus = false) => {
     if (!li.classList.contains('is-open')) return;
     li.classList.remove('is-open');
@@ -283,6 +300,7 @@ export function createExplore(root, { reduced = false } = {}) {
     });
   }
   function tick(now) {
+    const prev = last;
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     if (!reduced) {
@@ -290,8 +308,14 @@ export function createExplore(root, { reduced = false } = {}) {
       lamp.position.y = LANTERN_Y + Math.sin(time * 0.9) * 0.25;
       lamp.rotation.y = time * 0.25;
       lamp.userData.flame.rotation.y = time;
-      lampLight.intensity = 22 + Math.sin(time * 6) * 1.2;
-      if (!interacting && tilt === null) { idle += dt; if (idle > 3) controls.autoRotate = true; }
+      const f = flicker(time);
+      lampLight.intensity = LAMP.light * (1 - LAMP.swing / 2 + LAMP.swing * f);
+      lamp.userData.flame.scale.setScalar(0.92 + 0.16 * f);
+      lamp.userData.inner.material.opacity = 0.7 + 0.3 * f;
+      lamp.userData.outer.material.opacity = 0.42 + 0.26 * f;
+      lamp.userData.panels.forEach((m) => { m.material.emissiveIntensity = 1 + 0.3 * f; });
+      // Idle time in real seconds (not the capped frame step), so slow devices also start turning after 3 s.
+      if (!interacting && tilt === null) { idle += Math.min(0.5, (now - prev) / 1000); if (idle > 3) controls.autoRotate = true; }
     }
     if (tilt !== null) {
       off.copy(camera.position).sub(controls.target);
@@ -305,9 +329,11 @@ export function createExplore(root, { reduced = false } = {}) {
   }
 
   let visible = false;
+  let drawing = false;
   const sync = () => {
     const on = visible && !document.hidden && !document.documentElement.classList.contains('is-modal');
     renderer.setAnimationLoop(on ? tick : null);
+    if (on !== drawing) { drawing = on; document.dispatchEvent(new CustomEvent('wc:explore', { detail: { drawing } })); }
     if (!on) stopTiltIfHidden();
   };
   const stopTiltIfHidden = () => { if (!visible && tilt !== null) stopTilt(); };
@@ -321,7 +347,7 @@ export function createExplore(root, { reduced = false } = {}) {
     get state() {
       off.copy(camera.position).sub(controls.target);
       sph.setFromVector3(off);
-      return { azimuth: sph.theta, autoRotate: controls.autoRotate, running: visible, tilt: tilt !== null };
+      return { azimuth: sph.theta, autoRotate: controls.autoRotate, running: visible, drawing, tilt: tilt !== null, lamp: lampLight.intensity, glow: lamp.userData.outer.material.opacity };
     },
   };
   root.wcExplore = api; // read by the end-to-end checks

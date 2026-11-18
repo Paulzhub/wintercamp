@@ -281,6 +281,8 @@ html.wc-framed body { overflow: auto; }
 .has-webgl .hero__glow, .has-webgl .hero__ridges { opacity: 0; transition: opacity 1.2s var(--ease); }
 .hero__content { width: min(100% - 2 * var(--s3), var(--wrap)); margin-inline: auto; display: grid; justify-items: center; text-align: center; gap: var(--s3); }
 .hero__h1 { display: grid; justify-items: center; gap: var(--s1); font-weight: 400; }
+/* Round 17: focus moves to the headline when the page opens without a click (remembered sound, or arriving by the curtain); no ring round the whole hero title for that. */
+.hero__h1[tabindex="-1"]:focus-visible { outline: none; }
 .hero__label { font-weight: 600; font-size: 14px; letter-spacing: 0.24em; text-transform: uppercase; padding: var(--s1) var(--s2); border: 1px solid rgb(245 245 245 / 0.28); border-radius: var(--r-pill); }
 .hero__word { font-family: var(--font-display); font-weight: 400; font-size: clamp(64px, 19vw, 248px); line-height: 0.92; letter-spacing: 0.01em; display: flex; transform-origin: 50% 0; will-change: transform; }
 .ltr { --lit: 0; display: inline-block; color: rgb(245 245 245 / calc(0.8 + 0.2 * var(--lit))); text-shadow: 0 0 calc(8px + 48px * var(--lit)) rgb(250 246 255 / calc(0.12 + 0.6 * var(--lit))); transition: color 320ms var(--ease), text-shadow 320ms var(--ease); }
@@ -808,6 +810,16 @@ select.input { appearance: none; padding-right: var(--s6); background-image: lin
 }
 .curtain__name::after { content: ''; width: var(--s12); height: 4px; border-radius: 2px; background: var(--spectrum); }
 
+/* Round 17: a page opened by the curtain from the other page starts covered (html.wc-arrive,
+   set by public/arrive.js before the first paint) until its script shows the real curtain.
+   Same pink-to-purple as the curtain's top layer. If the script never runs, it fades after 3 s. */
+html.wc-arrive body::before {
+  content: ''; position: fixed; inset: 0; z-index: 2147483647; pointer-events: none;
+  background: linear-gradient(160deg, var(--c-accent), var(--sp-purple));
+  animation: wc-arrive-out 0.4s var(--ease) 3s forwards;
+}
+@keyframes wc-arrive-out { to { opacity: 0; visibility: hidden; } }
+
 /* Section progress: a spectrum line under the menu bar, with a dot for each section. */
 .nav__progress { position: absolute; left: 0; right: 0; bottom: -1px; height: 3px; pointer-events: none; opacity: 0; transition: opacity var(--d-ui) var(--ease); }
 .nav.is-stuck .nav__progress { opacity: 1; }
@@ -849,20 +861,40 @@ select.input { appearance: none; padding-right: var(--s6); background-image: lin
 .world { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
 #main, .footer { position: relative; z-index: 1; }
 .has-world .hero.dark { background: transparent; }
-/* Activities and FAQ: frosted lavender over the scene (Paul's choice). Text stays
-   #180E55 (and the muted #4A4270) on at least 80% lavender: 4.5:1 or more whatever glows behind (checked in tests, section 28a). */
-.has-world .activities.light, .has-world .faq.light { background: rgb(244 241 251 / 0.8); -webkit-backdrop-filter: blur(24px) saturate(140%); backdrop-filter: blur(24px) saturate(140%); }
+/* Activities and FAQ: frosted lavender over the scene. Round 17 (Paul's option B): thinner,
+   60% lavender, so the scene shows more. Headings stay #180E55 (5.4:1 even with black behind);
+   the muted text is darker on these sections, #281F60 (4.6:1). Checked in tests, section 28a. */
+.has-world .activities.light, .has-world .faq.light { --muted: #281F60; background: rgb(244 241 251 / 0.6); -webkit-backdrop-filter: blur(24px) saturate(140%); backdrop-filter: blur(24px) saturate(140%); }
 /* Phones and slow devices: no blur over a moving canvas (it is costly), a little more lavender instead. */
-@media (max-width: 767px) { .has-world .activities.light, .has-world .faq.light { background: rgb(244 241 251 / 0.9); -webkit-backdrop-filter: none; backdrop-filter: none; } }
-.has-world.world-lite .activities.light, .has-world.world-lite .faq.light { background: rgb(244 241 251 / 0.92); -webkit-backdrop-filter: none; backdrop-filter: none; }
-.has-world .gallery.dark { background: rgb(24 14 85 / 0.3); }
+@media (max-width: 767px) { .has-world .activities.light, .has-world .faq.light { background: rgb(244 241 251 / 0.68); -webkit-backdrop-filter: none; backdrop-filter: none; } }
+.has-world.world-lite .activities.light, .has-world.world-lite .faq.light { background: rgb(244 241 251 / 0.68); -webkit-backdrop-filter: none; backdrop-filter: none; }
+/* Round 17: the activity cards' indigo is see-through (72%; photos stay solid). White text 6:1 or more,
+   card text 90% white. The icon's ring in the card colour would show as a hard square on a
+   see-through card, so the icon gets a fine line and a shadow instead. */
+.has-world .card__in.dark:not(.has-photo) { --muted: rgb(245 245 245 / 0.9); background-color: rgb(24 14 85 / 0.72); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+.has-world .has-media .card__icon { box-shadow: 0 0 0 1px rgb(245 245 245 / 0.18), 0 6px 18px rgb(8 4 32 / 0.45); }
+/* Round 17: the questions are 70% white (dark text 10:1 or more). */
+.has-world .qa { background: rgb(255 255 255 / 0.7); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+@media (max-width: 767px) {
+  .has-world .card__in.dark:not(.has-photo) { background-color: rgb(24 14 85 / 0.8); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .has-world .qa { background: rgb(255 255 255 / 0.78); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+.has-world.world-lite .card__in.dark:not(.has-photo) { background-color: rgb(24 14 85 / 0.8); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.has-world.world-lite .qa { background: rgb(255 255 255 / 0.78); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.has-world .gallery.dark, .has-world .explore.dark { background: rgb(24 14 85 / 0.3); }
 .has-world .footer.dark { background: linear-gradient(rgb(24 14 85 / 0.2), rgb(24 14 85 / 0.72) 70%); }
-/* Headings over the scene sit on a frosted indigo panel. */
-.has-world .glass-head { display: inline-grid; max-width: 100%; padding: var(--s3) var(--s4); border-radius: var(--r-lg); background: rgb(24 14 85 / 0.62); border: 1px solid rgb(245 245 245 / 0.14); -webkit-backdrop-filter: blur(16px) saturate(150%); backdrop-filter: blur(16px) saturate(150%); }
+/* Headings over the scene sit on a frosted indigo panel. Round 17: 45% (was 62%; option B said 42%,
+   but 45% is the least that keeps 4.5:1 with pure white behind, over the section's 30% indigo).
+   The smaller text on it is full white (4.9:1) instead of 80% white. */
+.has-world .glass-head { --muted: #FFFFFF; display: inline-grid; max-width: 100%; padding: var(--s3) var(--s4); border-radius: var(--r-lg); background: rgb(24 14 85 / 0.45); border: 1px solid rgb(245 245 245 / 0.14); -webkit-backdrop-filter: blur(16px) saturate(150%); backdrop-filter: blur(16px) saturate(150%); }
 .has-world .glass-head > .lead { max-width: 60ch; }
 
-/* Explore: the framed 360° model. Solid indigo, so only one 3D scene draws at a time. */
+/* Explore: the framed 360° model. Without the 3D world: solid indigo, as before. Round 17: with it,
+   the section is 30% indigo like the Gallery and the frame is see-through, so the world shows
+   behind the model (both scenes draw; the world drops to half rate on phones while Explore is on screen). */
 .explore { background: var(--c-dark); }
+.has-world .explore.is-3d .explore__frame, .has-world .explore.is-wait .explore__frame { background: rgb(18 10 69 / 0.16); box-shadow: inset 0 0 0 1px rgb(245 245 245 / 0.16), var(--sh3); }
+.has-world .explore__hint { left: var(--s2); right: auto; bottom: var(--s2); width: fit-content; max-width: calc(100% - var(--s4)); padding: var(--s1) var(--s2); border-radius: var(--r-sm, 16px); background: rgb(24 14 85 / 0.72); color: var(--t-dark); }
 .explore__frame { position: relative; margin-top: var(--s6); border-radius: var(--r-lg); overflow: hidden; background: #120A45; box-shadow: var(--sh3); aspect-ratio: 16 / 10; max-height: 76vh; max-height: 76svh; width: 100%; }
 .explore__frame::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: var(--spectrum); pointer-events: none; }
 @media (max-width: 767px) { .explore__frame { aspect-ratio: 4 / 5; } }
@@ -885,11 +917,13 @@ select.input { appearance: none; padding-right: var(--s6); background-image: lin
 .spot__close:hover { background: rgb(24 14 85 / 0.08); }
 .spot__close svg { width: 22px; height: 22px; }
 /* Without the 3D model (no JavaScript, no WebGL, reduced motion): the same facts as cards. */
-.explore:not(.is-3d) .explore__frame { aspect-ratio: auto; max-height: none; overflow: visible; background: none; box-shadow: none; }
-.explore:not(.is-3d) .explore__frame::after, .explore:not(.is-3d) .explore__canvas, .explore:not(.is-3d) .explore__hint, .explore:not(.is-3d) .spot__pin, .explore:not(.is-3d) .spot__close { display: none; }
-.explore:not(.is-3d) .explore__spots { display: grid; gap: var(--s2); grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
-.explore:not(.is-3d) .spot__card { position: static; max-width: none; padding: var(--s3); }
-.explore:not(.is-3d) .spot__card[hidden] { display: block; }
+.explore:not(.is-3d):not(.is-wait) .explore__frame { aspect-ratio: auto; max-height: none; overflow: visible; background: none; box-shadow: none; }
+.explore:not(.is-3d):not(.is-wait) .explore__frame::after, .explore:not(.is-3d):not(.is-wait) .explore__canvas, .explore:not(.is-3d):not(.is-wait) .explore__hint, .explore:not(.is-3d):not(.is-wait) .spot__pin, .explore:not(.is-3d):not(.is-wait) .spot__close { display: none; }
+.explore:not(.is-3d):not(.is-wait) .explore__spots { display: grid; gap: var(--s2); grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.explore:not(.is-3d):not(.is-wait) .spot__card { position: static; max-width: none; padding: var(--s3); }
+.explore:not(.is-3d):not(.is-wait) .spot__card[hidden] { display: block; }
+/* Round 17: while the model loads, its frame keeps its place and the numbers wait. */
+.explore.is-wait .spot__pin, .explore.is-wait .explore__hint, .explore.is-wait .explore__tilt { visibility: hidden; }
 .explore__spots { list-style: none; margin: 0; padding: 0; }
 .spot__card.is-top { bottom: auto; top: var(--s2); }
 /* One tip at a time: while a card is open the other numbers step back (not focusable), so nothing hides behind it. */

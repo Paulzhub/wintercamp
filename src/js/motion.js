@@ -159,7 +159,17 @@ export function initMotion() {
       // Ends with the clip opened past the glyph edges so no part of a letter is cut.
       gsap.fromTo(mark, { clipPath: 'inset(100% -4% -4% -4%)', yPercent: 40 }, {
         clipPath: 'inset(-20% -4% -4% -4%)', yPercent: 0, ease: 'none',
-        scrollTrigger: { trigger: mark.parentElement, start: 'top 100%', end: 'bottom 95%', scrub: 0.6 },
+        // Round 17: the end is never past the bottom of the page, so the name is always
+        // fully shown when the page is scrolled to the end (phones' short footers, a page
+        // that changed height). The wrapper (#marquee) carries no transform, so it is measured.
+        scrollTrigger: {
+          trigger: mark.parentElement, start: 'top 100%', scrub: 0.6,
+          end: () => {
+            const box = mark.parentElement.getBoundingClientRect();
+            const want = box.bottom + window.scrollY - window.innerHeight * 0.95;
+            return Math.max(1, Math.min(want, ScrollTrigger.maxScroll(window) - 1));
+          },
+        },
       });
     }
   }
@@ -184,5 +194,23 @@ export function initMotion() {
   }
 
   window.addEventListener('load', () => ScrollTrigger.refresh());
+  watchHeight();
   return api;
+}
+
+// Round 17: when the page changes height after the scroll animations were measured
+// (the Explore model replacing its list, images, fonts), measure them again. Without
+// this the footer name's reveal on phones started ~450 px below the end of the page
+// and the name stayed hidden.
+function watchHeight() {
+  if (!('ResizeObserver' in window)) return;
+  let last = document.documentElement.scrollHeight;
+  let timer = 0;
+  new ResizeObserver(() => {
+    const h = document.documentElement.scrollHeight;
+    if (Math.abs(h - last) < 2) return;
+    last = h;
+    clearTimeout(timer);
+    timer = setTimeout(() => ScrollTrigger.refresh(), 120);
+  }).observe(document.body);
 }

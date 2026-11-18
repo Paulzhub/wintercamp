@@ -12,6 +12,8 @@ export const CURTAIN = { cover: 0.5, gap: 0.1, hold: 0.28, uncover: 0.5 };
 
 export function createCurtain() {
   if (typeof HTMLElement === 'undefined' || typeof HTMLElement.prototype.showPopover !== 'function') return null;
+  const existing = document.getElementById('curtain');
+  if (existing?.wcCurtain) return existing.wcCurtain; // one curtain per page (menu jumps and page changes share it)
   const el = document.createElement('div');
   el.className = 'curtain';
   el.id = 'curtain';
@@ -68,6 +70,45 @@ export function createCurtain() {
         tl.to(b, { scaleY: 0, duration: C.uncover }, covered + C.hold + 0.06);
         tl.to(a, { scaleY: 0, duration: C.uncover }, covered + C.hold + 0.06 + C.gap);
       });
+    },
+    // Round 17, between pages. cover(): the first half only; resolves once the screen is
+    // covered and stays covered (the next page is loading underneath).
+    cover(label, { down = true } = {}) {
+      return new Promise((resolve) => { api.play(label, { down, onCovered: () => { resolve(); return new Promise(() => {}); } }); });
+    },
+    // Back to an uncovered page without leaving it (a page restored by the Back button).
+    reset() {
+      tl?.kill();
+      tl = null;
+      gsap.set([a, b, name], { clearProps: 'all' });
+      el.dataset.state = '';
+      if (el.matches(':popover-open')) el.hidePopover();
+    },
+    // A page that opens covered (arrived by the curtain): shown covered at once,
+    // and the second half plays when uncover() is called.
+    hold(label, { down = true } = {}) {
+      tl?.kill();
+      name.textContent = label;
+      el.showPopover();
+      el.dataset.state = 'covered';
+      gsap.set([a, b], { scaleY: 1 });
+      gsap.set(name, { opacity: 1, y: 0 });
+      const to = down ? '50% 0%' : '50% 100%';
+      const shift = down ? 32 : -32;
+      return {
+        uncover: () => new Promise((resolve) => {
+          const C = CURTAIN;
+          el.dataset.state = 'uncovering';
+          tl = gsap.timeline({
+            defaults: { ease: 'big' },
+            onComplete: () => { tl = null; api.reset(); resolve(); },
+          });
+          tl.to(name, { opacity: 0, y: -shift, duration: 0.3, ease: 'std' }, 0);
+          tl.set([a, b], { transformOrigin: to }, 0);
+          tl.to(b, { scaleY: 0, duration: C.uncover }, 0.06);
+          tl.to(a, { scaleY: 0, duration: C.uncover }, 0.06 + C.gap);
+        }),
+      };
     },
   };
   el.wcCurtain = api; // read by the end-to-end checks

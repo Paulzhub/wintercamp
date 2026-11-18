@@ -128,6 +128,7 @@ function head({ lang, t, title, description, pathKey, withLd }) {
   return `<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 ${csp()}
+<script src="${base}arrive.js"></script>
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(description)}">
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -499,7 +500,7 @@ function siteHeader(lang, t, pathKey) {
     ? `<button type="button" class="${cls}" data-open-register ${extra}><span class="btn__label">${esc(label)}</span></button>`
     : `<a class="${cls}" href="${pre}#register" ${extra}><span class="btn__label">${esc(label)}</span></a>`;
   return `<header class="nav${onHome ? '' : ' nav--sub'}" id="nav" data-tone="dark">
-  <a class="nav__brand" href="${pre}#home" aria-label="Illuminate, ${esc(config.camp.name)}: ${esc(t.nav.home)}"><span class="nav__wordmark${onHome ? '' : ' is-shown'}" lang="en" aria-hidden="true">${brandWord}</span></a>
+  <a class="nav__brand" href="${pre}#home" data-curtain="${esc(t.nav.home)}" aria-label="Illuminate, ${esc(config.camp.name)}: ${esc(t.nav.home)}"><span class="nav__wordmark${onHome ? '' : ' is-shown'}" lang="en" aria-hidden="true">${brandWord}</span></a>
   <nav class="nav__nav" aria-label="${esc(t.nav.label)}">
     <ul class="nav__links">
       ${navLinks.map(([href, label]) => `<li><a class="nav__link" href="${href}" data-text="${esc(label)}"><span>${esc(label)}</span></a></li>`).join('')}
@@ -714,7 +715,7 @@ ${galleryItems(lang, t)}
       <div data-reveal>
         <h2 class="footer__h">${esc(t.footer.contactTitle)}</h2>
         <p><a class="footer__tel" href="${tel}" aria-label="${esc(fill(t.common.call, { phone }))}"><span aria-hidden="true">${icons.phone}</span> ${phone}</a></p>
-        <p><a class="link" href="${urls[lang].privacy}">${esc(t.footer.privacy)}</a></p>
+        <p><a class="link" href="${urls[lang].privacy}" data-curtain="${esc(t.privacy.title)}">${esc(t.footer.privacy)}</a></p>
       </div>
       <div class="footer__tools" data-reveal>
         <a class="icon-btn footer__top" href="#home" aria-label="${esc(t.common.backToTop)}" data-tip="${esc(t.common.backToTop)}" data-magnetic>${icons.up}</a>
@@ -772,7 +773,7 @@ ${siteHeader(lang, t, pathKey)}
 <main id="main" class="plain" tabindex="-1">
   <div class="page-hero dark" data-tone="dark" data-particles="secondary">
     <div class="wrap wrap--narrow page-hero__inner">
-      <p class="page-hero__back"><a class="link" data-magnetic href="${urls[lang].home}">← ${esc(t.privacy.back)}</a></p>
+      <p class="page-hero__back"><a class="link" data-magnetic data-curtain="${esc(t.nav.home)}" href="${urls[lang].home}">← ${esc(t.privacy.back)}</a></p>
       <h1 class="title page-hero__title">${esc(title)}</h1>
       ${meta ? `<p class="page-hero__meta">${esc(meta)}</p>` : ''}
     </div>
