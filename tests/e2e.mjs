@@ -2281,7 +2281,9 @@ async function main() {
           return { bg, tone: c.dataset.tone, title: ratio(getComputedStyle(c.querySelector('.card__title')).color, bg), text: ratio(getComputedStyle(c.querySelector('.card__text')).color, bg), icon: ratio(getComputedStyle(icon).color, under), btn: Boolean(c.querySelector('button.card__open[aria-label^="Open photo: "]')) };
         });
       });
-      check(`${width} activities: all six cards indigo (#180E55), marked dark, text 4.5:1+, icon 3:1+, each with an "Open photo" button`, look.length === 6 && look.every((c) => c.bg === 'rgb(24, 14, 85)' && c.tone === 'dark' && c.title >= 4.5 && c.text >= 4.5 && c.icon >= 3 && c.btn), JSON.stringify(look));
+      // Round 17: over the 3D world the five small cards are see-through indigo (72%, 80% on phones/slow devices;
+      // their worst-case contrast is checked in 28a); the picnic card keeps its photo behind a solid indigo.
+      check(`${width} activities: all six cards indigo (#180E55, see-through over the 3D world), marked dark, text 4.5:1+, icon 3:1+, each with an "Open photo" button`, look.length === 6 && look.every((c) => /^rgba?\(24, 14, 85(, 0\.(72|8))?\)$/.test(c.bg) && c.tone === 'dark' && c.title >= 4.5 && c.text >= 4.5 && c.icon >= 3 && c.btn), JSON.stringify(look));
       await page.locator('#activities .cards').scrollIntoViewIfNeeded();
       await page.waitForTimeout(1200);
       await page.locator('#activities .cards').screenshot({ path: path.join(out, `r14-activities-${width}.png`) });
@@ -2618,15 +2620,23 @@ async function main() {
       await enter(page);
       await page.waitForTimeout(1600);
       const cstate = () => page.evaluate(() => { const c = document.getElementById('curtain'); return { open: c.matches(':popover-open'), name: c.querySelector('.curtain__name').textContent, state: c.dataset.state, y: Math.round(scrollY) }; });
+      // Round 17: noted by the page itself as the curtain starts (Playwright's click can return late on a slow headless frame rate).
+      await page.evaluate(() => {
+        const c = document.getElementById('curtain');
+        const r = (q) => Math.round(c.querySelector(q).getBoundingClientRect().height);
+        window.__frames = [];
+        const t0 = performance.now();
+        const f = () => { window.__frames.push({ a: r('.curtain__layer--a'), b: r('.curtain__layer--b'), name: Number(getComputedStyle(c.querySelector('.curtain__name')).opacity), state: c.dataset.state }); if (performance.now() - t0 < 6000) requestAnimationFrame(f); };
+        requestAnimationFrame(f);
+      });
+      await page.evaluate(() => { const c = document.getElementById('curtain'); window.__cur = []; new MutationObserver(() => window.__cur.push({ open: c.matches(':popover-open'), name: c.querySelector('.curtain__name').textContent, state: c.dataset.state, y: Math.round(scrollY) })).observe(c, { attributes: true, attributeFilter: ['data-state'] }); });
       await page.click('#nav .nav__link[href="#gallery"]');
       await page.waitForTimeout(250);
-      const mid = await cstate();
+      const mid = await page.evaluate(() => window.__cur.find((x) => x.state === 'covering') || null) || await cstate();
       check('Curtain: a menu link plays the curtain with the section name, before the page moves', mid.open && mid.name === 'Gallery' && mid.y < 50, JSON.stringify(mid));
-      const hs = [];
-      for (let k = 0; k < 16; k++) {
-        hs.push(await page.evaluate(() => { const c = document.getElementById('curtain'); const r = (q) => Math.round(c.querySelector(q).getBoundingClientRect().height); return { a: r('.curtain__layer--a'), b: r('.curtain__layer--b'), name: Number(getComputedStyle(c.querySelector('.curtain__name')).opacity), state: c.dataset.state }; }));
-        await page.waitForTimeout(40);
-      }
+      // Round 17: sampled by the page every frame (from the click on), so a slow headless frame rate can't skip the covered moment.
+      await page.waitForFunction(() => !document.querySelector('#curtain:popover-open'), null, { timeout: 6000 });
+      const hs = await page.evaluate(() => window.__frames || []);
       const full = hs.filter((x) => x.a >= 899 && x.b >= 899);
       check('Curtain: for a moment both layers cover the whole screen and the name is fully shown', full.length > 0 && full.some((x) => x.name > 0.95), JSON.stringify(hs.map((x) => `${x.a}/${x.b}/${x.name.toFixed(2)}/${x.state}`)));
       await page.click('#nav .nav__link[href="#activities"]');
@@ -3082,6 +3092,20 @@ async function main() {
     for (const width of [1280, 390]) {
       const phone = width < 768;
       const ctx = await browser.newContext({ viewport: { width, height: phone ? 844 : 900 }, ...(phone ? { isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : {}) });
+      // Each page notes its curtain's states as they happen (the checks can run after a fast uncover).
+      await ctx.addInitScript(() => {
+        window.__arr = [];
+        window.__sawArrive = false;
+        new MutationObserver((m, o) => {
+          if (document.documentElement?.classList.contains('wc-arrive')) window.__sawArrive = true;
+          const c = document.getElementById('curtain');
+          if (!c) return;
+          o.disconnect();
+          const rec = () => window.__arr.push({ open: c.matches(':popover-open'), state: c.dataset.state || '', name: c.querySelector('.curtain__name')?.textContent || '', html: window.__sawArrive });
+          rec();
+          new MutationObserver(rec).observe(c, { attributes: true, attributeFilter: ['data-state'] });
+        }).observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+      });
       const page = await ctx.newPage();
       const done = watch(page, `Round 17 page curtain ${width}`);
       await page.goto(SITE);
@@ -3101,18 +3125,17 @@ async function main() {
       await page.locator('footer a[data-curtain]').click();
       await page.waitForURL(/\/privacy\/$/, { timeout: 8000 });
       const leaving = await page.evaluate(() => JSON.parse(sessionStorage.getItem('test-leave') || '{}'));
-      const arrived = await page.evaluate(() => ({ open: Boolean(document.querySelector('#curtain:popover-open')), state: document.getElementById('curtain')?.dataset.state, name: document.querySelector('.curtain__name')?.textContent, html: document.documentElement.classList.contains('wc-arrive') }));
-      await page.screenshot({ path: path.join(out, `r17-curtain-arrive-${width}.png`) });
+      const arrived = await page.evaluate(() => window.__arr.find((x) => x.state === 'covered') || {});
       await page.waitForFunction(() => !document.querySelector('#curtain:popover-open'), null, { timeout: 5000 });
       const after = await page.evaluate(() => ({ title: document.querySelector('.page-hero__title')?.textContent, flag: sessionStorage.getItem('wc-arrive') }));
-      check(`Page curtain ${width}: "Privacy notice" covers the home page, then the privacy notice opens covered and uncovers`,
-        leaving.open && leaving.name === 'Privacy notice' && !leaving.url.endsWith('/privacy/') && arrived.open && /covered|uncovering/.test(arrived.state) && arrived.name === 'Privacy notice' && !arrived.html && after.title && after.flag === null,
+      check(`Page curtain ${width}: "Privacy notice" covers the home page, then the privacy notice opens covered (before its first paint) and uncovers`,
+        leaving.open && leaving.name === 'Privacy notice' && !leaving.url.endsWith('/privacy/') && arrived.open && arrived.html === true && arrived.name === 'Privacy notice' && after.title && after.flag === null,
         JSON.stringify({ leaving, arrived, after }));
       await page.screenshot({ path: path.join(out, `r17-privacy-${width}.png`) });
       // Back home: the curtain again; with the sound choice remembered, no loading screen.
       await page.click('.page-hero__back a');
       await page.waitForURL(/\/wintercamp\/$/, { timeout: 8000 });
-      const home = await page.evaluate(() => ({ open: Boolean(document.querySelector('#curtain:popover-open')), name: document.querySelector('.curtain__name')?.textContent }));
+      const home = await page.evaluate(() => window.__arr.find((x) => x.state === 'covered') || {});
       await page.waitForFunction(() => !document.querySelector('#curtain:popover-open') && !document.getElementById('loader'), null, { timeout: 8000 });
       const homeAfter = await page.evaluate(() => ({ loader: Boolean(document.getElementById('loader')), inert: document.querySelectorAll('[inert]').length, y: scrollY, ready: Boolean(document.getElementById('home').wcScene()) }));
       check(`Page curtain ${width}: back to the home page under the curtain ("Home"), straight onto the page (sound choice remembered)`, home.open && home.name === 'Home' && !homeAfter.loader && homeAfter.inert === 0, JSON.stringify({ home, homeAfter }));
