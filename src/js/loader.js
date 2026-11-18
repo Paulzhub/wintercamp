@@ -17,7 +17,7 @@ function deepLink() {
 }
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 
-export function initLoader({ audio, motion, hero }) {
+export function initLoader({ audio, motion, hero, arrival = null }) {
   const loader = $('#loader');
   const outside = $$('body > :not(#loader):not(script):not(dialog)');
   const finishPage = () => {
@@ -45,7 +45,7 @@ export function initLoader({ audio, motion, hero }) {
     }
     document.dispatchEvent(new Event('wc:ready'));
   };
-  if (!loader) { finishPage(); return; }
+  if (!loader) { finishPage(); arrival?.uncover(); return; }
 
   outside.forEach((el) => { el.inert = true; });
   motion.stop();
@@ -78,6 +78,22 @@ export function initLoader({ audio, motion, hero }) {
     hero.ready,
     new Promise((r) => (document.readyState === 'complete' ? r() : window.addEventListener('load', r, { once: true }))),
   ];
+  // Round 17: arrived from the privacy notice by the curtain. With a remembered sound
+  // choice the loading screen is skipped: the page gets ready under the curtain (same
+  // cap), then it uncovers at the section the link pointed to. Otherwise the curtain
+  // uncovers onto the loading screen, as on any first visit.
+  if (arrival) {
+    const stored = audio.stored();
+    if (!stored) { arrival.uncover(); } else {
+      Promise.race([Promise.all(tasks.map((t) => Promise.resolve(t).catch(() => {}))), wait(CAP_MS)]).then(() => {
+        audio.enable(stored === 'on');
+        loader.remove();
+        finishPage();
+        arrival.uncover();
+      });
+      return;
+    }
+  }
   let done = 0;
   tasks.forEach((t) => Promise.resolve(t).catch(() => {}).then(() => {
     done += 1;

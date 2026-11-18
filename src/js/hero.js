@@ -125,11 +125,12 @@ export function initHero() {
         s.settle(settleP);
         html.classList.add('has-webgl');
         if (!reduced()) html.classList.add('has-world');
-        // Pause while a dialog is open (is-modal), the tab is hidden, or the 3D model panel covers the screen.
-        let covered = false;
-        const sync = () => s.setActive(!document.hidden && !html.classList.contains('is-modal') && !html.classList.contains('wc-vt') && !covered);
+        // Pause while a dialog is open (is-modal) or the tab is hidden. Round 17: the world no
+        // longer pauses under the Explore panel (it shows through it); while the model draws,
+        // phones run the world at half rate (share()).
+        const sync = () => s.setActive(!document.hidden && !html.classList.contains('is-modal') && !html.classList.contains('wc-vt'));
         document.addEventListener('visibilitychange', sync);
-        document.addEventListener('wc:explore', (e) => { covered = Boolean(e.detail?.covering); sync(); });
+        document.addEventListener('wc:explore', (e) => s.share(Boolean(e.detail?.drawing)));
         new MutationObserver(sync).observe(html, { attributes: true, attributeFilter: ['class'] });
         sync();
         // Scrub with the scroll (not with reduced motion: the scene stays on scene 1).

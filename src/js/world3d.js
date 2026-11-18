@@ -381,6 +381,10 @@ export function createWorld(canvas, { reduced = false, lite = false } = {}) {
   // 4 resolution 0.75x, 5 half frame rate, 6 resolution 0.5x.
   let quality = 0;
   let halfRate = false;
+  // Round 17: while the Explore model also draws (it is on screen), phones run this world at
+  // half frame rate and at most 1x resolution, so the two scenes share the phone's GPU.
+  let shared = false;
+  const half = () => halfRate || shared;
   let winStart = 0; let winFrames = 0; let skip = false;
   let resolveFirst;
   const firstFrame = new Promise((r) => { resolveFirst = r; });
@@ -456,16 +460,16 @@ export function createWorld(canvas, { reduced = false, lite = false } = {}) {
     if (!winStart) winStart = now;
     winFrames++;
     if (now - winStart > 1000) {
-      if ((now - winStart) / winFrames > (halfRate ? 60 : 30) && quality < 6) lower();
+      if ((now - winStart) / winFrames > (half() ? 60 : 30) && quality < 6) lower();
       winStart = now; winFrames = 0;
     }
-    if (halfRate) { skip = !skip; if (skip) return; }
-    const dt = Math.min(0.05, raw / 1000) * (halfRate ? 2 : 1);
+    if (half()) { skip = !skip; if (skip) return; }
+    const dt = Math.min(0.05, raw / 1000) * (half() ? 2 : 1);
     time += dt;
     U.uTime.value = time;
     // Scroll scrub with smooth easing: a damped follow of the scroll position. It uses
     // real time (up to 0.25 s a frame), so a slow device lags no further behind.
-    const real = Math.min(0.25, raw / 1000) * (halfRate ? 2 : 1);
+    const real = Math.min(0.25, raw / 1000) * (half() ? 2 : 1);
     cur += (target - cur) * (1 - Math.exp(-real / 0.28));
     pCur.lerp(pointer, 1 - Math.exp(-dt / 0.25));
     rise += (riseTarget - rise) * (1 - Math.exp(-dt / 0.9));
@@ -506,7 +510,17 @@ export function createWorld(canvas, { reduced = false, lite = false } = {}) {
       if (!running) { cur = target; render(); }
     },
     get state() {
-      return { boost: U.uBoost.value, settle: Math.min(1, Math.max(0, (0.74 - U.uSnow.value) / 0.2)), settleTarget, progress: cur, target, quality, running, lite };
+      return { boost: U.uBoost.value, settle: Math.min(1, Math.max(0, (0.74 - U.uSnow.value) / 0.2)), settleTarget, progress: cur, target, quality, running, lite, shared, halfRate: half() };
+    },
+    // Round 17: the Explore model is drawing too (phones only: half rate, 1x resolution).
+    share(on) {
+      const want = Boolean(on) && window.innerWidth < 768;
+      if (want === shared) return;
+      shared = want;
+      renderer.setPixelRatio(shared ? Math.min(dprCap, 1) : dprCap);
+      U.uPx.value = shared ? Math.min(dprCap, 1) : dprCap;
+      resize();
+      winStart = 0; winFrames = 0;
     },
     setActive(on) { active = on && !document.hidden; setRunning(active); },
     rise() {

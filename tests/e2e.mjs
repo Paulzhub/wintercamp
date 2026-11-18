@@ -2281,7 +2281,9 @@ async function main() {
           return { bg, tone: c.dataset.tone, title: ratio(getComputedStyle(c.querySelector('.card__title')).color, bg), text: ratio(getComputedStyle(c.querySelector('.card__text')).color, bg), icon: ratio(getComputedStyle(icon).color, under), btn: Boolean(c.querySelector('button.card__open[aria-label^="Open photo: "]')) };
         });
       });
-      check(`${width} activities: all six cards indigo (#180E55), marked dark, text 4.5:1+, icon 3:1+, each with an "Open photo" button`, look.length === 6 && look.every((c) => c.bg === 'rgb(24, 14, 85)' && c.tone === 'dark' && c.title >= 4.5 && c.text >= 4.5 && c.icon >= 3 && c.btn), JSON.stringify(look));
+      // Round 17: over the 3D world the five small cards are see-through indigo (72%, 80% on phones/slow devices;
+      // their worst-case contrast is checked in 28a); the picnic card keeps its photo behind a solid indigo.
+      check(`${width} activities: all six cards indigo (#180E55, see-through over the 3D world), marked dark, text 4.5:1+, icon 3:1+, each with an "Open photo" button`, look.length === 6 && look.every((c) => /^rgba?\(24, 14, 85(, 0\.(72|8))?\)$/.test(c.bg) && c.tone === 'dark' && c.title >= 4.5 && c.text >= 4.5 && c.icon >= 3 && c.btn), JSON.stringify(look));
       await page.locator('#activities .cards').scrollIntoViewIfNeeded();
       await page.waitForTimeout(1200);
       await page.locator('#activities .cards').screenshot({ path: path.join(out, `r14-activities-${width}.png`) });
@@ -2618,15 +2620,23 @@ async function main() {
       await enter(page);
       await page.waitForTimeout(1600);
       const cstate = () => page.evaluate(() => { const c = document.getElementById('curtain'); return { open: c.matches(':popover-open'), name: c.querySelector('.curtain__name').textContent, state: c.dataset.state, y: Math.round(scrollY) }; });
+      // Round 17: noted by the page itself as the curtain starts (Playwright's click can return late on a slow headless frame rate).
+      await page.evaluate(() => {
+        const c = document.getElementById('curtain');
+        const r = (q) => Math.round(c.querySelector(q).getBoundingClientRect().height);
+        window.__frames = [];
+        const t0 = performance.now();
+        const f = () => { window.__frames.push({ a: r('.curtain__layer--a'), b: r('.curtain__layer--b'), name: Number(getComputedStyle(c.querySelector('.curtain__name')).opacity), state: c.dataset.state }); if (performance.now() - t0 < 6000) requestAnimationFrame(f); };
+        requestAnimationFrame(f);
+      });
+      await page.evaluate(() => { const c = document.getElementById('curtain'); window.__cur = []; new MutationObserver(() => window.__cur.push({ open: c.matches(':popover-open'), name: c.querySelector('.curtain__name').textContent, state: c.dataset.state, y: Math.round(scrollY) })).observe(c, { attributes: true, attributeFilter: ['data-state'] }); });
       await page.click('#nav .nav__link[href="#gallery"]');
       await page.waitForTimeout(250);
-      const mid = await cstate();
+      const mid = await page.evaluate(() => window.__cur.find((x) => x.state === 'covering') || null) || await cstate();
       check('Curtain: a menu link plays the curtain with the section name, before the page moves', mid.open && mid.name === 'Gallery' && mid.y < 50, JSON.stringify(mid));
-      const hs = [];
-      for (let k = 0; k < 16; k++) {
-        hs.push(await page.evaluate(() => { const c = document.getElementById('curtain'); const r = (q) => Math.round(c.querySelector(q).getBoundingClientRect().height); return { a: r('.curtain__layer--a'), b: r('.curtain__layer--b'), name: Number(getComputedStyle(c.querySelector('.curtain__name')).opacity), state: c.dataset.state }; }));
-        await page.waitForTimeout(40);
-      }
+      // Round 17: sampled by the page every frame (from the click on), so a slow headless frame rate can't skip the covered moment.
+      await page.waitForFunction(() => !document.querySelector('#curtain:popover-open'), null, { timeout: 6000 });
+      const hs = await page.evaluate(() => window.__frames || []);
       const full = hs.filter((x) => x.a >= 899 && x.b >= 899);
       check('Curtain: for a moment both layers cover the whole screen and the name is fully shown', full.length > 0 && full.some((x) => x.name > 0.95), JSON.stringify(hs.map((x) => `${x.a}/${x.b}/${x.name.toFixed(2)}/${x.state}`)));
       await page.click('#nav .nav__link[href="#activities"]');
@@ -2861,14 +2871,52 @@ async function main() {
         const lum = ([R, G, B]) => [R, G, B].map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }).reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0);
         const ratio = (x, y) => { const [L1, L2] = [lum(x), lum(y)].sort((m, n) => n - m); return (L1 + 0.05) / (L2 + 0.05); };
         const behind = [[0, 0, 0], [24, 14, 85], [255, 255, 255], [230, 30, 123], [248, 156, 56]];
-        const texts = [[24, 14, 85], [74, 66, 112]];
+        const texts = [[24, 14, 85], [40, 31, 96]]; // round 17: muted #281F60 on the thinner lavender
         let min = 99;
         for (const k of behind) { const mix = [r, g, b].map((v, i) => v * a + k[i] * (1 - a)); for (const t of texts) min = Math.min(min, ratio(t, mix)); }
         return { bg: cs.backgroundColor, blur: cs.backdropFilter || cs.webkitBackdropFilter, min: Number(min.toFixed(2)), faq: getComputedStyle(document.getElementById('faq')).backgroundColor, lite: document.documentElement.classList.contains('world-lite') };
       });
       // Blurred on tablets and desktops, unless slow frames switched to the lighter mode (no blur, more lavender);
       // headless Chrome draws WebGL in software, so it often does.
-      check(`World ${width}: Activities and FAQ are frosted lavender (${phone ? 'no blur on phones' : 'blurred, or no blur in the lighter mode'}), text 4.5:1+ whatever glows behind`, frost.bg === frost.faq && /244, 241, 251, 0\.[89]/.test(frost.bg) && (phone || frost.lite ? frost.blur === 'none' : /blur/.test(frost.blur)) && frost.min >= 4.5, JSON.stringify(frost));
+      check(`World ${width}: Activities and FAQ are frosted lavender, round 17 thinner (60%, or 68% ${phone ? 'on phones, no blur' : 'unblurred in the lighter mode'}), text 4.5:1+ whatever glows behind`, frost.bg === frost.faq && (phone || frost.lite ? /244, 241, 251, 0\.68\)/.test(frost.bg) && frost.blur === 'none' : /244, 241, 251, 0\.6\)/.test(frost.bg) && /blur/.test(frost.blur)) && frost.min >= 4.5, JSON.stringify(frost));
+      // Round 17: see-through activity cards, questions and heading panels keep their text contrast in the worst case.
+      const see = await page.evaluate(() => {
+        const rgba = (c) => { const [r, g, b, a = 1] = c.match(/[\d.]+/g).map(Number); return { c: [r, g, b], a }; };
+        const over = (top, under) => top.c.map((v, i) => v * top.a + under[i] * (1 - top.a));
+        const lum = ([R, G, B]) => [R, G, B].map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }).reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0);
+        const ratio = (x, y) => { const [L1, L2] = [lum(x), lum(y)].sort((m, n) => n - m); return (L1 + 0.05) / (L2 + 0.05); };
+        const sec = rgba(getComputedStyle(document.getElementById('activities')).backgroundColor);
+        const card = document.querySelector('.card__in.has-media');
+        const cardBg = rgba(getComputedStyle(card).backgroundColor);
+        const cardText = card.querySelector('.card__text');
+        const ct = rgba(getComputedStyle(cardText).color);
+        const qa = document.querySelector('.qa');
+        const qaBg = rgba(getComputedStyle(qa).backgroundColor);
+        const qaText = rgba(getComputedStyle(qa.querySelector('.qa__h')).color).c;
+        const out = { cardAlpha: cardBg.a, qaAlpha: qaBg.a, card: 99, qa: 99, glass: {} };
+        for (const k of [[255, 255, 255], [0, 0, 0], [230, 30, 123]]) {
+          const secMix = over(sec, k);
+          const cm = over(cardBg, secMix);
+          out.card = Math.min(out.card, ratio(over(ct, cm), cm), ratio([245, 245, 245], cm));
+          out.qa = Math.min(out.qa, ratio(qaText, over(qaBg, secMix)));
+        }
+        for (const id of ['gallery', 'explore']) {
+          const s2 = rgba(getComputedStyle(document.getElementById(id)).backgroundColor);
+          const head = document.querySelector(`#${id} .glass-head`);
+          const g = rgba(getComputedStyle(head).backgroundColor);
+          let min = 99;
+          for (const k of [[255, 255, 255], [252, 241, 40], [230, 30, 123]]) {
+            const m = over(g, over(s2, k));
+            head.querySelectorAll('h2, p, .eyebrow, .lead').forEach((el) => { const t = rgba(getComputedStyle(el).color); min = Math.min(min, ratio(over(t, m), m)); });
+          }
+          out.glass[id] = { alpha: g.a, section: s2.a, min: Number(min.toFixed(2)) };
+        }
+        out.card = Number(out.card.toFixed(2)); out.qa = Number(out.qa.toFixed(2));
+        return out;
+      });
+      check(`World ${width}: round 17 see-through cards (72%, 80% ${phone ? 'here' : 'on phones'}), questions (70%/78%) and heading panels (45%) keep text at 4.5:1+ with the worst light behind`,
+        Math.abs(see.cardAlpha - (phone || frost.lite ? 0.8 : 0.72)) < 0.01 && Math.abs(see.qaAlpha - (phone || frost.lite ? 0.78 : 0.7)) < 0.01 && see.card >= 4.5 && see.qa >= 4.5
+        && Object.values(see.glass).every((g) => Math.abs(g.alpha - 0.45) < 0.01 && Math.abs(g.section - 0.3) < 0.01 && g.min >= 4.5), JSON.stringify(see));
       const parts = await page.evaluate(() => { const g = document.getElementById('gallery'); g.scrollIntoView(); return null; });
       await page.waitForTimeout(800);
       const off = await page.evaluate(() => document.getElementById('gallery').wcParticles?.off);
@@ -2885,11 +2933,17 @@ async function main() {
       await page.evaluate(() => { const e = document.getElementById('explore'); window.scrollTo(0, e.getBoundingClientRect().top + scrollY + Math.max(0, (e.offsetHeight - innerHeight) / 2)); });
       await page.waitForTimeout(900);
       const cover = await page.evaluate(() => { const r = document.getElementById('explore').getBoundingClientRect(); return r.top <= 0 && r.bottom >= innerHeight; });
-      const underExplore = (await st()).running;
+      await page.waitForFunction(() => document.getElementById('explore').wcExplore?.state.drawing, null, { timeout: 15000 }).catch(() => {});
+      await page.waitForTimeout(600);
+      const underExplore = await st();
       await page.evaluate(() => window.scrollTo(0, 0));
       await page.waitForTimeout(900);
-      const back = (await st()).running;
-      check(`World ${width}: paused behind the registration view and under the Explore panel, running again after`, !inDialog && afterDialog && (!cover || !underExplore) && back, JSON.stringify({ inDialog, afterDialog, cover, underExplore, back }));
+      const backState = await st();
+      const back = backState.running;
+      // Round 17: the world keeps running behind the see-through Explore panel; on phones at half rate while the model draws.
+      check(`World ${width}: paused behind the registration view; keeps running behind the Explore panel (${phone ? 'half rate while the model draws, full again after' : 'full rate on desktops'})`,
+        !inDialog && afterDialog && underExplore.running && back && (phone ? underExplore.shared && underExplore.halfRate && !backState.shared : !underExplore.shared),
+        JSON.stringify({ inDialog, afterDialog, cover, underExplore, back, backShared: backState.shared }));
       check(`World ${width}: quality steps down by itself when frames are slow`, (await st()).quality >= 0, JSON.stringify(await st()));
       done();
       await ctx.close();
@@ -2946,6 +3000,19 @@ async function main() {
       });
       check(`Explore ${width}: five numbered hotspots (48 px) over the model, inside the frame`, pins.length === 5 && pins.every((p) => p.w >= 48 && p.inside) && pins.filter((p) => !p.behind).length >= 3, JSON.stringify(pins));
       await page.locator('#explore .explore__frame').screenshot({ path: path.join(out, `r16b-explore-${width}.png`) });
+      // Round 17: no solid fill: the section is 30% indigo, the frame almost clear and the model's canvas transparent,
+      // so the world shows through; and the lantern shines (its light and glow flicker).
+      const clear = await page.evaluate(async () => {
+        const a = (c) => Number((c.match(/[\d.]+/g)[3]) ?? 1);
+        const cv = document.getElementById('explore-canvas');
+        const gl = cv.getContext('webgl2') || cv.getContext('webgl');
+        const s1 = document.getElementById('explore').wcExplore.state;
+        await new Promise((r) => setTimeout(r, 450));
+        const s2 = document.getElementById('explore').wcExplore.state;
+        return { section: a(getComputedStyle(document.getElementById('explore')).backgroundColor), frame: a(getComputedStyle(document.querySelector('#explore .explore__frame')).backgroundColor), alpha: gl?.getContextAttributes().alpha, lamp: [s1.lamp, s2.lamp], glow: [s1.glow, s2.glow] };
+      });
+      check(`Explore ${width}: see-through (section 30% indigo, clear frame, transparent model canvas); the lantern's light flickers`, Math.abs(clear.section - 0.3) < 0.01 && clear.frame < 0.2 && clear.alpha === true && clear.lamp[0] !== clear.lamp[1] && clear.lamp.every((l) => l > 22) && clear.glow[0] !== clear.glow[1], JSON.stringify(clear));
+      await page.screenshot({ path: path.join(out, `r17-explore-world-${width}.png`) });
       const front = pins.find((p) => !p.behind && p.key !== 'theme') || pins.find((p) => !p.behind);
       await page.click(`#explore .spot[data-spot="${front.key}"] .spot__pin`, { force: true });
       await page.waitForTimeout(400);
@@ -2980,6 +3047,140 @@ async function main() {
       await axe(page, `Explore ${width}`, '#explore');
       done();
       await ctx.close();
+    }
+
+    // 29. Round 17.
+    // 29a. Phones: the footer name stays visible at the bottom of the page. It used to stay hidden: the page got
+    // ~450 px shorter when the Explore model replaced its list, and the name's scroll reveal was not measured again.
+    for (const width of [320, 360, 390]) {
+      const ctx = await browser.newContext({ viewport: { width, height: 640 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+      const page = await ctx.newPage();
+      const done = watch(page, `Round 17 footer name ${width}`);
+      await page.goto(SITE);
+      await enter(page, '#enter-silent', true);
+      const h0 = await page.evaluate(() => ({ ex: document.getElementById('explore').offsetHeight, cls: document.getElementById('explore').className }));
+      // Scrolled by hand, a little at a time (not one jump), as a finger would.
+      for (let i = 0; i < 260; i++) { await page.evaluate(() => window.scrollBy(0, 48)); await page.waitForTimeout(12); }
+      await page.waitForTimeout(1500);
+      const name = () => page.evaluate(() => {
+        const c = document.querySelector('#marquee [data-clip]');
+        const r = document.getElementById('marquee').getBoundingClientRect();
+        const m = getComputedStyle(c).clipPath.match(/inset\(([-\d.]+)%/);
+        return { y: Math.round(scrollY), max: Math.round(document.documentElement.scrollHeight - innerHeight), clipTop: m ? Number(m[1]) : null, ty: Math.round(Number(new DOMMatrix(getComputedStyle(c).transform).m42)), inView: r.top >= 0 && r.bottom <= innerHeight, ex: document.getElementById('explore').offsetHeight, cls: document.getElementById('explore').className };
+      });
+      const a = await name();
+      // The phone's address bar hides (taller view), the finger goes on, the bar comes back.
+      await page.setViewportSize({ width, height: 696 });
+      await page.waitForTimeout(900);
+      for (let i = 0; i < 6; i++) { await page.evaluate(() => window.scrollBy(0, 40)); await page.waitForTimeout(16); }
+      await page.waitForTimeout(900);
+      const b = await name();
+      await page.setViewportSize({ width, height: 640 });
+      await page.waitForTimeout(900);
+      for (let i = 0; i < 6; i++) { await page.evaluate(() => window.scrollBy(0, 40)); await page.waitForTimeout(16); }
+      await page.waitForTimeout(900);
+      const c = await name();
+      const shown = (x) => x.y >= x.max - 1 && x.clipTop !== null && x.clipTop <= 0 && Math.abs(x.ty) <= 1 && x.inView;
+      check(`Footer name ${width}: fully shown at the bottom of the page (also with the address bar hiding and showing)`, shown(a) && shown(b) && shown(c), JSON.stringify({ a, b, c }));
+      check(`Footer name ${width}: the Explore panel keeps its height when the model arrives (no jump)`, /is-3d/.test(a.cls) && Math.abs(a.ex - h0.ex) <= 2 && /is-wait/.test(h0.cls), JSON.stringify({ h0, after: { ex: a.ex, cls: a.cls } }));
+      await page.screenshot({ path: path.join(out, `r17-footer-${width}.png`) });
+      done();
+      await ctx.close();
+    }
+
+    // 29b. The curtain between the home page and the privacy notice, both ways.
+    for (const width of [1280, 390]) {
+      const phone = width < 768;
+      const ctx = await browser.newContext({ viewport: { width, height: phone ? 844 : 900 }, ...(phone ? { isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : {}) });
+      // Each page notes its curtain's states as they happen (the checks can run after a fast uncover).
+      await ctx.addInitScript(() => {
+        window.__arr = [];
+        window.__sawArrive = false;
+        new MutationObserver((m, o) => {
+          if (document.documentElement?.classList.contains('wc-arrive')) window.__sawArrive = true;
+          const c = document.getElementById('curtain');
+          if (!c) return;
+          o.disconnect();
+          const rec = () => window.__arr.push({ open: c.matches(':popover-open'), state: c.dataset.state || '', name: c.querySelector('.curtain__name')?.textContent || '', html: window.__sawArrive });
+          rec();
+          new MutationObserver(rec).observe(c, { attributes: true, attributeFilter: ['data-state'] });
+        }).observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+      });
+      const page = await ctx.newPage();
+      const done = watch(page, `Round 17 page curtain ${width}`);
+      await page.goto(SITE);
+      await enter(page, '#enter-silent', phone);
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      await page.waitForTimeout(1200);
+      // What the home page showed while leaving is noted in sessionStorage (the page is gone afterwards).
+      await page.evaluate(() => {
+        const c = document.getElementById('curtain');
+        const t0 = performance.now();
+        new MutationObserver(() => {
+          if (c.dataset.state === 'covered' && !sessionStorage.getItem('test-leave')) {
+            sessionStorage.setItem('test-leave', JSON.stringify({ open: c.matches(':popover-open'), name: c.querySelector('.curtain__name').textContent, url: location.pathname, ms: Math.round(performance.now() - t0) }));
+          }
+        }).observe(c, { attributes: true, attributeFilter: ['data-state'] });
+      });
+      await page.locator('footer a[data-curtain]').click();
+      await page.waitForURL(/\/privacy\/$/, { timeout: 8000 });
+      const leaving = await page.evaluate(() => JSON.parse(sessionStorage.getItem('test-leave') || '{}'));
+      const arrived = await page.evaluate(() => window.__arr.find((x) => x.state === 'covered') || {});
+      await page.waitForFunction(() => !document.querySelector('#curtain:popover-open'), null, { timeout: 5000 });
+      const after = await page.evaluate(() => ({ title: document.querySelector('.page-hero__title')?.textContent, flag: sessionStorage.getItem('wc-arrive') }));
+      check(`Page curtain ${width}: "Privacy notice" covers the home page, then the privacy notice opens covered (before its first paint) and uncovers`,
+        leaving.open && leaving.name === 'Privacy notice' && !leaving.url.endsWith('/privacy/') && arrived.open && arrived.html === true && arrived.name === 'Privacy notice' && after.title && after.flag === null,
+        JSON.stringify({ leaving, arrived, after }));
+      await page.screenshot({ path: path.join(out, `r17-privacy-${width}.png`) });
+      // Back home: the curtain again; with the sound choice remembered, no loading screen.
+      await page.click('.page-hero__back a');
+      await page.waitForURL(/\/wintercamp\/$/, { timeout: 8000 });
+      const home = await page.evaluate(() => window.__arr.find((x) => x.state === 'covered') || {});
+      await page.waitForFunction(() => !document.querySelector('#curtain:popover-open') && !document.getElementById('loader'), null, { timeout: 8000 });
+      const homeAfter = await page.evaluate(() => ({ loader: Boolean(document.getElementById('loader')), inert: document.querySelectorAll('[inert]').length, y: scrollY, ready: Boolean(document.getElementById('home').wcScene()) }));
+      check(`Page curtain ${width}: back to the home page under the curtain ("Home"), straight onto the page (sound choice remembered)`, home.open && home.name === 'Home' && !homeAfter.loader && homeAfter.inert === 0, JSON.stringify({ home, homeAfter }));
+      await page.screenshot({ path: path.join(out, `r17-curtain-home-${width}.png`) });
+      // From the privacy notice's menu to a home section: lands on that section.
+      await page.goto(`${SITE}privacy/`);
+      await page.waitForTimeout(800);
+      const direct = await page.evaluate(() => Boolean(document.querySelector('#curtain:popover-open')));
+      if (phone) { await page.click('#menu-open'); await page.waitForTimeout(1200); await page.click('#menu .menu__link[href$="#faq"]'); }
+      else await page.click('#nav .nav__link[href$="#faq"]');
+      await page.waitForURL(/#faq$/, { timeout: 8000 });
+      await page.waitForFunction(() => !document.querySelector('#curtain:popover-open') && !document.getElementById('loader'), null, { timeout: 8000 });
+      await page.waitForTimeout(600);
+      const faq = await page.evaluate(() => { const r = document.getElementById('faq').getBoundingClientRect(); return { top: Math.round(r.top), nav: document.getElementById('nav').offsetHeight }; });
+      check(`Page curtain ${width}: a direct visit is not covered; a menu link from the privacy notice lands on its home section`, !direct && Math.abs(faq.top - faq.nav) < 40, JSON.stringify({ direct, faq }));
+      done();
+      await ctx.close();
+    }
+    {
+      // A new-tab link (the registration form's privacy link) and reduced motion: no curtain.
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+      const page = await ctx.newPage();
+      await page.goto(SITE);
+      await enter(page);
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      await page.waitForTimeout(600);
+      await page.click('footer a[data-curtain]');
+      await page.waitForURL(/\/privacy\/$/, { timeout: 8000 });
+      const r = await page.evaluate(() => ({ open: Boolean(document.querySelector('#curtain:popover-open')), arrive: document.documentElement.classList.contains('wc-arrive') }));
+      check('Page curtain, reduced motion: the privacy notice opens directly, no curtain', !r.open && !r.arrive, JSON.stringify(r));
+      await ctx.close();
+      const ctx2 = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+      const p2 = await ctx2.newPage();
+      await p2.goto(SITE);
+      await enter(p2);
+      const nt = await p2.evaluate(() => {
+        const a = document.querySelector('a[target="_blank"][href*="privacy"]');
+        if (!a) return { found: false };
+        let prevented = null;
+        document.addEventListener('click', (e) => { prevented = e.defaultPrevented; e.preventDefault(); }, { once: true });
+        a.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+        return { found: true, prevented, open: Boolean(document.querySelector('#curtain:popover-open')) };
+      });
+      check('Page curtain: the registration form\'s privacy link (new tab) plays no curtain', nt.found && nt.prevented === false && !nt.open, JSON.stringify(nt));
+      await ctx2.close();
     }
   } finally {
     await browser.close();
