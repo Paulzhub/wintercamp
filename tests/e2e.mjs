@@ -653,14 +653,24 @@ async function main() {
       check('Carousel cross-fade: centre item fully visible, neighbours faded', r3.activeOp === '1' && r3.nextOp > 0.2 && r3.nextOp < 0.6, JSON.stringify(r3));
       const fields = await page.evaluate(() => [...document.querySelectorAll('[data-particles]')].map((h) => [h.id || h.className.split(' ')[0], h.dataset.particles, Boolean(h.querySelector(':scope > canvas.particles'))]));
       check('Particles: red on light sections, light grey on dark sections', fields.length >= 5 && fields.every(([, , c]) => c) && fields.filter(([id]) => ['activities', 'faq'].includes(id)).every(([, k]) => k === 'accent') && fields.filter(([id]) => ['gallery', 'contact'].includes(id)).every(([, k]) => k === 'secondary'), JSON.stringify(fields));
+      // Round 18: over the 3D world Activities and FAQ leave the snow to the scene (data-world-off, as the
+      // Gallery and footer), so falling particles are checked on the privacy notice's lavender body.
       await page.locator('#faq').scrollIntoViewIfNeeded();
-      await page.waitForTimeout(600);
-      const px = async () => page.evaluate(() => { const c = document.querySelector('#faq > canvas.particles'); return c.toDataURL().length + ':' + c.getContext('2d').getImageData(0, 0, c.width, Math.min(c.height, 600)).data.reduce((a, v, i) => (i % 4 === 3 ? a + v : a), 0); });
-      const p1 = await px();
-      await page.waitForTimeout(500);
-      const p2 = await px();
-      check('Particles are drawn and falling (canvas changes over time)', p1 !== p2 && !p1.endsWith(':0'), `${p1} vs ${p2}`);
-      await page.screenshot({ path: path.join(out, 'faq-particles-1280.png') });
+      await page.waitForTimeout(800);
+      const faqOff = await page.evaluate(() => ({ world: document.documentElement.classList.contains('has-world'), off: document.getElementById('faq').wcParticles?.off }));
+      check('Particles: over the 3D world the FAQ shows no 2D particles', !faqOff.world || faqOff.off === true, JSON.stringify(faqOff));
+      {
+        const pp = await page.context().newPage();
+        await pp.goto(`${SITE}privacy/`);
+        await pp.waitForTimeout(1500);
+        const px = async () => pp.evaluate(() => { const c = document.querySelector('.plain__body > canvas.particles'); return c.toDataURL().length + ':' + c.getContext('2d').getImageData(0, 0, c.width, Math.min(c.height, 600)).data.reduce((a, v, i) => (i % 4 === 3 ? a + v : a), 0); });
+        const p1 = await px();
+        await pp.waitForTimeout(500);
+        const p2 = await px();
+        check('Particles are drawn and falling (canvas changes over time, privacy notice)', p1 !== p2 && !p1.endsWith(':0'), `${p1} vs ${p2}`);
+        await pp.screenshot({ path: path.join(out, 'privacy-particles-1280.png') });
+        await pp.close();
+      }
 
       // Hero text stays after scrolling away and back.
       await page.evaluate(() => window.scrollTo(0, 0));
@@ -948,23 +958,24 @@ async function main() {
       await page.keyboard.press('Escape');
       await page.waitForTimeout(900);
 
-      // Particles answer touch: a tap pushes nearby particles away.
-      await page.evaluate(() => { const el = document.getElementById('activities'); window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY + 40); });
-      await page.waitForTimeout(1200);
-      // Touch 30 px beside a particle that is on screen.
-      const ab = await page.evaluate(() => {
-        const f = document.getElementById('activities').wcParticles;
+      // Particles answer touch: a tap pushes nearby particles away. Round 18: on the privacy notice's
+      // lavender body (over the 3D world the home page's Activities and FAQ have none).
+      await page.goto(`${SITE}privacy/`);
+      await page.waitForTimeout(1500);
+      const host = '.plain__body';
+      const ab = await page.evaluate((q) => {
+        const f = document.querySelector(q).wcParticles;
         const r = f.host.getBoundingClientRect();
-        const p = f.parts.map((q) => ({ x: r.left + q.x, y: r.top + q.y })).find((q) => q.y > 120 && q.y < innerHeight - 120 && q.x > 60 && q.x < innerWidth - 60);
+        const p = f.parts.map((o) => ({ x: r.left + o.x, y: r.top + o.y })).find((o) => o.y > 120 && o.y < innerHeight - 120 && o.x > 60 && o.x < innerWidth - 60);
         return p ? { x: p.x - 30, y: p.y } : { x: innerWidth / 2, y: innerHeight / 2 };
-      });
+      }, host);
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: ab.x, y: ab.y, id: 1 }] });
       for (let k = 1; k <= 5; k++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: ab.x + k * 8, y: ab.y, id: 1 }] }); await page.waitForTimeout(40); }
       await page.waitForTimeout(120);
-      const pushed = await page.evaluate(() => (document.getElementById('activities').wcParticles?.parts || []).filter((p) => Math.hypot(p.dx, p.dy) > 3).length);
+      const pushed = await page.evaluate((q) => (document.querySelector(q).wcParticles?.parts || []).filter((p) => Math.hypot(p.dx, p.dy) > 3).length, host);
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
       await page.waitForTimeout(2500);
-      const rest = await page.evaluate(() => Math.max(...(document.getElementById('activities').wcParticles?.parts || [{ dx: 99, dy: 99 }]).map((p) => Math.hypot(p.dx, p.dy))));
+      const rest = await page.evaluate((q) => Math.max(...(document.querySelector(q).wcParticles?.parts || [{ dx: 99, dy: 99 }]).map((p) => Math.hypot(p.dx, p.dy))), host);
       check('Particles: touching a section pushes nearby particles aside, and they settle back', pushed > 0 && rest < 1, `${pushed} pushed, max offset after ${rest.toFixed(2)} px`);
       done();
       await ctx.close();
@@ -1068,12 +1079,22 @@ async function main() {
         const y = Math.min(window.innerHeight - 40, Math.max(120, r.top + 60));
         return { x: 60, y };
       }, sel);
+      // Round 18: over the 3D world Activities is dark (light text): white there. Pink over a FAQ question (white card).
+      const worldOn = await page.evaluate(() => document.documentElement.classList.contains('has-world'));
       let pt = await pointIn('#activities');
       await page.mouse.move(pt.x, pt.y);
       await page.mouse.move(pt.x + 4, pt.y + 4);
       await page.waitForTimeout(700);
+      const onAct = await orb();
+      check(`Cursor: ${worldOn ? 'white over Activities (dark over the 3D world)' : 'pink over Activities (light section)'}`, worldOn ? white(onAct) && onAct.tone === 'dark' : red(onAct) && onAct.tone === 'light', JSON.stringify({ ...onAct, worldOn }));
+      await page.locator('.qa').first().scrollIntoViewIfNeeded();
+      await page.waitForTimeout(1200);
+      const qb = await page.locator('.qa').first().boundingBox();
+      await page.mouse.move(qb.x + qb.width / 2, qb.y + qb.height / 2);
+      await page.mouse.move(qb.x + qb.width / 2 + 4, qb.y + qb.height / 2 + 2);
+      await page.waitForTimeout(700);
       const onLight = await orb();
-      check('Cursor: pink over a light section', red(onLight) && onLight.tone === 'light', JSON.stringify(onLight));
+      check('Cursor: pink over a light surface (a FAQ question)', red(onLight) && onLight.tone === 'light', JSON.stringify(onLight));
       await page.locator('#gallery').scrollIntoViewIfNeeded();
       await page.waitForTimeout(1200);
       pt = await pointIn('#gallery');
@@ -1081,12 +1102,14 @@ async function main() {
       await page.waitForTimeout(700);
       const onDark = await orb();
       check('Cursor: white over a dark section', white(onDark) && onDark.tone === 'dark', JSON.stringify(onDark));
-      // Still mouse, page scrolls from the gallery (dark) into the FAQ (light).
-      await page.mouse.move(60, 450);
+      // Still mouse, page scrolls from the gallery (dark) until a FAQ question (light) is under it.
+      await page.locator('#gallery').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(900);
+      await page.mouse.move(720, 450);
       await page.waitForTimeout(500);
       const before = (await orb()).tone;
       const faqTop = await page.evaluate(() => document.getElementById('faq').getBoundingClientRect().top);
-      for (let k = 0; k < 10 && (await page.evaluate(() => document.getElementById('faq').getBoundingClientRect().top)) > 300; k++) { await page.mouse.wheel(0, 300); await page.waitForTimeout(250); }
+      for (let k = 0; k < 16 && !(await page.evaluate(() => Boolean(document.elementFromPoint(720, 450)?.closest('.qa')))); k++) { await page.mouse.wheel(0, 200); await page.waitForTimeout(250); }
       await page.waitForTimeout(900);
       const afterScroll = await orb();
       check('Cursor: changes while the page scrolls under a still mouse', before === 'dark' && afterScroll.tone === 'light' && red(afterScroll), `${before} -> ${afterScroll.tone} (faq top was ${Math.round(faqTop)})`);
@@ -1175,14 +1198,15 @@ async function main() {
       const s1 = await page.evaluate(() => document.getElementById('home').wcScene()?.settle ?? null);
       check('I. Snow settles on the ridges as the page scrolls', s0 !== null && s0 < 0.05 && s1 > 0.4, `${s0} -> ${s1}`);
       await page.screenshot({ path: path.join(out, 'hero-settled-1440.png') });
-      // H. Sections open from a rounded inset as they come in.
+      // H. Sections open from a rounded inset as they come in. Round 18: checked on the Gallery (over the 3D
+      // scene Activities and FAQ have no solid fill and no opening clip; 28a checks that).
       await page.evaluate(() => window.scrollTo(0, 0));
       await page.waitForTimeout(600);
-      const clip = async () => page.evaluate(() => getComputedStyle(document.getElementById('faq')).clipPath);
-      await page.evaluate(() => { const f = document.getElementById('faq'); window.scrollTo(0, f.offsetTop - window.innerHeight + 120); });
+      const clip = async () => page.evaluate(() => getComputedStyle(document.getElementById('gallery')).clipPath);
+      await page.evaluate(() => { const f = document.getElementById('gallery'); window.scrollTo(0, f.offsetTop - window.innerHeight + 120); });
       await page.waitForTimeout(1200);
       const cMid = await clip();
-      await page.evaluate(() => { const f = document.getElementById('faq'); window.scrollTo(0, f.offsetTop - 100); });
+      await page.evaluate(() => { const f = document.getElementById('gallery'); window.scrollTo(0, f.offsetTop - 100); });
       await page.waitForTimeout(1200);
       const cEnd = await clip();
       check('H. A section opens from a rounded inset as it scrolls in', /inset\(.*round/.test(cMid) && !/round 0px\)$|^none$/.test(cMid) && /inset\(0(px|%)?\)?/.test(cEnd), `${cMid} -> ${cEnd}`);
@@ -1562,16 +1586,17 @@ async function main() {
       check('Hero: "Light of the World" in capitals', hero.tt === 'uppercase');
       check('Hero: the days-left countdown is larger than the facts, venue and seat line', hero.shown && hero.n >= 56 && hero.words > Math.max(hero.venue, hero.live, hero.fact), JSON.stringify(hero));
       await page.locator('.hero').screenshot({ path: path.join(out, 'r8-hero-1440.png') });
-      // Day 3 picnic card: gallery item 20 behind the text.
-      await page.locator('.card--wide').scrollIntoViewIfNeeded();
+      // Day 3 picnic card: its photo (the blue ground sheet game, activityPhotos.picnic). Round 18:
+      // a photo strip on top like the other cards (was a large tile with the photo behind the text).
+      await page.locator('.card--picnic').scrollIntoViewIfNeeded();
       await page.waitForTimeout(1500);
-      const pic = await page.evaluate(() => {
-        const img = document.querySelector('.card--wide .card__photo');
-        const items = [...document.querySelectorAll('.car__item .car__media img')].map((i) => i.getAttribute('src').replace(/-\d+\.webp$/, ''));
-        return img && { loaded: img.complete && img.naturalWidth > 0, same: img.getAttribute('src').replace(/-\d+\.webp$/, '') === items[19], alt: img.alt, z: getComputedStyle(img).zIndex };
-      });
-      check('Activities: the Day 3 picnic card shows gallery item 20 behind its text', Boolean(pic) && pic.loaded && pic.same && pic.alt.length > 10, JSON.stringify(pic));
-      await page.locator('.card--wide').screenshot({ path: path.join(out, 'r8-picnic-1440.png') });
+      const pic = await page.evaluate((id) => {
+        const img = document.querySelector('.card--picnic .card__img');
+        const inGallery = [...document.querySelectorAll('.car__item img')].some((i) => (i.getAttribute('src') || '').includes(id));
+        return img && { loaded: img.complete && img.naturalWidth > 0, same: img.dataset.photo === id, inGallery, strip: img.parentElement.classList.contains('card__media') };
+      }, siteConfig.activityPhotos.picnic);
+      check('Activities: the Day 3 picnic card shows its gallery photo as a strip on top', Boolean(pic) && pic.loaded && pic.same && pic.inGallery && pic.strip, JSON.stringify(pic));
+      await page.locator('.card--picnic').screenshot({ path: path.join(out, 'r8-picnic-1440.png') });
       await page.evaluate(() => window.scrollTo(0, 0));
       await page.waitForTimeout(600);
       // Pink buttons stay pink on hover.
@@ -2129,7 +2154,7 @@ async function main() {
       await page.waitForTimeout(1200);
       const want = siteConfig.activityPhotos;
       const lazy = await page.evaluate(() => [...document.querySelectorAll('.card__img')].every((i) => i.loading === 'lazy'));
-      for (const key of ['games', 'craft', 'story', 'music', 'food']) {
+      for (const key of ['games', 'craft', 'story', 'music', 'food', 'picnic']) {
         await page.locator(`.card .icon-${key}`).scrollIntoViewIfNeeded();
         await page.waitForTimeout(500);
         await page.waitForFunction((k) => { const i = document.querySelector(`.icon-${k}`).closest('.card__in').querySelector('.card__img'); return i && i.complete && i.naturalWidth > 0; }, key, { timeout: 8000 }).catch(() => {});
@@ -2155,7 +2180,7 @@ async function main() {
       }
       check(`${width} activities: the card photos load lazily`, lazy);
       const ids = await page.evaluate(() => [...document.querySelectorAll('#activities [data-photo]')].map((i) => i.dataset.photo));
-      check(`${width} activities: six cards, six different photos (picnic unchanged)`, ids.length === 6 && new Set(ids).size === 6 && ids[5] === 'p-3514f4ca1f', JSON.stringify(ids));
+      check(`${width} activities: six cards, six different photos (picnic: the ground sheet game)`, ids.length === 6 && new Set(ids).size === 6 && ids[5] === 'p-3514f4ca1f', JSON.stringify(ids));
       const ox = await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
       check(`${width} activities: no sideways scrolling`, ox);
       await page.locator('#activities .cards').scrollIntoViewIfNeeded();
@@ -2272,7 +2297,7 @@ async function main() {
         return [...document.querySelectorAll('.card__in')].map((c) => {
           const icon = c.querySelector('.card__icon');
           const bg = getComputedStyle(c).backgroundColor;
-          // The picnic tile is a 10% white tint: compare with the card colour mixed under it.
+          // A see-through icon tile would be compared with the card colour mixed under it.
           const tile = getComputedStyle(icon).backgroundColor;
           const tv = tile.match(/[\d.]+/g).map(Number);
           const bv = bg.match(/[\d.]+/g).map(Number);
@@ -2281,9 +2306,9 @@ async function main() {
           return { bg, tone: c.dataset.tone, title: ratio(getComputedStyle(c.querySelector('.card__title')).color, bg), text: ratio(getComputedStyle(c.querySelector('.card__text')).color, bg), icon: ratio(getComputedStyle(icon).color, under), btn: Boolean(c.querySelector('button.card__open[aria-label^="Open photo: "]')) };
         });
       });
-      // Round 17: over the 3D world the five small cards are see-through indigo (72%, 80% on phones/slow devices;
-      // their worst-case contrast is checked in 28a); the picnic card keeps its photo behind a solid indigo.
-      check(`${width} activities: all six cards indigo (#180E55, see-through over the 3D world), marked dark, text 4.5:1+, icon 3:1+, each with an "Open photo" button`, look.length === 6 && look.every((c) => /^rgba?\(24, 14, 85(, 0\.(72|8))?\)$/.test(c.bg) && c.tone === 'dark' && c.title >= 4.5 && c.text >= 4.5 && c.icon >= 3 && c.btn), JSON.stringify(look));
+      // Round 18: over the 3D world all six cards are the 45% indigo glass panel on every screen size
+      // (their worst-case contrast is checked in 28a); the picnic card is now like the others.
+      check(`${width} activities: all six cards indigo (#180E55, 45% glass over the 3D world), marked dark, text 4.5:1+, icon 3:1+, each with an "Open photo" button`, look.length === 6 && look.every((c) => /^rgba?\(24, 14, 85(, 0\.45)?\)$/.test(c.bg) && c.tone === 'dark' && c.title >= 4.5 && c.text >= 4.5 && c.icon >= 3 && c.btn), JSON.stringify(look));
       await page.locator('#activities .cards').scrollIntoViewIfNeeded();
       await page.waitForTimeout(1200);
       await page.locator('#activities .cards').screenshot({ path: path.join(out, `r14-activities-${width}.png`) });
@@ -2601,7 +2626,10 @@ async function main() {
       await centre('.activities [data-open-register]');
       await page.waitForTimeout(900);
       const light = await ringOf('.activities [data-open-register]');
-      check('Sticky cursor: on a light section the ring is pink', light.stuck && /rgb\(209, 20, 108/.test(light.border), JSON.stringify(light));
+      // Round 18: over the 3D world Activities is a dark section (light text), so the ring is white there;
+      // without the world it is still the lavender section and the ring pink.
+      const worldOn = await page.evaluate(() => document.documentElement.classList.contains('has-world'));
+      check(`Sticky cursor: over Activities the ring is ${worldOn ? 'white (dark over the 3D world)' : 'pink (light section)'}`, light.stuck && (worldOn ? !/rgb\(209, 20, 108/.test(light.border) && /rgba?\(252, 250, 255/.test(light.border) : /rgb\(209, 20, 108/.test(light.border)), JSON.stringify({ ...light, worldOn }));
       const ab = await page.locator('.activities [data-open-register]').boundingBox();
       await page.mouse.move(ab.x - 200, ab.y - 120, { steps: 6 });
       await page.waitForTimeout(800);
@@ -2864,59 +2892,66 @@ async function main() {
         return { q: h.wcProgressAt(y1 * 0.25), mid: h.wcProgressAt(y1 * 0.5), end: h.wcProgressAt(y1) };
       });
       check(`World ${width}: the camera eases in and out between scenes (lingers on each)`, ease.q < 0.25 / 3 - 0.01 && Math.abs(ease.mid - 0.5 / 3) < 0.01 && Math.abs(ease.end - 1 / 3) < 0.01, JSON.stringify(ease));
-      // Frosted lavender: text keeps 4.5:1 whatever is behind (worst cases: black, indigo, white, the poster's pink, orange).
-      const frost = await page.evaluate(() => {
-        const cs = getComputedStyle(document.getElementById('activities'));
-        const [r, g, b, a = 1] = cs.backgroundColor.match(/[\d.]+/g).map(Number);
-        const lum = ([R, G, B]) => [R, G, B].map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }).reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0);
-        const ratio = (x, y) => { const [L1, L2] = [lum(x), lum(y)].sort((m, n) => n - m); return (L1 + 0.05) / (L2 + 0.05); };
-        const behind = [[0, 0, 0], [24, 14, 85], [255, 255, 255], [230, 30, 123], [248, 156, 56]];
-        const texts = [[24, 14, 85], [40, 31, 96]]; // round 17: muted #281F60 on the thinner lavender
-        let min = 99;
-        for (const k of behind) { const mix = [r, g, b].map((v, i) => v * a + k[i] * (1 - a)); for (const t of texts) min = Math.min(min, ratio(t, mix)); }
-        return { bg: cs.backgroundColor, blur: cs.backdropFilter || cs.webkitBackdropFilter, min: Number(min.toFixed(2)), faq: getComputedStyle(document.getElementById('faq')).backgroundColor, lite: document.documentElement.classList.contains('world-lite') };
+      // Round 18 (option C): Activities and FAQ show the scene through a 30% indigo tint, like the Gallery,
+      // with light text, the white cursor, no 2D particles and no opening clip; the headings on the glass panel.
+      const clear = await page.evaluate(() => {
+        const one = (id) => {
+          const el = document.getElementById(id);
+          const cs = getComputedStyle(el);
+          return { bg: cs.backgroundColor, blur: cs.backdropFilter || cs.webkitBackdropFilter || 'none', clip: cs.clipPath, title: getComputedStyle(el.querySelector('.title')).color, panel: Boolean(el.querySelector('.glass-head .title')), particlesOff: el.hasAttribute('data-world-off'), tone: el.dataset.worldTone };
+        };
+        return { activities: one('activities'), faq: one('faq'), lite: document.documentElement.classList.contains('world-lite') };
       });
-      // Blurred on tablets and desktops, unless slow frames switched to the lighter mode (no blur, more lavender);
-      // headless Chrome draws WebGL in software, so it often does.
-      check(`World ${width}: Activities and FAQ are frosted lavender, round 17 thinner (60%, or 68% ${phone ? 'on phones, no blur' : 'unblurred in the lighter mode'}), text 4.5:1+ whatever glows behind`, frost.bg === frost.faq && (phone || frost.lite ? /244, 241, 251, 0\.68\)/.test(frost.bg) && frost.blur === 'none' : /244, 241, 251, 0\.6\)/.test(frost.bg) && /blur/.test(frost.blur)) && frost.min >= 4.5, JSON.stringify(frost));
-      // Round 17: see-through activity cards, questions and heading panels keep their text contrast in the worst case.
+      check(`World ${width}: Activities and FAQ are clear over the scene (30% indigo tint, no blur, no opening clip), light headings on the glass panel, dark tone for the cursor, no 2D particles`,
+        ['activities', 'faq'].every((k) => { const c = clear[k]; return /24, 14, 85, 0\.3\)/.test(c.bg) && c.blur === 'none' && c.clip === 'none' && c.title === 'rgb(245, 245, 245)' && c.panel && c.particlesOff && c.tone === 'dark'; }), JSON.stringify(clear));
+      // Round 18: the glass (45% indigo over the sections' 30% tint) is the same on every screen size, for the four heading
+      // panels, the six activity cards and the dates strip; text on it keeps 4.5:1+ even with pure white, yellow or pink behind.
+      // The questions stay white with dark text (70%, 78% on phones and in the lighter mode).
       const see = await page.evaluate(() => {
         const rgba = (c) => { const [r, g, b, a = 1] = c.match(/[\d.]+/g).map(Number); return { c: [r, g, b], a }; };
         const over = (top, under) => top.c.map((v, i) => v * top.a + under[i] * (1 - top.a));
         const lum = ([R, G, B]) => [R, G, B].map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }).reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0);
         const ratio = (x, y) => { const [L1, L2] = [lum(x), lum(y)].sort((m, n) => n - m); return (L1 + 0.05) / (L2 + 0.05); };
-        const sec = rgba(getComputedStyle(document.getElementById('activities')).backgroundColor);
-        const card = document.querySelector('.card__in.has-media');
-        const cardBg = rgba(getComputedStyle(card).backgroundColor);
-        const cardText = card.querySelector('.card__text');
-        const ct = rgba(getComputedStyle(cardText).color);
+        const behind = [[255, 255, 255], [252, 241, 40], [230, 30, 123], [0, 0, 0]];
+        const panel = (el, sectionId, sel) => {
+          const s2 = rgba(getComputedStyle(document.getElementById(sectionId)).backgroundColor);
+          const g = rgba(getComputedStyle(el).backgroundColor);
+          let min = 99;
+          for (const k of behind) {
+            const m = over(g, over(s2, k));
+            el.querySelectorAll(sel).forEach((t) => { if (!t.offsetParent && t.offsetHeight === 0) return; const c = rgba(getComputedStyle(t).color); min = Math.min(min, ratio(over(c, m), m)); });
+          }
+          return { alpha: g.a, section: s2.a, min: Number(min.toFixed(2)) };
+        };
+        const out = { glass: {}, cards: [], strip: null };
+        for (const id of ['activities', 'gallery', 'explore', 'faq']) out.glass[id] = panel(document.querySelector(`#${id} .glass-head`), id, '.eyebrow, .title, .lead');
+        document.querySelectorAll('.card__in').forEach((c) => out.cards.push(panel(c, 'activities', '.card__title, .card__text')));
+        out.strip = panel(document.querySelector('#activities .strip'), 'activities', 'dt, dd');
         const qa = document.querySelector('.qa');
         const qaBg = rgba(getComputedStyle(qa).backgroundColor);
-        const qaText = rgba(getComputedStyle(qa.querySelector('.qa__h')).color).c;
-        const out = { cardAlpha: cardBg.a, qaAlpha: qaBg.a, card: 99, qa: 99, glass: {} };
-        for (const k of [[255, 255, 255], [0, 0, 0], [230, 30, 123]]) {
-          const secMix = over(sec, k);
-          const cm = over(cardBg, secMix);
-          out.card = Math.min(out.card, ratio(over(ct, cm), cm), ratio([245, 245, 245], cm));
-          out.qa = Math.min(out.qa, ratio(qaText, over(qaBg, secMix)));
-        }
-        for (const id of ['gallery', 'explore']) {
-          const s2 = rgba(getComputedStyle(document.getElementById(id)).backgroundColor);
-          const head = document.querySelector(`#${id} .glass-head`);
-          const g = rgba(getComputedStyle(head).backgroundColor);
-          let min = 99;
-          for (const k of [[255, 255, 255], [252, 241, 40], [230, 30, 123]]) {
-            const m = over(g, over(s2, k));
-            head.querySelectorAll('h2, p, .eyebrow, .lead').forEach((el) => { const t = rgba(getComputedStyle(el).color); min = Math.min(min, ratio(over(t, m), m)); });
-          }
-          out.glass[id] = { alpha: g.a, section: s2.a, min: Number(min.toFixed(2)) };
-        }
-        out.card = Number(out.card.toFixed(2)); out.qa = Number(out.qa.toFixed(2));
+        const sec = rgba(getComputedStyle(document.getElementById('faq')).backgroundColor);
+        let qmin = 99;
+        for (const k of behind) { const m = over(qaBg, over(sec, k)); qa.querySelectorAll('.qa__h').forEach((t) => { qmin = Math.min(qmin, ratio(rgba(getComputedStyle(t).color).c, m)); }); }
+        out.qa = { alpha: qaBg.a, min: Number(qmin.toFixed(2)), text: getComputedStyle(qa.querySelector('.qa__h')).color };
         return out;
       });
-      check(`World ${width}: round 17 see-through cards (72%, 80% ${phone ? 'here' : 'on phones'}), questions (70%/78%) and heading panels (45%) keep text at 4.5:1+ with the worst light behind`,
-        Math.abs(see.cardAlpha - (phone || frost.lite ? 0.8 : 0.72)) < 0.01 && Math.abs(see.qaAlpha - (phone || frost.lite ? 0.78 : 0.7)) < 0.01 && see.card >= 4.5 && see.qa >= 4.5
-        && Object.values(see.glass).every((g) => Math.abs(g.alpha - 0.45) < 0.01 && Math.abs(g.section - 0.3) < 0.01 && g.min >= 4.5), JSON.stringify(see));
+      const glassOk = (g) => Math.abs(g.alpha - 0.45) < 0.01 && Math.abs(g.section - 0.3) < 0.01 && g.min >= 4.5;
+      check(`World ${width}: heading panels (Activities, Explore, Gallery, Camp Facts), the six cards and the dates strip are 45% glass on every screen size, text 4.5:1+ with the worst light behind`,
+        Object.values(see.glass).every(glassOk) && see.cards.length === 6 && see.cards.every(glassOk) && glassOk(see.strip), JSON.stringify(see));
+      check(`World ${width}: the questions stay white with dark text (${phone || clear.lite ? '78%' : '70%'}), 4.5:1+ with the worst light behind`,
+        Math.abs(see.qa.alpha - (phone || clear.lite ? 0.78 : 0.7)) < 0.01 && see.qa.text === 'rgb(24, 14, 85)' && see.qa.min >= 4.5, JSON.stringify(see.qa));
+      // Screens for the PR: the clear sections at this width.
+      for (const id of ['activities', 'faq']) {
+        await page.evaluate((i) => { const el = document.getElementById(i); window.scrollTo(0, el.getBoundingClientRect().top + scrollY - 40); }, id);
+        await page.waitForTimeout(1500);
+        await page.screenshot({ path: path.join(out, `r18-${id}-${width}.png`) });
+      }
+      await page.locator('.card--picnic').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(1200);
+      await page.locator('.card--picnic').screenshot({ path: path.join(out, `r18-picnic-${width}.png`) });
+      await page.locator('#activities .strip').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(900);
+      await page.screenshot({ path: path.join(out, `r18-strip-${width}.png`) });
       const parts = await page.evaluate(() => { const g = document.getElementById('gallery'); g.scrollIntoView(); return null; });
       await page.waitForTimeout(800);
       const off = await page.evaluate(() => document.getElementById('gallery').wcParticles?.off);
@@ -2970,8 +3005,9 @@ async function main() {
       await page.waitForTimeout(1500);
       await page.locator('#explore').scrollIntoViewIfNeeded();
       await page.waitForTimeout(1200);
-      const r = await page.evaluate(() => ({ cls: document.documentElement.className, act: getComputedStyle(document.getElementById('activities')).backgroundColor, explore: document.getElementById('explore').className, cards: [...document.querySelectorAll('#explore .spot__card')].filter((c) => c.offsetHeight > 0).length, ridges: getComputedStyle(document.querySelector('.hero__ridges')).opacity }));
-      check('World, no WebGL: the still hero image, solid sections, and the five facts as cards', !/has-world|has-webgl/.test(r.cls) && r.act === 'rgb(244, 241, 251)' && /is-list/.test(r.explore) && r.cards === 5 && r.ridges === '1', JSON.stringify(r));
+      const r = await page.evaluate(() => ({ cls: document.documentElement.className, act: getComputedStyle(document.getElementById('activities')).backgroundColor, faq: getComputedStyle(document.getElementById('faq')).backgroundColor, titles: ['activities-title', 'faq-title'].map((id) => getComputedStyle(document.getElementById(id)).color), panel: getComputedStyle(document.querySelector('#activities .glass-head')).backgroundColor, card: getComputedStyle(document.querySelector('.card__in')).backgroundColor, explore: document.getElementById('explore').className, cards: [...document.querySelectorAll('#explore .spot__card')].filter((c) => c.offsetHeight > 0).length, ridges: getComputedStyle(document.querySelector('.hero__ridges')).opacity }));
+      // Round 18: without the world, Activities and FAQ stay solid lavender with dark headings (no panel), the cards solid indigo.
+      check('World, no WebGL: the still hero image, solid sections, and the five facts as cards', !/has-world|has-webgl/.test(r.cls) && r.act === 'rgb(244, 241, 251)' && r.faq === 'rgb(244, 241, 251)' && r.titles.every((c) => c === 'rgb(24, 14, 85)') && r.panel === 'rgba(0, 0, 0, 0)' && r.card === 'rgb(24, 14, 85)' && /is-list/.test(r.explore) && r.cards === 5 && r.ridges === '1', JSON.stringify(r));
       await page.locator('#explore').screenshot({ path: path.join(out, 'r16b-explore-list-1280.png') });
       await axe(page, 'Explore as a list', '#explore');
       done();

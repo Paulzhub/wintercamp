@@ -48,6 +48,8 @@ function initCursor() {
   const toneOf = (el) => {
     const host = el?.closest?.('[data-tone], .light, .dark');
     if (!host) return 'dark';
+    // Round 18: Activities and FAQ are light sections that turn dark over the 3D world.
+    if (host.dataset.worldTone && document.documentElement.classList.contains('has-world')) return host.dataset.worldTone;
     return host.dataset.tone || (host.classList.contains('light') ? 'light' : 'dark');
   };
   const setTone = (el) => {
