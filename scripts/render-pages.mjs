@@ -157,11 +157,10 @@ ${withLd ? `<script type="application/ld+json">${jsonLd(lang, t)}</script>` : ''
 const en = (s) => `<span lang="en">${s}</span>`;
 const brandWord = 'ILLUMINATE';
 
-// Activity cards show a gallery photo (round 8: the Day 3 picnic, behind its text;
-// round 13: the five small cards, as a strip on top). The ids are in
-// site.config.js (activityPhotos), found by id so a card keeps its photo if the
-// gallery order changes; a card whose photo was removed shows without one.
-const SMALL_SIZES = { food: '(min-width: 1024px) 33vw, 100vw' };
+// Activity cards show a gallery photo as a strip on top (round 13; round 18: the
+// Day 3 picnic too, which was a large tile with its photo behind the text). The ids
+// are in site.config.js (activityPhotos), found by id so a card keeps its photo if
+// the gallery order changes; a card whose photo was removed shows without one.
 function cardPhoto(key, lang, t) {
   const id = (config.activityPhotos || {})[key];
   const item = id && gallery.find((g) => g.id === id && g.type === 'photo');
@@ -176,11 +175,8 @@ function cardPhoto(key, lang, t) {
   // the gallery items; the caption and description come from the gallery.
   const alt = item.alt[lang] || item.alt.en || '';
   const open = `type="button" aria-label="${esc(fill(t.activities.openPhoto, { name: t.activities.cards[key].title }))}" data-cursor="${esc(t.gallery.cursorView)}" data-type="photo" data-w="${item.width}" data-h="${item.height}" data-full="${src(w)}" data-fw="${w}" data-alt="${esc(alt)}" data-caption="${esc(alt)}"`;
-  if (key === 'picnic') {
-    return `<button class="card__photo-btn card__open" ${open}><img class="card__photo" ${common.replace(`src="${src(item.widths[0])}"`, `src="${src(item.widths[1] || w)}"`)} sizes="(min-width: 1024px) 66vw, 100vw" alt="${esc(alt)}"></button>`;
-  }
   // The img itself stays decorative: the button is named after the activity.
-  return `<button class="card__media card__open" ${open}><img class="card__img" ${common} sizes="${SMALL_SIZES[key] || '(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw'}" alt=""></button>`;
+  return `<button class="card__media card__open" ${open}><img class="card__img" ${common} sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw" alt=""></button>`;
 }
 
 function galleryItems(lang, t) {
@@ -537,16 +533,17 @@ function homePage(lang) {
   const t = strings[lang];
   const a = t.activities;
   const letters = [...brandWord].map((c, i) => `<span class="ltr${i === 0 ? ' ltr--accent' : ''}" aria-hidden="true">${c}</span>`).join('');
-  const card = (key, extra = '') => {
+  // Round 18: all six cards are alike (photo strip, icon, title, text); the picnic
+  // card keeps its pink "Day 3" badge, over the top corner of its photo.
+  const card = (key) => {
     const photo = cardPhoto(key, lang, t);
-    const wide = key === 'picnic';
-    return `<li class="card ${extra}" data-reveal>
-  <article class="card__in dark${photo ? (wide ? ' has-photo' : ' has-media') : ''}" data-tone="dark" data-tilt>
-    ${wide ? `${photo}<div class="card__body">` : photo}
+    const badge = key === 'picnic' ? `\n    <span class="card__badge">${esc(a.cards.picnic.badge)}</span>` : '';
+    return `<li class="card card--${key}" data-reveal>
+  <article class="card__in dark${photo ? ' has-media' : ''}" data-tone="dark" data-tilt>
+    ${photo}${badge}
     <span class="card__icon icon-${key}" aria-hidden="true">${icons[key]}</span>
     <h3 class="card__title">${esc(a.cards[key].title)}</h3>
     <p class="card__text">${esc(a.cards[key].text)}</p>
-    ${wide ? `</div><div class="card__rail"><span class="card__badge">${esc(a.cards.picnic.badge)}</span></div>` : ''}
   </article>
 </li>`;
   };
@@ -618,13 +615,15 @@ ${siteHeader(lang, t, 'home')}
   <p class="sr-only">${esc(t.hero.sceneAlt)}</p>
 </section>
 
-<section class="section light activities" id="activities" data-particles="accent" data-section aria-labelledby="activities-title">
+<section class="section light activities" id="activities" data-particles="accent" data-world-off data-world-tone="dark" data-section aria-labelledby="activities-title">
   <div class="wrap">
-    <p class="eyebrow" data-reveal>${esc(a.eyebrow)}</p>
-    <h2 class="title" id="activities-title" data-title>${esc(a.title)}</h2>
-    <p class="lead" data-reveal>${esc(a.lead)}</p>
+    <div class="glass-head">
+      <p class="eyebrow" data-reveal>${esc(a.eyebrow)}</p>
+      <h2 class="title" id="activities-title" data-title>${esc(a.title)}</h2>
+      <p class="lead" data-reveal>${esc(a.lead)}</p>
+    </div>
     <ul class="cards">
-      ${card('games')}${card('craft')}${card('story')}${card('music')}${card('food')}${card('picnic', 'card--wide')}
+      ${card('games')}${card('craft')}${card('story')}${card('music')}${card('food')}${card('picnic')}
     </ul>
     <div class="strip" data-reveal>
       <dl class="strip__facts">
@@ -685,14 +684,16 @@ ${galleryItems(lang, t)}
   }
 </section>
 
-<section class="section light faq" id="faq" data-particles="accent" data-section aria-labelledby="faq-title">
+<section class="section light faq" id="faq" data-particles="accent" data-world-off data-world-tone="dark" data-section aria-labelledby="faq-title">
   <div class="wrap wrap--narrow">
-    <p class="eyebrow" data-reveal>${esc(t.faq.eyebrow)}</p>
-    <h2 class="title" id="faq-title" data-title>${esc(t.faq.title)}</h2>
+    <div class="glass-head">
+      <p class="eyebrow" data-reveal>${esc(t.faq.eyebrow)}</p>
+      <h2 class="title" id="faq-title" data-title>${esc(t.faq.title)}</h2>
+    </div>
     <div class="faq__list">
       ${t.faq.items
         .map(
-          (i) => `<details class="qa" data-reveal>
+          (i) => `<details class="qa" data-tone="light" data-reveal>
         <summary class="qa__q"><h3 class="qa__h">${esc(i.q)}</h3><span class="qa__icon" aria-hidden="true">${icons.plus}</span></summary>
         <div class="qa__a"><p>${esc(i.a)}</p></div>
       </details>`,
